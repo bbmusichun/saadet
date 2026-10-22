@@ -12,7 +12,7 @@ this repository has no publishing remote.
 - Arpeggiator, HOLD, chords, strum, scales, microtonal tuning, modulation and MIDI performance.
 - Native sound editing, factory libraries, SysEx import/export and 384 shared user sound slots.
 - Stereo USB playback and stereo post-FX capture at 44.1 kHz, with 16/24-bit USB formats.
-  Native rendering and the common audio path use 24-bit precision; USB format selection is independent.
+  The common audio path uses the original Q15 scale; 24-bit USB capture pads the low byte with zero.
 - Automatic last-sound recall, device settings, complete Saadet backups, USB update and recovery.
 
 There are no additional tracks, track selection, solo/multitrack mixer, drum engine,
@@ -46,7 +46,7 @@ without exposing project-template functions.
 ## Validation and provenance
 
 The host suite exercises native engines, controls, MIDI ownership and repeats,
-insert FX, native 24-bit transport, power-loss recovery, archive round trips, USB transport and the blank
+insert FX, 16/24-bit USB containers, power-loss recovery, archive round trips and the blank
 panel. The target build checks RAM placement and firmware packaging.
 These checks do not establish physical audio quality, control behavior or
 sustained buffer deadlines on an FM-1. No hardware installation is part of this fork's creation.

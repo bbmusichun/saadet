@@ -8,7 +8,6 @@
  * capture packet lengths and the playback endpoint's explicit 10.14 feedback.
  * USB and I2S both run at the native 44.1 kHz rate; no resampler is needed. */
 #include <stdint.h>
-#include "audio_pcm.h"
 #define UA_RATE 44100u
 #define UA_CAP_CHANNELS 2u                    /* fixed stereo capture */
 static uint8_t ua_cap_channels = 2u;
@@ -21,7 +20,7 @@ static uint8_t ua_cap_channels = 2u;
 #ifdef __APPLE__
 #define UA_POOL                                 /* (the host tests: Mach-O has no such section) */
 #else
-#define UA_POOL __attribute__((section(".pool")))   /* fixed stereo native-precision rings */
+#define UA_POOL __attribute__((section(".pool")))   /* fixed stereo rings, 8 KiB */
 #endif
 
 static struct {
@@ -31,7 +30,7 @@ static struct {
     uint32_t play_underruns, play_overruns, cap_underruns, cap_overruns, bad_packets;
     uint32_t rx_packets, tx_packets, missed_frames;
     uint32_t poll_max_ticks, service_max_ticks;
-    audio_ring_t play[UA_RING * 2u], cap[UA_RING * 2u];
+    int16_t play[UA_RING * 2u], cap[UA_RING * 2u];
 } ua UA_POOL;
 #define UA_VOLUME_MIN (-64 * 256)
 /* Standard UAC1 volume: signed 1/256 dB, -64..0 dB in one-dB steps.
@@ -71,45 +70,25 @@ static void ua_host_volume_set(int16_t volume)
 
 static int32_t ua_clip(int32_t x)
 {
-    return x > 32768*AUDIO_ONE-1 ? 32768*AUDIO_ONE-1 : x < -32768*AUDIO_ONE ? -32768*AUDIO_ONE : x;
+    return x > 32767 ? 32767 : x < -32768 ? -32768 : x;
 }
 
 static uint32_t ua_sample_bytes(uint8_t alt) { return alt == 2u ? 3u : 2u; }
 
-/* Formats share one native signal scale. PCM24 retains every received bit. */
-static int32_t ua_decode(const uint8_t *p,uint32_t width)
+/* Packed little-endian PCM24 uses the same full-scale level as PCM16. The
+ * low byte is discarded on playback; recording pads it with zero. */
+static int16_t ua_decode(const uint8_t *p, uint32_t width)
 {
-    if(width==3u){
-        int32_t sample=(int32_t)((uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16);
-        if(sample&0x800000)sample-=16777216;
-        return sample>>(8-AUDIO_FRAC_BITS);
-    }
-    return AUDIO_Q15((int16_t)(p[0]|(uint16_t)p[1]<<8));
+    p += width - 2u;
+    return (int16_t)(p[0] | (uint16_t)p[1] << 8);
 }
-#if AUDIO_FRAC_BITS
-/* TPDF at the final PCM16 reduction. Exact silence stays silent. This state
- * belongs to USB capture service; neither synth nor DMA format depends on it. */
-static uint32_t ua_dither_state=0x913ab267u;
-static uint32_t ua_dither(void)
+
+static void ua_encode(uint8_t *p, uint32_t width, int16_t sample)
 {
-    uint32_t x=ua_dither_state;x^=x<<13;x^=x>>17;x^=x<<5;
-    return ua_dither_state=x;
-}
-#endif
-static void ua_encode(uint8_t *p,uint32_t width,int32_t sample)
-{
-    sample=ua_clip(sample);
-    if(width==3u){
-        uint32_t bits=(uint32_t)(sample*(1<<(8-AUDIO_FRAC_BITS)));
-        p[0]=(uint8_t)bits;p[1]=(uint8_t)(bits>>8);p[2]=(uint8_t)(bits>>16);
-    }else{
-#if AUDIO_FRAC_BITS
-        if(sample)sample+=(int32_t)(ua_dither()&255u)-(int32_t)(ua_dither()&255u)+128;
-        sample=sample>>8;
-        if(sample>32767)sample=32767;if(sample<-32768)sample=-32768;
-#endif
-        p[0]=(uint8_t)sample;p[1]=(uint8_t)((uint32_t)sample>>8);
-    }
+    if (width == 3u)
+        *p++ = 0;
+    p[0] = (uint8_t)sample;
+    p[1] = (uint8_t)((uint16_t)sample >> 8);
 }
 
 static void ua_play_reset(void)
@@ -198,7 +177,7 @@ static uint32_t ua_transmit(uint8_t *p)
         }
     }
     for (i = 0; i < n; i++) {
-        int32_t sample[UA_CAP_CHANNELS] = {0};
+        int16_t sample[UA_CAP_CHANNELS] = {0};
         uint32_t ch;
         if (take) {
             uint32_t at = (ua.cr++ & (UA_RING - 1u)) * 2u;
@@ -210,7 +189,7 @@ static uint32_t ua_transmit(uint8_t *p)
     return n * width * ua_cap_channels;
 }
 
-/* Native-precision stereo post-FX/master/limiter mix.
+/* Stereo Q15 post-FX/master/limiter mix.
  * Stereo copies the finished synth output; playback follows MASTER and the
  * host's standard volume/mute controls, with a short gain ramp.
  * Call in blocks of CTL (32), with USB service excluded during this copy.
@@ -241,8 +220,8 @@ static void ua_audio(int32_t *out, uint32_t n, uint32_t master_q12)
         uint32_t pi = ((ua.pr + i) & (UA_RING - 1u)) * 2u;
         int32_t l = out[2u * i], r = out[2u * i + 1u];
         if (capture) {
-            ua.cap[ci]=(audio_ring_t)ua_clip(l);
-            ua.cap[ci+1u]=(audio_ring_t)ua_clip(r);
+            ua.cap[ci]=(int16_t)ua_clip(l);
+            ua.cap[ci+1u]=(int16_t)ua_clip(r);
         }
         if (playback) {
             if (gain != target) {            /* at most 128 samples (~3 ms) for a full-scale change */
@@ -250,8 +229,8 @@ static void ua_audio(int32_t *out, uint32_t n, uint32_t master_q12)
                 gain += delta > 256 ? 256 : delta < -256 ? -256 : delta;
                 play_gain_q15 = (master_q12 * (uint32_t)gain) >> 12;
             }
-            l += audio_mul(ua.play[pi],(int32_t)play_gain_q15,15);
-            r += audio_mul(ua.play[pi+1u],(int32_t)play_gain_q15,15);
+            l += (ua.play[pi] * (int32_t)play_gain_q15) >> 15;
+            r += (ua.play[pi + 1u] * (int32_t)play_gain_q15) >> 15;
             out[2u * i] = ua_clip(l);
             out[2u * i + 1u] = ua_clip(r);
         }

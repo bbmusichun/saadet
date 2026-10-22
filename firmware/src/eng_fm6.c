@@ -331,7 +331,7 @@ typedef struct {                                         /* a part's (engines.c 
     fm6_mono_t ms[16];
     fm6_lfo_t lfo;
     fm6_ctl_t pt;
-    int32_t dc_x1; audio_dc_t dc_y1;                                /* the DC filter: the last input; the last output << 8 */
+    int32_t dc_x1, dc_y1;                                /* the DC filter: the last input; the last output << 8 */
 } fm6_part_t;
 static fm6_part_t *fm6_part(uint32_t part);             /* engines.c */
 #define FM6P(t) fm6_part((uint32_t)((t) - trk))
@@ -912,7 +912,7 @@ static inline __attribute__((always_inline)) float fm6_output_clip(float x)
 
 static __attribute__((noinline,section(".dsp_text"))) void fm6_output(const float *sum, int32_t *out, uint32_t n, const vmod_t *m, int32_t gain, int add)
 {
-    float scale = (float)gain * ((float)AUDIO_ONE / 131072.0f);
+    float scale = (float)gain * (1.0f / 131072.0f);
     for (uint32_t i = 0; i < n; i++) {
         int32_t y = (int32_t)(fm6_output_clip(sum[i]) * (float)amp_at(m, i) * scale);
         if (add) out[i] += y; else out[i] = y;
@@ -1091,10 +1091,10 @@ static void fm6_block(track_t *t)                        /* per part and block: 
 static __attribute__((noinline,section(".dsp_text"))) void fm6_dc_samples(fm6_part_t *P, int32_t *out, uint32_t n)
 {
     uint32_t i;
-    int32_t x1 = P->dc_x1; audio_dc_t y = P->dc_y1;
+    int32_t x1 = P->dc_x1, y = P->dc_y1;
     for (i = 0; i < n; i++) {
         int32_t x = out[i];
-        y = (audio_dc_t)((int64_t)(x - x1) * 256 + audio_dc_decay(y,1070673990));
+        y = (int32_t)(((int64_t)(x - x1) * 256 + (((int64_t)y * 1070673990) >> 30)));
         x1 = x;
         out[i] = (y + 128) >> 8;
     }

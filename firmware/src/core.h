@@ -4,7 +4,6 @@
 /* Saadet: one polyphonic synth part, performance controls and stereo effects.
  * Stored parameter/engine IDs remain compatible with Melodee sound libraries. */
 #include <stdint.h>
-#include "audio_pcm.h"
 #include "performance_options.h"
 #include "tuning.h"
 #include "audio_profile.h"

@@ -51,7 +51,7 @@ static void fx_profile_poll(void)
 static int fx_profile_track(uint32_t ti){return (fx_profile_control>>(26u+ti))&1u;}
 #endif
 static void fx_clear_all(void) { fx_epoch++; } /* consumed at the next audio block */
-static inline __attribute__((always_inline)) float fx_bound(float x,float lim) { return x < -lim*AUDIO_ONE ? -lim*AUDIO_ONE : x > lim*AUDIO_ONE ? lim*AUDIO_ONE : x; }
+static inline __attribute__((always_inline)) float fx_bound(float x,float lim) { return x < -lim ? -lim : x > lim ? lim : x; }
 static inline __attribute__((always_inline)) int32_t fx_scale(int32_t a,uint32_t k)
 {return (a>>16)*(int32_t)k+(int32_t)(((uint32_t)(a&65535)*k)>>16);}
 /* Preserve C's truncation towards zero with shifts rather than the target's
@@ -199,7 +199,7 @@ static __attribute__((noinline,section(FX_FILTER_SECTION))) void fx_filter(fx_st
     if(fx_hw_status==1){
         for(uint32_t i=0;i<n;i++)fx_in[i]=(float)b[i];
         if(fm1_eq_run(f->hw[ch],fx_in,fx_out,n)){
-            int ok=1;for(uint32_t i=0;i<n;i++)if(!(fx_out[i]>=-1000000.0f*AUDIO_ONE && fx_out[i]<=1000000.0f*AUDIO_ONE))ok=0;
+            int ok=1;for(uint32_t i=0;i<n;i++)if(!(fx_out[i]>=-1000000.0f && fx_out[i]<=1000000.0f))ok=0;
             if(ok){for(uint32_t i=0;i<n;i++)b[i]=(int32_t)fx_out[i];return;}
         }
         fx_hw_status=2;
@@ -249,10 +249,8 @@ static inline __attribute__((always_inline)) int32_t fx_tone_input(fx_state_t *f
     return (int32_t)fx_tone_section(&f->q[0][1],x,slew,0);
 }
 #include "fx_echoverb.h"
-/* ROOM: four damped combs at 13..26 ms, quarter-rate, native PCM history.
- * POOL SRAM like chorus and Echoverb: the low DSP bank keeps the always-on
- * mixer kernels and the Q23 fixture's low resource tail. */
-static __attribute__((noinline,section(".audio_text"))) void fx_time(fx_state_t *restrict f,audio_history_t *restrict mem,uint32_t n,int32_t target)
+/* ROOM: four damped combs at 13..26 ms, quarter-rate, PCM16 history. */
+static __attribute__((noinline,section(".dsp_text"))) void fx_time(fx_state_t *restrict f,int16_t *restrict mem,uint32_t n,int32_t target)
 {
     static const uint16_t len[4]={149,211,263,293};
     int32_t mix=f->mix;
@@ -269,9 +267,9 @@ static __attribute__((noinline,section(".audio_text"))) void fx_time(fx_state_t 
                 for(uint32_t k=0;k<4u;k++){
                     uint32_t span=f->rev_span[k];
                     if(f->comb[k]>=span)f->comb[k]=0;
-                    int32_t x=audio_history_read(&mem[off+f->comb[k]]);
+                    int32_t x=mem[off+f->comb[k]];
                     f->damp[k]+=fx_div_pow2(x-f->damp[k],2);
-                    audio_history_write(&mem[off+f->comb[k]],audio_clamp(fx_div_pow2(mono,2)+audio_mul(f->damp[k],feedback,15),-32767,32767));
+                    mem[off+f->comb[k]]=(int16_t)clamp(fx_div_pow2(mono,2)+fx_div_pow2(f->damp[k]*feedback,15),-32767,32767);
                     if(++f->comb[k]>=span)f->comb[k]=0;off+=len[k];sum+=x;
                 }
                 f->echo=fx_div_pow2(sum,1);
@@ -283,25 +281,25 @@ static __attribute__((noinline,section(".audio_text"))) void fx_time(fx_state_t 
     f->mix=mix;
 }
 /* Full-band stereo chorus: two fractional taps, no feedback or filters.
- * 512 stereo native-precision frames. The 5.8 ms centre and +/-2.9 ms
+ * 512 stereo PCM16 frames. The 5.8 ms centre and +/-2.9 ms
  * modulation fit comfortably in the ring. Sines/divides run once per block;
  * the SRAM sample loop only ramps, interpolates and mixes with integers.
  * Reuse the idle reverb output fields for Q16 delay positions. */
-#define FX_CHORUS_BYTES (1024u*sizeof(audio_history_t))
-static inline __attribute__((always_inline)) int32_t fx_chorus_read(const audio_history_t *mem,uint32_t pos,uint32_t ch,int32_t delay)
+#define FX_CHORUS_BYTES 2048u
+static inline __attribute__((always_inline)) int32_t fx_chorus_read(const int16_t *mem,uint32_t pos,uint32_t ch,int32_t delay)
 {
     uint32_t whole=(uint32_t)delay>>16,frac=((uint32_t)delay>>8)&255u;
     uint32_t at=(pos-whole)&511u;
-    int32_t a=audio_history_read(&mem[at*2u+ch]),b=audio_history_read(&mem[((at-1u)&511u)*2u+ch]);
-    return a*4+audio_mul(b-a,(int32_t)frac,6);
+    int32_t a=mem[at*2u+ch],b=mem[((at-1u)&511u)*2u+ch];
+    return (a*256+(b-a)*(int32_t)frac)>>6;
 }
 /* Use the existing POOL SRAM code section; low DSP SRAM is already full. */
-static __attribute__((noinline,section(".audio_text"))) void fx_chorus(fx_state_t *restrict f,audio_history_t *restrict mem,uint32_t n,const int32_t *step,int32_t target)
+static __attribute__((noinline,section(".audio_text"))) void fx_chorus(fx_state_t *restrict f,int16_t *restrict mem,uint32_t n,const int32_t *step,int32_t target)
 {
     int32_t l=f->rev_l,r=f->rev_r,mix=f->mix;uint32_t pos=f->pos;
     for(uint32_t i=0;i<n;i++){
-        audio_history_write(&mem[pos*2u],audio_clamp(fx_left[i]>>2,-32767,32767));
-        audio_history_write(&mem[pos*2u+1u],audio_clamp(fx_right[i]>>2,-32767,32767));
+        mem[pos*2u]=(int16_t)clamp(fx_left[i]>>2,-32767,32767);
+        mem[pos*2u+1u]=(int16_t)clamp(fx_right[i]>>2,-32767,32767);
         l+=step[0];r+=step[1];
         int32_t wl=fx_chorus_read(mem,pos,0,l),wr=fx_chorus_read(mem,pos,1,r);
         fx_return(target,0,0,i,wl,wr,&mix);pos=(pos+1u)&511u;
@@ -313,7 +311,7 @@ static __attribute__((noinline,section(".audio_text"))) void fx_chorus(fx_state_
  * idle echo field as a conservative zero-write count; no persistent/RAM fields.
  * Keep the ordinary kernel separate so active input exits the scan early. */
 #if MELODEE_FX_DORMANT
-static __attribute__((noinline,section(".audio_text"))) void fx_chorus_run(fx_state_t *restrict f,audio_history_t *restrict mem,uint32_t n,const int32_t *step,int32_t target)
+static __attribute__((noinline,section(".audio_text"))) void fx_chorus_run(fx_state_t *restrict f,int16_t *restrict mem,uint32_t n,const int32_t *step,int32_t target)
 {
     uint32_t signal=n?(uint32_t)fx_left[0]|(uint32_t)fx_right[0]:0u;
     if(!signal)for(uint32_t i=0;i<n;i++)signal|=(uint32_t)fx_left[i]|(uint32_t)fx_right[i];
@@ -329,7 +327,7 @@ static __attribute__((noinline,section(".audio_text"))) void fx_chorus_run(fx_st
         }
         f->echo=clamp(f->echo+(int32_t)n,0,512);
     }else f->echo=0;
-    void (*volatile run)(fx_state_t *,audio_history_t *,uint32_t,const int32_t *,int32_t)=fx_chorus;
+    void (*volatile run)(fx_state_t *,int16_t *,uint32_t,const int32_t *,int32_t)=fx_chorus;
     run(f,mem,n,step,target);
 }
 #else
@@ -377,7 +375,7 @@ static __attribute__((noinline,section(".dsp_text"))) void fx_up(fx_state_t *f,u
         if(!phase){
             f->rev_prev_l=f->rev_l;f->rev_prev_r=f->rev_r;
             int32_t l=fx_low_l[count],r=f->mono?l:fx_low_r[count];count++;
-            if(f->type==FX_SPIT){l=softclip(audio_clamp(l,-100000,100000)*drive);r=softclip(audio_clamp(r,-100000,100000)*drive);}
+            if(f->type==FX_SPIT){l=softclip(clamp(l,-100000,100000)*drive);r=softclip(clamp(r,-100000,100000)*drive);}
             f->rev_l=l;f->rev_r=r;
         }
         int32_t l=f->rev_prev_l+fx_div_pow2((f->rev_l-f->rev_prev_l)*(phase+1u),2);
@@ -404,7 +402,7 @@ static __attribute__((noinline,section(".dsp_text"))) void fx_copy(fx_state_t *f
 static __attribute__((noinline,section(".dsp_text"))) void fx_pan(track_t *t,int32_t *b,uint32_t n)
 {
     if(!spread_on){
-        for(uint32_t i=0;i<n;i++)fx_left[i]=fx_right[i]=audio_clamp(b[i],-65536,65536);
+        for(uint32_t i=0;i<n;i++)fx_left[i]=fx_right[i]=clamp(b[i],-65536,65536);
         return;
     }
     int32_t pan=0,s=spread_on?(t->p[P_SPRD]+1)>>1:0;
@@ -412,8 +410,8 @@ static __attribute__((noinline,section(".dsp_text"))) void fx_pan(track_t *t,int
     int32_t gla=4096-(pa>0?pa*64:0),gra=4096+(pa<0?pa*64:0),glb=4096-(pb>0?pb*64:0),grb=4096+(pb<0?pb*64:0);
     for(uint32_t i=0;i<n;i++){
         int32_t a=spread_on?spread_buf[i]:fx_div_pow2(b[i],1),c=b[i]-a;
-        a=audio_clamp(a,-262143,262143);c=audio_clamp(c,-262143,262143);
-        fx_left[i]=audio_clamp((int32_t)(((int64_t)a*gla+(int64_t)c*glb)>>12),-65536,65536);fx_right[i]=audio_clamp((int32_t)(((int64_t)a*gra+(int64_t)c*grb)>>12),-65536,65536);
+        a=clamp(a,-262143,262143);c=clamp(c,-262143,262143);
+        fx_left[i]=clamp(fx_div_pow2(a*gla+c*glb,12),-65536,65536);fx_right[i]=clamp(fx_div_pow2(a*gra+c*grb,12),-65536,65536);
     }
 }
 /* Position the finished track once. A mono engine stays mono through its
@@ -444,11 +442,8 @@ static __attribute__((noinline,section(".audio_text"))) int fx_active(const trac
     }
     return 0;
 }
-static void fx_release_memory(uint32_t si)
-{
-    resource_release(RES_FX0+si);resource_release(RES_FX_HISTORY0+si);
-}
-typedef struct {fx_state_t *f;audio_history_t *mem;int32_t target;uint8_t active;} fx_plan_t;
+
+typedef struct {fx_state_t *f;int16_t *mem;int32_t target;uint8_t active;} fx_plan_t;
 /* CPU0 owns allocation, releases and control snapshots. A worker receives
  * only fixed handles, preventing a retired worker from interrupting the arena. */
 static void fx_slot_prepare(fx_plan_t *plan,uint32_t si,const int16_t *p)
@@ -457,7 +452,7 @@ static void fx_slot_prepare(fx_plan_t *plan,uint32_t si,const int16_t *p)
     uint32_t type=(uint32_t)clamp(p[0],0,FX_COUNT-1);
     if(fx_is_midi((int32_t)type) || fx_retired((int32_t)type))type=FX_OFF; /* retired effects and note inserts never enter audio DSP */
     fx_state_t *f=&fx_state[si];
-    if(fx_retired(f->type) || fx_retired(p[0])) { fx_release_memory(si); fx_zero(f); }
+    if(fx_retired(f->type) || fx_retired(p[0])) { resource_release(RES_FX0+si); fx_zero(f); }
     int32_t amount=clamp(p[1],0,127);
     int32_t target=type?(amount+(amount==127))*256:0;
 #if defined(MELODEE_FX_PROFILE) && MELODEE_FX_PROFILE && defined(FM1_IRQ_TARGET)
@@ -468,11 +463,11 @@ static void fx_slot_prepare(fx_plan_t *plan,uint32_t si,const int16_t *p)
     uint32_t changed=f->type!=type;
     if(f->type && type && changed && f->mix)target=0;
     if(!target && !f->mix){
-        if(f->type || resource[RES_FX0+si].size){fx_release_memory(si);fx_zero(f);}
+        if(f->type || resource[RES_FX0+si].size){resource_release(RES_FX0+si);fx_zero(f);}
         return;
     }
     if(f->epoch!=fx_epoch || (type && changed && !f->mix)){
-        fx_release_memory(si);fx_zero(f);
+        resource_release(RES_FX0+si);fx_zero(f);
         f->epoch=fx_epoch;f->type=(uint8_t)type;f->rng=(int32_t)(0x73a9825du+si*997u);
     }
     f->rate=(int16_t)clamp(p[2],0,127);f->character=(int16_t)clamp(p[3],0,127);
@@ -491,19 +486,13 @@ static void fx_slot_prepare(fx_plan_t *plan,uint32_t si,const int16_t *p)
 #if defined(MELODEE_FX_PROFILE) && MELODEE_FX_PROFILE && defined(FM1_IRQ_TARGET)
     if(profiling){f->rate=(fx_profile_control>>12u)&127u;f->character=(fx_profile_control>>19u)&127u;}
 #endif
-    audio_history_t *mem=0;
+    int16_t *mem=0;
     if(f->type==FX_ROOM || f->type==FX_CHORUS || f->type==FX_REVERB){
         uint32_t bytes=f->type==FX_REVERB?sizeof(fx_echoverb_t):FX_CHORUS_BYTES;
         if(!f->failed && !resource[RES_FX0+si].size){
             void *(*volatile allocate)(uint32_t,uint32_t)=fx_memory;mem=allocate(RES_FX0+si,bytes);if(!mem)f->failed=1;
         }else if(resource[RES_FX0+si].size)mem=resource[RES_FX0+si].ptr;
-#if AUDIO_FRAC_BITS
-        if(mem && f->type==FX_REVERB){
-            fx_echoverb_t *s=(fx_echoverb_t *)mem;
-            s->history=resource_get(RES_FX_HISTORY0+si,FX_ECHOVERB_HISTORY_BYTES);
-            if(!s->history){fx_release_memory(si);mem=0;f->failed=1;}
-        }
-#endif
+
         if(!mem){f->mix=0;return;}
     }
     plan->f=f;plan->mem=mem;plan->target=target;plan->active=1;
@@ -511,7 +500,7 @@ static void fx_slot_prepare(fx_plan_t *plan,uint32_t si,const int16_t *p)
 static __attribute__((noinline,section(".audio_text"))) int fx_slot_run(const fx_plan_t *plan,uint32_t n)
 {
     if(!plan->active)return 0;
-    fx_state_t *f=plan->f;audio_history_t *mem=plan->mem;int32_t target=plan->target;
+    fx_state_t *f=plan->f;int16_t *mem=plan->mem;int32_t target=plan->target;
     void (*volatile copy)(fx_state_t *,uint32_t)=fx_copy;copy(f,n);
     if(f->type==FX_REVERB){fx_echoverb_run(f,(fx_echoverb_t *)mem,n,target,fx_left,fx_right);}
     else if(f->type==FX_CHORUS){
@@ -520,8 +509,8 @@ static __attribute__((noinline,section(".audio_text"))) int fx_slot_run(const fx
         f->phase+=LFO_INC[f->rate]*n/CTL;
         int32_t depth=f->character*2,delay=256*65536+fx_sine(f->phase)*depth;
         int32_t step[2]={(delay-f->rev_l)/(int32_t)n,(512*65536-delay-f->rev_r)/(int32_t)n};
-        void (*volatile run)(fx_state_t *,audio_history_t *,uint32_t,const int32_t *,int32_t)=fx_chorus_run;run(f,mem,n,step,target);
-    }else if(f->type==FX_ROOM){void (*volatile run)(fx_state_t *,audio_history_t *,uint32_t,int32_t)=fx_time;run(f,mem,n,target);}
+        void (*volatile run)(fx_state_t *,int16_t *,uint32_t,const int32_t *,int32_t)=fx_chorus_run;run(f,mem,n,step,target);
+    }else if(f->type==FX_ROOM){void (*volatile run)(fx_state_t *,int16_t *,uint32_t,int32_t)=fx_time;run(f,mem,n,target);}
     else {
         if(f->type==FX_TAPE){void (*volatile design)(fx_state_t *,uint32_t)=fx_tape_design;design(f,n);}
         else {if(!fx_hw_status){void (*volatile probe)(void)=fx_probe;probe();}void (*volatile design)(fx_state_t *,uint32_t)=fx_design;design(f,n);}
@@ -548,7 +537,7 @@ static __attribute__((noinline,section(".audio_text"))) int fx_process_impl(trac
     if(!fx_active(t)){
         for(uint32_t slot=0;slot<FX_SLOTS;slot++){
             uint32_t si=ti*FX_SLOTS+slot;
-            if(fx_state[si].type || resource[RES_FX0+si].size){fx_release_memory(si);fx_zero(&fx_state[si]);}
+            if(fx_state[si].type || resource[RES_FX0+si].size){resource_release(RES_FX0+si);fx_zero(&fx_state[si]);}
         }
         return 0;
     }

@@ -9,8 +9,7 @@
  * code/data/retained-state boundary. Small banks first preserve the large
  * contiguous POOL bank for engine state and note history. */
 enum { RES_ENGINE0, RES_FX0 = RES_ENGINE0 + NPART,
-       RES_LOAD_UNDO = RES_FX0 + FX_STATE_COUNT,
-       RES_FX_HISTORY0, RES_COUNT = RES_FX_HISTORY0 + FX_STATE_COUNT };
+       RES_LOAD_UNDO = RES_FX0 + FX_STATE_COUNT, RES_COUNT };
 static struct { void *ptr; uint32_t size; } resource[RES_COUNT];
 static uint32_t resource_peak, resource_failures;
 #ifdef FM1_IRQ_TARGET
@@ -26,32 +25,20 @@ extern uint8_t _resource_cache_start[], _resource_cache_end[];
 #endif
 #define RESOURCE_MAIN_CAPACITY ((uint32_t)((uintptr_t)_resource_end - (uintptr_t)_resource_start))
 #else
-#ifndef RESOURCE_HOST_WORDS
-#define RESOURCE_HOST_WORDS 40960u
-#endif
-static uint32_t resource_host[RESOURCE_HOST_WORDS];
-#ifndef RESOURCE_HOST_LOW_WORDS
-#define RESOURCE_HOST_LOW_WORDS 5120u
-#endif
-#ifndef RESOURCE_HOST_DATA_WORDS
-#define RESOURCE_HOST_DATA_WORDS 512u
-#endif
-#ifndef RESOURCE_HOST_RETAINED_WORDS
-#define RESOURCE_HOST_RETAINED_WORDS 1024u
-#endif
-static uint32_t resource_host_low[RESOURCE_HOST_LOW_WORDS], resource_host_data[RESOURCE_HOST_DATA_WORDS], resource_host_retained[RESOURCE_HOST_RETAINED_WORDS];
+static uint32_t resource_host[40960];
+static uint32_t resource_host_low[5120], resource_host_data[512], resource_host_retained[1024];
 static uint32_t resource_host_cache[7168], resource_host_cache_enabled;
 #define RESOURCE_CACHE_AVAILABLE resource_host_cache_enabled
 #define _resource_cache_start ((uint8_t *)resource_host_cache)
 #define _resource_cache_end ((uint8_t *)(resource_host_cache + 7168))
 #define _resource_start ((uint8_t *)resource_host)
-#define _resource_end ((uint8_t *)(resource_host + RESOURCE_HOST_WORDS))
+#define _resource_end ((uint8_t *)(resource_host + 40960))
 #define _resource_low_start ((uint8_t *)resource_host_low)
-#define _resource_low_end ((uint8_t *)(resource_host_low + RESOURCE_HOST_LOW_WORDS))
+#define _resource_low_end ((uint8_t *)(resource_host_low + 5120))
 #define _resource_data_start ((uint8_t *)resource_host_data)
-#define _resource_data_end ((uint8_t *)(resource_host_data + RESOURCE_HOST_DATA_WORDS))
+#define _resource_data_end ((uint8_t *)(resource_host_data + 512))
 #define _resource_retained_start ((uint8_t *)resource_host_retained)
-#define _resource_retained_end ((uint8_t *)(resource_host_retained + RESOURCE_HOST_RETAINED_WORDS))
+#define _resource_retained_end ((uint8_t *)(resource_host_retained + 1024))
 #define RESOURCE_MAIN_CAPACITY ((uint32_t)sizeof resource_host)
 #endif
 /* UI histories use demand allocations, reclaimable by audio. The entire
