@@ -1,29 +1,21 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio)
  * Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Melodee menu (HOME held): COLOR, FONT (the type: RUBIK or PIXEL, ui.c TY_*), HOLD (the layer threshold), LIGHTS (the keys' and buttons'
- * glow: ui_input.c ui_leds), KNOB ACCEL (ui_input.c accel_by), USB AUDIO (IN+OUT, IN, OUT or OFF; usb.c ua_off_set),
- * USB INPUT (stereo master or four track stems; usb.c ua_tracks_set),
- * AUTOSAVE (automatic project saves after five seconds stopped and untouched), HOME SELECT (what SELECT turns on HOME:
- * ui.c HS_*), GLO SELECT (what SELECT turns with GLO held, on any page: the same choices), UNUSED TRACKS (SHOW:
- * Stage and MIXER keep a greyed "Add track" row for each place not in use; HIDE: the tracks in use only, ui.c
- * stage_rows),
- * CALIBRATION (the setup screen: HARDWARE CALIBRATION), ABOUT.
- * PRESETS scrolls from ABOUT through all credits. ui.menu: 1 list, 2 information. */
+/* Saadet device preferences, sound designer and hardware calibration. */
 /* ------------------------------------------------------------ menu --- */
 #define MENU_HEAD H_HEAD                 /* the menu's own title strip */
 enum { MI_COLOR, MI_FONT, MI_HOLD, MI_LIGHTS,
 #if MELODEE_USB_AUDIO
-       MI_USB, MI_USB_INPUT,
+       MI_USB,
 #endif
-       MI_CLICK, MI_CLICK_LEVEL, MI_COUNTIN, MI_PREVIEW, MI_ADD, MI_AUTOSAVE, MI_PICKER, MI_ACCEL, MI_HOME_SEL, MI_GLO_SEL, MI_TRACKS, MI_SCREEN, MI_PANEL, MI_ABOUT, MI_DESIGNER, MI_BACK,
+             MI_PICKER, MI_ACCEL,    MI_SCREEN, MI_PANEL, MI_ABOUT, MI_DESIGNER, MI_BACK,
        MI_COUNT };
 static const char *const MI_NAME[MI_COUNT] = {"COLOR", "FONT", "HOLD", "LIGHTS",
 #if MELODEE_USB_AUDIO
-                                              "USB AUDIO", "USB INPUT",
+                                              "USB AUDIO",
 #endif
-                                              "AUDIO CLICK", "CLICK LEVEL", "COUNT-IN", "NOTE PREVIEW", "CHORD ENTRY",
-                                              "AUTOSAVE", "PICKER POPUPS", "KNOB ACCEL", "HOME SELECT", "GLO SELECT", "UNUSED TRACKS", "SCREEN OFF", "CALIBRATION", "ABOUT", "SOUND DESIGNER", "BACK"};
+
+                                               "PICKER POPUPS", "KNOB ACCEL",    "SCREEN OFF", "CALIBRATION", "ABOUT", "SOUND DESIGNER", "BACK"};
 #if MELODEE_USB_AUDIO
 /* USB AUDIO's four settings, as ua_off_want (UA_OFF_OUT | UA_OFF_IN) */
 static const char *const MI_USB_NAME[4] = {"IN+OUT", "IN", "OUT", "OFF"};
@@ -144,7 +136,7 @@ static int32_t menu_document(int32_t y, int draw)
 {
     uint32_t i;
     if (draw) {                                       /* (docs/design: mock/r6_pages About, the large type) */
-        cv_text(6, y + 2, TY_HR, "Melodee", T_THEME);
+        cv_text(6, y + 2, TY_HR, "Saadet", T_THEME);
         cv_text(6, y + 60, TY_TX, MELODEE_VERSION, T_TEXT);
         cv_text(6, y + 86, TY_LB, __DATE__, T_MID);
         draw_about_qr(158, y + 66);
@@ -228,9 +220,9 @@ static void draw_menu(void)
     uint32_t i, pass, sig = ui.menu * 7u + ui.menu_sel * 131u + settings.palette * 1009u + settings.lowcut * 7919u +
                             settings_hold * 3511u + settings_lights * 6151u + settings_autosave * 15485863u +
 #if MELODEE_USB_AUDIO
-                            ua_off_want * 92821u + ua_tracks_want * 324161u +
+                            ua_off_want * 92821u +
 #endif
-                            song.rec * 65537u + song.sel * 13u +
+                            song.sel * 13u +
                             (ui.menu == 2 ? ui.menu_scroll * 48611u : 0u);
     if (!ui.force && sig == ui.menu_sig) {
         if (head_waiting()) draw_head();
@@ -271,22 +263,18 @@ static void draw_menu(void)
                 if (y + MENU_RH <= top || y >= top + (int32_t)cv_h)
                     continue;
                 menu_words(w, MI_NAME[i], sizeof w);
-                if (i >= MI_CLICK && i <= MI_ADD)
-                    value = i==MI_CLICK?(const char *const[]){"OFF","REC","ON"}[settings_click%3u]:
-                      i==MI_CLICK_LEVEL?(const char *const[]){"LOW","MID","HIGH"}[settings_click_level%3u]:
-                      i==MI_COUNTIN?(const char *const[]){"OFF","1 BAR","2 BARS"}[settings_countin%3u]:
-                      i==MI_PREVIEW?(settings_preview?"ON":"OFF"):(settings_chord_add?"ADD":"HOLD");
+
                 if (i == MI_ACCEL) value = PREF_BITS & PREF_ACCEL_OFF ? "OFF" : "ON";
                 if (i == MI_PICKER) value = PREF_BITS & PREF_PICK_OFF ? "OFF" : "ON";
                 if (i == MI_FONT) value = TY_PIXEL ? "PIXEL" : "RUBIK";
-                if (i == MI_AUTOSAVE) value = settings_autosave ? "ON" : "OFF";
-                if (i == MI_HOME_SEL) value = HS_NAME[home_select()];
-                if (i == MI_GLO_SEL) value = HS_NAME[glo_select()];
-                if (i == MI_TRACKS) value = GLO_SELECT & TRACKS_HIDE ? "HIDE" : "SHOW";
+
+
+
+
                 if (i == MI_SCREEN) value = (const char *const[]){"NEVER", "5 MIN", "15 MIN", "30 MIN", "60 MIN"}[scr_get()];
                 if (i == MI_LIGHTS) value = LIGHTS_NAME[settings_lights % LIGHTS_N];
 #if MELODEE_USB_AUDIO
-                if (i == MI_USB_INPUT) value = ua_tracks_want ? "4 TRACKS" : "STEREO";
+
                 if (i == MI_USB) value = (const char *const[]){"In + Out", "In", "Out", "Off"}[ua_off_want & 3u];
 #endif
                 if (i == MI_HOLD) {                         /* "0.4 s" */
@@ -363,10 +351,7 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
     }
 
 #if MELODEE_USB_AUDIO
-    if ((s != 0 || ok) && ui.menu == 1 && ui.menu_sel == MI_USB_INPUT) {
-        ua_tracks_set(s > 0 ? 1 : s < 0 ? 0 : !ua_tracks_want, fm1_ms);
-        ok = 0;
-    }
+
     if ((s != 0 || ok) && ui.menu == 1 && ui.menu_sel == MI_USB) {
         /* KNOB 1 steps IN+OUT IN OUT OFF, OCT+ steps and wraps; the host gets it once it rests (main.c) */
         uint32_t v = ua_off_want & 3u;
@@ -388,17 +373,8 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
         settings_hold = (uint8_t)(s > 0 ? (v < 3u ? v + 1u : 3u) : s < 0 ? (v ? v - 1u : 0u) : (v + 1u) % 4u);
         ok = 0;
     }
-    if((s || ok) && ui.menu==1 && ui.menu_sel>=MI_CLICK && ui.menu_sel<=MI_ADD){
-        uint32_t id=ui.menu_sel-MI_CLICK,top=id<3?2:1;
-        uint32_t value=id==0?settings_click:id==1?settings_click_level:id==2?settings_countin:id==3?settings_preview:settings_chord_add;
-        value=s>0?(value<top?value+1:value):s<0?(value?value-1:0):(value+1)%(top+1);
-        if(id==0)settings_click=value;else if(id==1)settings_click_level=value;else if(id==2)settings_countin=value;else if(id==3)settings_preview=value;else settings_chord_add=value;
-        ok=0;ui.force=1;
-    }
-    if ((s || ok) && ui.menu == 1 && ui.menu_sel == MI_AUTOSAVE) {
-        settings_autosave = (uint8_t)(s > 0 ? 1u : s < 0 ? 0u : !settings_autosave);
-        ui.force = 1; ok = 0;
-    }
+
+
     if ((s || ok) && ui.menu == 1 && ui.menu_sel == MI_FONT) {   /* KNOB 1 right PIXEL, left RUBIK; OCT+ toggles */
         uint32_t px = s > 0 ? 1u : s < 0 ? 0u : !TY_PIXEL;
         PREF_BITS = (uint8_t)(px ? PREF_BITS | PREF_PIXEL : PREF_BITS & ~PREF_PIXEL);
@@ -415,21 +391,9 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
         PREF_BITS = (uint8_t)(on ? PREF_BITS & ~PREF_ACCEL_OFF : PREF_BITS | PREF_ACCEL_OFF);
         ui.force=1; ok=0;
     }
-    if ((s || ok) && ui.menu == 1 && ui.menu_sel == MI_HOME_SEL) {   /* KNOB 1 steps, OCT+ steps and wraps */
-        uint32_t v = home_select();
-        HOME_SELECT = (uint8_t)(s > 0 ? (v + 1u < HS_N ? v + 1u : v) : s < 0 ? (v ? v - 1u : 0u) : (v + 1u) % HS_N);
-        ui.force = 1; ok = 0;
-    }
-    if ((s || ok) && ui.menu == 1 && ui.menu_sel == MI_TRACKS) {     /* KNOB 1 right HIDE, left SHOW; OCT+ toggles */
-        uint32_t hide = s > 0 ? 1u : s < 0 ? 0u : !(GLO_SELECT & TRACKS_HIDE);
-        GLO_SELECT = (uint8_t)(hide ? GLO_SELECT | TRACKS_HIDE : GLO_SELECT & ~TRACKS_HIDE);
-        ui.force = 1; ok = 0;
-    }
-    if ((s || ok) && ui.menu == 1 && ui.menu_sel == MI_GLO_SEL) {    /* .. GLO SELECT the same */
-        uint32_t v = glo_select();
-        glo_select_set(s > 0 ? (v + 1u < HS_N ? v + 1u : v) : s < 0 ? (v ? v - 1u : 0u) : (v + 1u) % HS_N);
-        ui.force = 1; ok = 0;
-    }
+
+
+
     if ((s || ok) && ui.menu==1 && ui.menu_sel==MI_SCREEN) {
         uint32_t value=scr_get(), top=4u;
         value=s>0?(value<top?value+1u:value):s<0?(value?value-1u:0u):(value+1u)%(top+1u);

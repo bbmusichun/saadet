@@ -47,8 +47,6 @@ static int view_notes(uint32_t *on, uint8_t *of, int *faded)
     fm1_irq_off();                                      /* (one coherent ISR snapshot) */
     for (k = 0; k < trk_n(); k++) {                     /* (the selected one last: its colour wins) */
         uint32_t t = k + 1u == trk_n() ? song.sel % NTRK : k < song.sel ? k : k + 1u;
-        if (drum_track(&trk[t]))
-            continue;
         for (i = 0; i < NVOICE; i++) {
             const voice_t *v = &trk[t].v[i];
             if (v->active && v->gate && v->note < 128u) {

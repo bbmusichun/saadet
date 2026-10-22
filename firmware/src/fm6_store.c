@@ -17,7 +17,7 @@
  * Dexed or any DX7 librarian can edit a track live; SAVE keeps its whole voice. */
 /* main loop: a dump out is built in the project staging RAM (as the update entry stages there): ota_wire_send queues
  * it before returning and runs nothing else meanwhile; a backup transfer then reports stale, as after an update */
-_Static_assert(sizeof proj_wire_u >= FM6_RX, "an FM6 bank dump fits the project staging RAM");
+_Static_assert(sizeof transfer_scratch >= FM6_RX, "an FM6 bank dump fits the project staging RAM");
 
 static int fm6_is(uint32_t k) { return k < trk_n() && trk[k].eng_req == ENGI_FM6; }
 
@@ -48,7 +48,7 @@ static int fm6_send_voice(uint32_t tr, uint32_t ch)       /* VCED: the track's p
     static const uint8_t H[6] = {0xF0, 0x43, 0x00, 0x00, 0x01, 0x1B};
     uint8_t *fm6_buf;
     if (!usb.config) return -1;
-    fm6_buf = proj_wire_borrow();
+    fm6_buf = transfer_borrow();
     memcpy(fm6_buf, H, 6);
     fm6_buf[2] = (uint8_t)(ch & 15u);
     memcpy(fm6_buf + 6, fm6_patch[tr % NTRK], 155);
@@ -62,7 +62,7 @@ static int fm6_send_bank(uint32_t ch)
     static const uint8_t H[6] = {0xF0, 0x43, 0x00, 0x09, 0x20, 0x00};
     if (!usb.config) return -1;
     uint32_t first = fm6_sx_first();
-    uint8_t *fm6_buf = proj_wire_borrow();
+    uint8_t *fm6_buf = transfer_borrow();
     memcpy(fm6_buf, H, 6);
     fm6_buf[2] = (uint8_t)(ch & 15u);
     for (uint32_t k = 0; k < 32u; k++)

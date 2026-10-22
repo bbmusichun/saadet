@@ -24,9 +24,9 @@ static void transaction_tests(void)
     ui_power_on();sound_init_of(TSEL,ENGI_PROPHET);
     p5_patch_of(TSEL)->raw[120]=57; /* opaque bytes must survive */
     designer_sound_t before,after,draft;
-    TSEL->step[0].note[0]=64;TSEL->step[0].n=1;TSEL->p[P_ARATE]=3;
+    TSEL->p[P_ARATE]=3;
     designer_snapshot(&before);
-    uint32_t steps=steps_sig(TSEL);int16_t arp=TSEL->p[P_ARATE];
+    int16_t arp=TSEL->p[P_ARATE];
     designer_open();
     turn(EN_K2,1);int init=designer_init() && ds.goal==DG_FREE;turn(EN_K2,1);turn(EN_K2,1);
     int pad=designer_init() && ds.goal==DG_PAD;turn(EN_K1,1);turn(EN_K2,-1);turn(EN_K2,-1);turn(EN_K2,-1);turn(EN_K2,-1);
@@ -42,9 +42,9 @@ static void transaction_tests(void)
     press(B_SAVE);designer_snapshot(&after);
     failures+=check("second SAVE returns to exact edited draft",!ds.compare && !memcmp(&draft,&after,sizeof draft));
     designer_finish_row(2);designer_snapshot(&after);
-    failures+=check("discard restores exact original without touching pattern or arp",!designer_on() && !memcmp(&before,&after,sizeof before) && steps_sig(TSEL)==steps && TSEL->p[P_ARATE]==arp);
+    failures+=check("discard restores exact original without touching pattern or arp",!designer_on() && !memcmp(&before,&after,sizeof before) && TSEL->p[P_ARATE]==arp);
     designer_open();ds.eng=ENGI_CZ;ds.current=0;press(B_OCTUP);
-    failures+=check("engine change happens on BEGIN and retains pattern",TSEL->eng_req==ENGI_CZ && steps_sig(TSEL)==steps);
+    failures+=check("engine change happens on BEGIN and retains pattern",TSEL->eng_req==ENGI_CZ);
     press(B_SAVE);press(B_SAVE);designer_finish_row(2);designer_snapshot(&after);
     failures+=check("cross-engine compare/discard restores the original native patch",!memcmp(&before,&after,sizeof before));
 }
@@ -116,8 +116,8 @@ static void feature_tests(void)
     int first=1,states=1,audible=1,steady=1,drums=1;
     for(uint32_t ei=0;ei<NENG_SHOWN;ei++){
         eng_state_reset();ui_power_on();sound_init_of(TSEL,eng_vis(ei));designer_open();press(B_OCTUP);
-        if(drum_track(TSEL))drums&=ds.stage!=DT_BUILD;
-        else first&=ds.stage==DT_BUILD && designer_feat_on() && ds.at==0;
+
+        first&=ds.stage==DT_BUILD && designer_feat_on() && ds.at==0;
         designer_close(1);
     }
     for(uint32_t e=0;e<NELEM(engines);e++){
@@ -184,7 +184,7 @@ static void audition_tests(void)
         eng_state_reset();ui_power_on();sound_init_of(TSEL,engines[e]);designer_open();press(B_OCTUP);
         turn(EN_K1+designer_feature(engines[e]==ENGI_FM6?DF_OP1+1:engines[e]==ENGI_CZ?DF_RING:DF_PULSEA),1);
         press(B_OCTUP);turn(EN_SELECT,1);turn(EN_K1,1);press(B_SAVE);press(B_SAVE);
-        quiet&=!song.playing && !transport_req && !seq_counting();
+        quiet&=!song.playing;
         for(uint32_t i=0;i<NVOICE;i++)quiet&=!TSEL->v[i].active;
         TSEL->engine=TSEL->eng_req;eng_state_prepare(TSEL);
         key_down(5);frame();
@@ -212,10 +212,10 @@ static void route_recipe_tests(void)
         clean &= !song.grid && !kb_mask ;
         if(TSEL->eng_req==ENGI_CZ)valid &= cz_patch_valid(cz_patch[0].raw);
         TSEL->engine=TSEL->eng_req;memset(TSEL->v,0,sizeof TSEL->v);eng_state_clear(0);eng_state_prepare(TSEL);
-        trk_note_on(TSEL,drum_track(TSEL)?36:60,100);int64_t energy=0;int32_t out[CTL];
+        trk_note_on(TSEL,60,100);int64_t energy=0;int32_t out[CTL];
         for(uint32_t k=0;k<1000;k++){track_render(TSEL,out,CTL);for(uint32_t n=0;n<CTL;n++)energy+=llabs(out[n]);}
         if(!energy){printf("silent recipe: %s %s\n",ENGINES[TSEL->eng_req]->name,DS_GOAL[goal]);audible=0;}
-        trk_note_off(TSEL,drum_track(TSEL)?36:60);
+        trk_note_off(TSEL,60);
         designer_close(1);
     }
     failures+=check("ALL pages: every eligible page, each FM operator switched on, nothing switched off",coverage);
@@ -229,7 +229,7 @@ static void save_tests(void)
     turn(EN_K1+designer_feature(DF_UNISON),1);
     designer_finish_row(1);
     failures+=check("Save as user.. keeps the design and opens USER, as SAVE does",
-                    !designer_on() && cur_page()->graph==GR_USER && p5_patch_of(TSEL)->raw[P5_UNISON] && !motion_design_pause);
+                    !designer_on() && cur_page()->graph==GR_USER && p5_patch_of(TSEL)->raw[P5_UNISON]);
     press(B_OCTUP);if(pop.on)press(B_OCTUP);if(ui.confirm)press(B_OCTUP);
     failures+=check("its slot is named with the existing NAME screen",name_on() && nm.kind==NK_USER_SAVE);
     str_cpy(nm.s,"MY NEW TONE",sizeof nm.s);nm.len=(uint8_t)str_len(nm.s);nm.cur=nm.len;press(B_OCTUP);
@@ -246,28 +246,15 @@ static void save_tests(void)
     failures+=check("SELECT turns the pages",ds.at==at+1u && !designer_feat_on());
     uint32_t st=ds.stage;turn(EN_PRESET,1);
     failures+=check("PRESETS jumps to the next stage's first page",ds.stage>st && (ds.at==0 || ds.route[ds.at-1u].stage!=ds.stage));
-    project_save(0);
-    TSEL->p[P_RESERVED35]=7;project_load(0);
-    failures+=check("external project load ends design without restoring over the new project",!designer_on() && !motion_design_pause);
     ui_power_on();ui.menu=1;ui.menu_sel=MI_DESIGNER;menu_input(2);
     failures+=check("designer is reachable from device menu",designer_on() && !ui.menu);
     press(B_OCTUP);ui.menu=1;ui.menu_sel=MI_DESIGNER;menu_input(2);
     failures+=check("the menu's SOUND DESIGNER over an open design goes back to it",designer_on() && !ui.menu && ui.designer_mode==DS_SHAPE);
     designer_close(1);
 }
-static void motion_tests(void)
-{
-    ui_power_on();motion_design_pause=0;
-    motion.count=1;motion.on=1;motion.event[0]=(motion_event_t){.place=0,.param=P_E4,.value=17};motion_pattern[0]=TSEL->pattern;
-    motion_event_t event=motion.event[0];
-    designer_open();press(B_OCTUP);TSEL->p[P_E4]=92;motion_step(TSEL,0,&motion);
-    failures+=check("existing automation cannot overwrite a wizard edit",TSEL->p[P_E4]==92 && motion.on==1 && !memcmp(&motion.event[0],&event,sizeof event));
-    designer_close(0);motion_step(TSEL,0,&motion);
-    failures+=check("leaving resumes unchanged recorded automation",!motion_design_pause && TSEL->p[P_E4]==17 && motion.on==1 && motion.count==1);
-    motion_end();motion.count=motion.on=0;
-}
+
 int main(void)
 {
-    transaction_tests();dependency_tests();feature_tests();audition_tests();route_recipe_tests();save_tests();motion_tests();
+    transaction_tests();dependency_tests();feature_tests();audition_tests();route_recipe_tests();save_tests();
     printf("sound designer: %d failure(s)\n",failures);return failures?1:0;
 }

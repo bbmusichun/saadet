@@ -77,7 +77,7 @@ static void integration(void)
     assert(!resource[RES_FX0].size);
     for(uint32_t id=0;id<RES_COUNT;id++)resource_release(id);
     memset(fx_state,0,sizeof fx_state);
-    assert(resource_get(RES_NOTE_HISTORY,RESOURCE_MAIN_CAPACITY-32768u));
+    assert(resource_get(RES_ENGINE0,RESOURCE_MAIN_CAPACITY-32768u));
     trk[0].p[P_FXMIX]=127;assert(!fx_process(&trk[0],samples,CTL));
     assert(fx_state[0].failed && !resource[RES_FX0].size);
     for(uint32_t i=0;i<CTL;i++)assert(samples[i]==5000);

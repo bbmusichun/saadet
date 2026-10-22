@@ -8,15 +8,8 @@
  * Linker-derived SRAM tails are separate banks: an allocation never spans a
  * code/data/retained-state boundary. Small banks first preserve the large
  * contiguous POOL bank for engine state and note history. */
-enum { RES_ENGINE0, RES_NOTE_HISTORY = RES_ENGINE0 + NPART, RES_FX0,
-       RES_RECORD_UNDO = RES_FX0 + FX_STATE_COUNT,
-       RES_STEP_UNDO, RES_LOAD_UNDO,
-#if MELODEE_USB_AUDIO
-       RES_USB_TRACKS,
-#endif
-       RES_PUNCH, RES_COUNT };
-static uint8_t recording_undo_lost;
-static uint8_t recording_undo_active, recording_undo_skip;
+enum { RES_ENGINE0, RES_FX0 = RES_ENGINE0 + NPART,
+       RES_LOAD_UNDO = RES_FX0 + FX_STATE_COUNT, RES_PUNCH, RES_COUNT };
 static struct { void *ptr; uint32_t size; } resource[RES_COUNT];
 static uint32_t resource_peak, resource_failures;
 #ifdef FM1_IRQ_TARGET
@@ -135,26 +128,8 @@ static inline void *resource_get(uint32_t id, uint32_t bytes)
     uint32_t size=(bytes+3u)&~3u;
     if(size && size==resource[id].size)return resource[id].ptr;
     void *p=resource_allocate(id,bytes);
-    /* UI history never competes with a sounding engine/effect. Retire whole
-     * histories only after the ordinary allocation failed; their consumers
-     * validate the handle under the audio guard before touching a snapshot. */
-    if(!p && bytes && bytes<=RESOURCE_CAPACITY &&
-       (id==RES_PUNCH || id<RES_NOTE_HISTORY || (id>=RES_FX0 && id<RES_RECORD_UNDO)
-#if MELODEE_USB_AUDIO
-        || id==RES_USB_TRACKS
-#endif
-       ) &&
-       (resource[RES_STEP_UNDO].size || resource[RES_LOAD_UNDO].size)){
-        resource_release(RES_STEP_UNDO);resource_release(RES_LOAD_UNDO);
-        p=resource_allocate(id,bytes);
-    }
-    /* A history snapshot must never prevent a voice/effect from acquiring its
-     * working memory. It is disposable, unlike sounding engine state. */
-    if(!p && bytes && bytes<=RESOURCE_CAPACITY && id!=RES_RECORD_UNDO &&
-       id!=RES_STEP_UNDO && id!=RES_LOAD_UNDO &&
-       resource[RES_RECORD_UNDO].size){
-        resource_release(RES_RECORD_UNDO);recording_undo_lost=1;
-        recording_undo_skip|=recording_undo_active;recording_undo_active=0;
+    if(!p && bytes && id!=RES_LOAD_UNDO && resource[RES_LOAD_UNDO].size){
+        resource_release(RES_LOAD_UNDO);
         p=resource_allocate(id,bytes);
     }
     return p;

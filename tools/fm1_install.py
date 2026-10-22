@@ -47,7 +47,7 @@ STOCK_V15_SHA256 = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7e
 MELODEE_LOADER, STOCK_LOADER = "ota-FM-1_900", "ota-FM-1_015"
 LOADER_HINT = {MELODEE_LOADER: "finish the interrupted Melodee install with a Melodee package first",
                STOCK_LOADER: "finish the interrupted return to stock with the official FM-1.fwsc first"}
-PORT_RE = re.compile(r"fm-1|melodee|felucca|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
+PORT_RE = re.compile(r"saadet|fm-1|melodee|felucca|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
 
 # seconds; the tests shorten them
 DELAY = {"open": 0.3, "start": 2.0, "reply": 0.01, "loader": 3.0, "reboot": 3.0, "retry": 1.0,

@@ -122,7 +122,7 @@ static void fm1_fault(const fm1_crash_t *c)
     fm1_audio_stop();
     scr_wake_now();
     lcd_fill(0, 0, 240, 240, UI_CRASH_BG);            /* fixed, outside the palettes */
-    draw_text_line(0, 10, 240, TY_TX, "Melodee crash", UI_CRASH_INK, UI_CRASH_BG, 1);   /* (large type) */
+    draw_text_line(0, 10, 240, TY_TX, "Saadet crash", UI_CRASH_INK, UI_CRASH_BG, 1);   /* (large type) */
     hexs(b, c->vec);
     draw_text_line(10, 48, 220, TY_TX, b, UI_CRASH_INK, UI_CRASH_BG, 0);
     hexs(b, c->pc);
@@ -145,8 +145,7 @@ static void melodee_init(void)
     uint32_t i;
     midi_insert_init();
     punch_reset();
-    chain_defaults(&chain_config);
-    pattern_init();
+
     for (i = 0; i < G_COUNT; i++)
         song.g[i] = GP[i].def;
     undo_depth++;                             /* (no undo copy of the power-on loads) */
@@ -158,9 +157,6 @@ static void melodee_init(void)
         set_engine_of(t, TRK_DEF[i][0]);
         apply_preset_to(t, TRK_DEF[i][1]);    /* with its sends */
         t->engine = t->eng_req;
-        track_defaults_steps(t);              /* (a sound load never touches them) */
-        pat_sig[i] = steps_sig(t);            /* (empty: not the user's) */
-        pat_last[i] = 0;
     }
     undo_depth--;
     song.sel = 0;
@@ -176,7 +172,7 @@ static void fm1_main(void)
     settings_init();                           /* a readable default palette before loading flash */
     lcd_init();                                /* maintenance must be visible before any boot writes */
     lcd_fill(0, 0, 240, 240, T_BG);
-    draw_text_box(0, 70, 240, TY_HR, "MELODEE", T_THEME, 1);   /* (large type) */
+    draw_text_box(0, 70, 240, TY_HR, "SAADET", T_THEME, 1);   /* (large type) */
     draw_text_box(0, 140, 240, TY_TX, "Starting up", T_MID, 1);
     lcd_sync();
     dsp_tables_init();                        /* the RAM lookup tables (FM6), before anything renders */
@@ -189,7 +185,7 @@ static void fm1_main(void)
     clock_boot();                             /* the voice budget at the clock found (never changed) */
     if (boot_work.state != 2u) {
         lcd_fill(0, 0, 240, 240, T_BG);
-        draw_text_box(0, 70, 240, TY_HR, "MELODEE", T_THEME, 1);
+        draw_text_box(0, 70, 240, TY_HR, "SAADET", T_THEME, 1);
         draw_text_box(0, 140, 240, TY_TX, "Multi-engine synth", T_MID, 1);
     }
     if (melodee_dbg.magic != DBG_MAGIC) {
@@ -234,8 +230,7 @@ static void fm1_main(void)
         panel_setup();                        /* OCT- + OCT+ held at power-on */
         settings_save();
     }
-    glo_restore();                            /* CLK TUNE MIDI ROUT as last used, */
-    project_boot();                           /* then the BOOT project or the template (theirs win) */
+    state_boot();
     fm1_delay_ms(400);
     if (boot_work.state != 2u)
         lcd_fill(0, 0, 240, 240, T_BG);
@@ -243,7 +238,7 @@ static void fm1_main(void)
     for (;;) {
         uint32_t m = fm1_ms;
         fm1_wdt_feed();
-        pattern_poll();
+
         usb_retry(fm1_ms);
 #if MELODEE_USB_AUDIO
         int usb_change=ua_off_apply(fm1_ms);
@@ -331,7 +326,6 @@ static void fm1_main(void)
         melodee_dbg.home = ui.home;
         melodee_dbg.stage = 1;
         ui_input();
-        glo_poll();                                     /* a kept GLO value changed: the settings, later */
         settings_poll();                              /* queued settings save: only while stopped */
         melodee_dbg.stage = 2;
         ui_leds();

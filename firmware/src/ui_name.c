@@ -1,14 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio)
  * Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Melodee UI: NAME, naming a user preset or a project on the device (included by ui_input.c).
+/* Melodee UI: NAME, naming a user preset or a CZ-1 tone on the device (included by ui_input.c).
  *
- * Where: SAVE > USER, SAVE (KNOB 4, OCT+) and SAVE > PROJECT, SAVE: after the OVERWRITE? dialog when the slot is
- * used, the NAME screen opens before anything is written; OCT+ writes, OCT- cancels (back to the page, nothing
- * written). EDIT on those pages renames the selected slot (only its name is written). The name is prefilled:
- * USER the sound's own (the user preset it came from) or the automatic one ("DIGITAL 14"), PROJECT the current
- * project's (as loaded or last saved; none: "PROJECT A"), so SAVE, OCT+, OCT+ saves with the default name.
- * Writing needs the transport stopped (STOP TO SAVE; the screen stays).
+ * Where: SAVE > USER, SAVE (KNOB 4, OCT+): after the OVERWRITE? dialog when the slot is used, the NAME screen opens
+ * before anything is written; OCT+ writes, OCT- cancels (back to the page, nothing written). EDIT on that page
+ * renames the selected slot (only its name is written). The name is prefilled: the sound's own (the user preset it
+ * came from) or the automatic one ("FM6 14"), so SAVE, OCT+, OCT+ saves with the default name. Writing needs the
+ * external transport stopped (STOP TO SAVE; the screen stays).
  *
  * The keys type and never sound, record or send MIDI (seq.c keyboard_block: song.grid 2). Upper case, at most 12:
  *   white keys   ABC (letters): AB CD EF GH IJK LM NO PQ RS TU VW XYZ, then 123 456 789 0-. ; phone style: a tap
@@ -19,8 +18,8 @@
  *                before the cursor; held: repeats, as the arrows do), D# ABC / 123.
  *   KNOB 1       the cursor; KNOB 2 the character at the cursor (SPACE A..Z 0..9 - . _ / # +; at the end: a new one).
  *   LEDs         every key that types or edits is lit; the key whose letters are being cycled blinks.
- * Spaces at either end are dropped when it is written; an empty name: USER the automatic one, PROJECT none. */
-enum { NK_NONE, NK_USER_SAVE, NK_USER_RENAME, NK_PROJ_SAVE, NK_PROJ_RENAME, NK_CZ_NAME };
+ * Spaces at either end are dropped when it is written; an empty name: the automatic one. */
+enum { NK_NONE, NK_USER_SAVE, NK_USER_RENAME, NK_CZ_NAME };
 #define NM_LEN 12u
 #define NM_TAP_MS 800u                                 /* multi-tap: the next letter within this */
 #define NM_REP_MS 450u                                 /* a held arrow / DELETE repeats after this, */
@@ -41,13 +40,13 @@ static struct {
     uint32_t t, rep_t;                                 /* fm1_ms of the last tap; of the next repeat */
     uint32_t sig;                                      /* drawn-state cache */
     char s[P5_NAME_LEN + 1u];
-    char ph[P5_NAME_LEN + 1u];                              /* what an empty name saves as / shows ("PROJECT A") */
+    char ph[P5_NAME_LEN + 1u];                              /* what an empty name saves as / shows ("FM6 14") */
 } nm __attribute__((section(".pool")));                /* (zero-initialised; main loop only: off the audio code's .bss) */
 
 static uint32_t name_limit(void)
 {
     if(nm.kind==NK_CZ_NAME)return CZ_NAME_LEN;
-    if((nm.kind==NK_USER_SAVE || nm.kind==NK_USER_RENAME) && native_limit(nm.kind==NK_USER_RENAME?up_engine(nm.slot):TSEL->eng_req)) {uint32_t e=nm.kind==NK_USER_RENAME?up_engine(nm.slot):TSEL->eng_req;return e==ENGI_PROPHET?P5_NAME_LEN:e==ENGI_FM6?10u:CZ_NAME_LEN;}
+    if((nm.kind==NK_USER_SAVE || nm.kind==NK_USER_RENAME) && native_limit(TSEL->eng_req))return TSEL->eng_req==ENGI_PROPHET?P5_NAME_LEN:TSEL->eng_req==ENGI_FM6?10u:CZ_NAME_LEN;
     return NM_LEN;
 }
 static int name_on(void) { return nm.kind != NK_NONE; }
@@ -57,9 +56,8 @@ static void name_close(void)
         ui.force = 1;
     nm.kind = NK_NONE; ui.name_active = 0;
 }
-/* the keys: 2 = NAME's and SEQ's pattern dialog's (silent), 1 = the DRUM grid, 0 = notes (seq.c keyboard_block reads
- * song.grid) */
-static uint32_t keys_mode(void) { return name_on() || ui.confirm == CF_PAT_KEY ? 2u : designer_on() ? 0u : (uint32_t)grid_on(); }
+/* the keys: 2 = NAME's (silent), 0 = notes (seq.c keyboard_block reads song.grid) */
+static uint32_t keys_mode(void) { return name_on() ? 2u : 0u; }
 
 static const char *nm_group(uint32_t p)                /* white key place p's characters */
 {
@@ -94,10 +92,10 @@ static void name_open(uint32_t kind, uint32_t slot)
         for(uint32_t k=CZ_NAME_LEN;k && b[k-1]==' ';k--)b[k-1]=0;
         str_cpy(nm.ph,"CZ TONE",sizeof nm.ph);
     }else if (kind == NK_USER_SAVE || kind == NK_USER_RENAME) {
-        uint32_t e = kind == NK_USER_RENAME ? up_engine(slot) : TSEL->eng_req;
+        uint32_t e = kind == NK_USER_RENAME && !native_limit(TSEL->eng_req) ? up_engine(slot) : TSEL->eng_req;
         up_auto_name(nm.ph, e, slot);
         uint32_t origin=kind==NK_USER_RENAME?slot:user_of(TSEL);
-        if(origin<USER_NONE && native_used(e,origin)){
+        if(origin<USER_NONE && (kind==NK_USER_RENAME || TSEL->user_native) && native_limit(e)){
             uint32_t len=e==ENGI_PROPHET?20u:e==ENGI_FM6?10u:16u,off=e==ENGI_PROPHET?P5_NAME:e==ENGI_FM6?118u:128u;
             memcpy(b,native_raw(e,origin)+off,len);b[len]=0;
             for(uint32_t i=0;i<len;i++)if(b[i]<' ' || b[i]>'~')b[i]=' ';
@@ -110,32 +108,24 @@ static void name_open(uint32_t kind, uint32_t slot)
         }
         else
             str_cpy(b, nm.ph, sizeof b);
-    } else {
-        str_cpy(nm.ph, "PROJECT A", sizeof nm.ph);
-        nm.ph[8] = (char)('A' + (slot & 3u));
-        if (kind == NK_PROJ_RENAME)
-            project_name(slot, b);
-        else
-            project_cur_name(b);
     }
     str_cpy(nm.s, b, sizeof nm.s);
     nm.len = nm.cur = (uint8_t)str_len(nm.s);
     ui.force = 1;
 }
 
-/* SAVE > USER / PROJECT, EDIT: rename the selected slot */
+/* SAVE > USER, EDIT: rename the selected slot */
 static void name_rename(void)
 {
-    int user = cur_page()->graph == GR_USER;
-    uint32_t k = user ? ui.uslot : (uint32_t)song.g[G_SLOT] - 1u;
-    if (!user && song.g[G_SLOT] == PROJ_TMPL)
-        return;                                       /* (the template has no name) */
-    if (!(user ? up_used(k) : project_used(k)))
+    uint32_t k = ui.uslot;
+    if (cur_page()->graph != GR_USER)
+        return;
+    if (!user_used(k))
         ui_message("EMPTY SLOT");
     else if (transport_busy())
         ui_message("STOP TO SAVE");
     else
-        name_open(user ? NK_USER_RENAME : NK_PROJ_RENAME, k);
+        name_open(NK_USER_RENAME, k);
 }
 
 static void nm_commit(void)                            /* the letter being cycled is kept: the cursor past it */
@@ -247,16 +237,10 @@ static void name_ok(void)
         cz_compare_take(nm.slot);memset(cz_patch[nm.slot].raw+128,' ',CZ_NAME_LEN);memcpy(cz_patch[nm.slot].raw+128,b,str_len(b));
         ui_message("TONE NAMED");break;
     case NK_USER_SAVE:
-        up_ui_named(2, nm.slot, b);
-        break;
-    case NK_USER_RENAME:
-        up_ui_named(3, nm.slot, b);
-        break;
-    case NK_PROJ_SAVE:
-        project_save_as(nm.slot, b);
+        user_ui_named(2, nm.slot, b);
         break;
     default:
-        project_rename(nm.slot, b);
+        user_ui_named(3, nm.slot, b);
         break;
     }
     name_close();
@@ -319,10 +303,10 @@ static uint32_t name_leds(void)
  * then the knobs and the keys */
 static void nm_title(char *b)
 {
-    str_cpy(b, nm.kind == NK_USER_SAVE || nm.kind == NK_PROJ_SAVE ? "SAVE " : "NAME ", 8);
+    str_cpy(b, nm.kind == NK_USER_SAVE ? "SAVE " : "NAME ", 8);
     if(nm.kind==NK_CZ_NAME){str_cpy(b,"NAME CZ TONE",24);return;}
     if (nm.kind <= NK_USER_RENAME)
-        up_slot_label(b + 5, nm.slot);
+        user_label(b + 5, nm.slot);
     else
         str_cpy(b + 5, nm.ph, 12);                     /* "PROJECT A" */
 }
@@ -332,11 +316,11 @@ static void nm_title(char *b)
  * back, OCT+ Save (or Rename; dim while it cannot write) */
 static void nm_draw_name(void)
 {
-    char b[40], c[2] = {0, 0};
+    char b[24], c[2] = {0, 0};
     uint32_t i, empty = nm.len == 0u, first = 0, n = empty ? str_len(nm.ph) : nm.len;
-    const aafont_t *f = name_limit() <= NM_LEN ? TY_VL : TY_TX, *lf = TY_LB;
-    int32_t x, w = 0, cy = 28, bt = cy - f->cap / 2 - 6, bh = f->cap + 12;
-    cv_begin(240, 22, T_BG);                            /* "Save U07", "7 / 12" (the label face) */
+    const aafont_t *f = name_limit() <= NM_LEN ? TY_VL : TY_TX;
+    int32_t x, w = 0;
+    cv_begin(240, 18, T_BG);                            /* "Save U07", "7 / 12" */
     nm_title(b);
     for (i = 1, x = 0; b[i]; i++) {                     /* "SAVE PROJECT C" -> "Save project C"; U07, CZ kept */
         uint32_t e = i, alpha = 1;
@@ -348,90 +332,78 @@ static void nm_draw_name(void)
     }
     for (i = 1; b[i] && b[i] != ' '; i++)
         if (b[i] >= 'A' && b[i] <= 'Z') b[i] = (char)(b[i] + 32);
-    cv_text_on(12, ty_y(11, lf), lf, b, T_MID, T_BG);
+    cv_text_on(10, 3, TY_LB, b, T_MID, T_BG);
     fmt_int(b, nm.len);
     str_cpy(b + str_len(b), " / ", 4);
     fmt_int(b + str_len(b), (int32_t)name_limit());
-    cv_text_r(228, ty_y(11, lf), lf, b, nm.len >= name_limit() ? T_THEME : T_MID, T_BG);
-    cv_blit(0, H_HEAD);
-    {   /* the name in one kerned string from the first letter that keeps the cursor's in 200 px; the cursor's letter
-         * on the track's colour over it, at the end a bar */
-        const char *src = empty ? nm.ph : nm.s;
-        char v[40], ch[2] = {0, 0};
-        uint32_t m;
-        for (first = 0; first < nm.cur; first++) {
-            m = (nm.cur < n ? nm.cur + 1u : n) - first;
-            str_cpy(v, src + first, m + 1u < sizeof v ? m + 1u : sizeof v);
-            if (text_w(f, v) <= 200)
-                break;
-        }
-        str_cpy(v, src + first, n - first + 1u < sizeof v ? n - first + 1u : sizeof v);
-        while (v[0] && text_w(f, v) > 214)
-            v[str_len(v) - 1u] = 0;
-        cv_begin(240, 60, T_BG);
-        m = nm.cur - first;                             /* (the cursor's place in v) */
-        if (empty || m >= str_len(v)) {                 /* (at the end: the name, then a bar where the next goes) */
-            x = cv_text_on(12, ty_y(cy, f), f, v, empty ? T_DIM : T_TEXT, T_BG);
-            if (!empty)
-                cv_rrect(x + 1, bt + 2, 3, bh - 4, 1, T_THEME, T_BG);
-        } else {                                        /* (before it, the cursor's letter on the track's colour, after) */
-            str_cpy(b, v, m + 1u);
-            ch[0] = v[m];
-            w = text_w(f, ch);
-            x = cv_text_on(12, ty_y(cy, f), f, b, T_TEXT, T_BG) + 4;   /* (the box 2 px clear of its neighbours) */
-            cv_rrect(x - 2, bt, w + 4, bh, 5, T_THEME, T_BG);
-            cv_text_on(x, ty_y(cy, f), f, ch, T_INK, T_THEME);
-            cv_text_on(x + w + 4, ty_y(cy, f), f, v + m + 1, T_TEXT, T_BG);
-        }
+    cv_text_r(230, 3, TY_LB, b, nm.len >= name_limit() ? T_THEME : T_MID, T_BG);
+    cv_blit(0, 26);
+    for (i = nm.cur; i > 0u; i--) {                     /* (the window: the cursor's letter in the 210 px) */
+        c[0] = i - 1u < n ? (empty ? nm.ph[i - 1u] : nm.s[i - 1u]) : ' ';
+        w += text_w(f, c) + 2;
+        if (w > 204) { first = i; break; }
     }
-    cv_rect(10, 56, 220, 1, T_LINE);
-    cv_blit(0, H_HEAD + 22);
-    {                                                   /* the characters around the cursor's (the cursor's large, in
-                                                         * a ring) */
+    cv_begin(240, 52, T_BG);
+    for (i = first, x = 12; i <= n && i <= nm.cur + 12u && x < 228; i++) {
+        int on = !empty && i == nm.cur && i < n;
+        c[0] = i < n ? (empty ? nm.ph[i] : nm.s[i]) : 0;
+        if (!c[0]) {                                    /* at the end: where the next one goes */
+            if (i == nm.cur)
+                cv_rrect(x + 1, f == TY_VL ? 8 : 18, 3, f == TY_VL ? 32 : 18, 1, T_THEME, T_BG);
+            break;
+        }
+        w = text_w(f, c);
+        if (on)
+            cv_rrect(x - 1, f == TY_VL ? 6 : 16, w + 2, f == TY_VL ? 36 : 20, 4, T_THEME, T_BG);
+        cv_text_on(x, f == TY_VL ? 6 : 17, f, c, on ? T_INK : empty ? T_DIM : T_TEXT, on ? T_THEME : T_BG);
+        x += w + 2;
+    }
+    cv_rect(10, 48, 220, 1, T_LINE);
+    cv_blit(0, 46);
+    {                                                   /* the characters around the cursor's */
         uint32_t at = 0, len = sizeof NM_SET - 1u;
         int32_t d;
         char ch = !empty && nm.cur < nm.len ? nm.s[nm.cur] : ' ';
         while (at < len && NM_SET[at] != ch) at++;
         if (at >= len) at = 0;
-        cv_begin(240, 46, T_BG);
-        for (d = -3; d <= 3; d++) {
+        cv_begin(240, 30, T_BG);
+        for (d = -4; d <= 4; d++) {
             uint32_t j = (uint32_t)(((int32_t)at + d + (int32_t)len) % (int32_t)len);
-            int32_t cx = 120 + d * 32;
+            int32_t cx = 120 + d * 24;
             c[0] = NM_SET[j];
             if (!d) {
-                cv_rrect(cx - 19, 2, 38, 42, 8, T_THEME, T_BG);
-                cv_rrect(cx - 17, 4, 34, 38, 7, T_LIFT, T_THEME);
+                cv_rrect(cx - 13, 1, 26, 28, 6, T_THEME, T_BG);
+                cv_rrect(cx - 11, 3, 22, 24, 5, T_LIFT, T_THEME);
             }
             if (c[0] == ' ')
-                cv_disc(cx, 23, 5, d ? T_DIM : T_TEXT, 0);
+                cv_disc(cx, 15, 3, d ? T_DIM : T_TEXT, 0);
             else if (!d)
-                cv_text_c(cx, ty_y(23, TY_VL), TY_VL, c, T_TEXT, T_LIFT);
+                cv_text_c(cx, 6, TY_TX, c, T_TEXT, T_LIFT);
             else
-                cv_text_c(cx, ty_y(23, TY_TX), TY_TX, c, d == 1 || d == -1 ? T_SEC : d == 2 || d == -2 ? T_MID : T_DIM,
-                          T_BG);
+                cv_text_c(cx, 9, TY_LB, c, d == 1 || d == -1 ? T_SEC : d == 2 || d == -2 ? T_MID : T_DIM, T_BG);
         }
-        cv_blit(0, H_HEAD + 86);
+        cv_blit(0, 114);
     }
-    cv_begin(240, 30, T_BG);                            /* ABC / 123: what the white keys type */
-    cv_text_c(94, ty_y(15, TY_TX), TY_TX, "ABC", nm.num ? T_MID : T_THEME, T_BG);
-    cv_text_c(146, ty_y(15, TY_TX), TY_TX, "123", nm.num ? T_THEME : T_MID, T_BG);
-    cv_blit(0, H_HEAD + 138);
-    {                                                   /* the keys: OCT- back, OCT+ Save */
+    cv_begin(240, 18, T_BG);                            /* ABC / 123 */
+    cv_text_c(104, 3, TY_LB, "ABC", nm.num ? T_MID : T_THEME, T_BG);
+    cv_text_c(136, 3, TY_LB, "123", nm.num ? T_THEME : T_MID, T_BG);
+    cv_blit(0, 156);
+    {                                                   /* the keys */
         int ok = !transport_busy();
-        const char *go = nm.kind == NK_USER_SAVE || nm.kind == NK_PROJ_SAVE ? "Save" : "Rename";
-        int32_t gw = text_w(TY_TX, go) + 42;
-        cv_begin(240, H_FOOT, T_BG);
-        cv_rrect(4, 2, 48, 24, 6, T_SURF, T_BG);
-        cv_icon_mid(20, 14, 16, ICON_X_UNDO, T_MID, T_SURF);
-        cv_rrect(236 - gw, 2, gw, 24, 6, ok ? T_THEME : T_SURF, T_BG);
-        cv_icon_mid(236 - gw + 10, 14, 16, ICON_X_CHECK, ok ? T_INK : T_DIM, ok ? T_THEME : T_SURF);
-        cv_text_on(236 - gw + 32, ty_y(14, TY_TX), TY_TX, go, ok ? T_INK : T_DIM, ok ? T_THEME : T_SURF);
-        cv_blit(0, Y_FOOT);
+        const char *go = nm.kind == NK_USER_SAVE ? "Save" : "Rename";
+        int32_t gw = text_w(TY_LB, go) + 30;
+        cv_begin(240, 24, T_BG);
+        cv_rrect(6, 2, 40, 20, 5, T_SURF, T_BG);
+        cv_icon_mid(20, 12, 12, ICON_X_UNDO, T_MID, T_SURF);
+        cv_rrect(234 - gw, 2, gw, 20, 5, ok ? T_THEME : T_SURF, T_BG);
+        cv_icon_mid(234 - gw + 8, 12, 12, ICON_X_CHECK, ok ? T_INK : T_DIM, ok ? T_THEME : T_SURF);
+        cv_text_on(234 - gw + 22, 4, TY_LB, go, ok ? T_INK : T_DIM, ok ? T_THEME : T_SURF);
+        cv_blit(0, 212);
     }
 }
 static void name_draw(void)
 {
-    uint8_t st[8] = {nm.kind, (uint8_t)nm.slot, (uint8_t)(nm.slot>>8), nm.len, nm.cur, nm.num, nm.key, nm.tap};
+    uint16_t st[7] = {nm.kind, nm.slot, nm.len, nm.cur, nm.num, nm.key, nm.tap};
     uint32_t sig = fnv(fnv(2166136261u, st, sizeof st), nm.s, sizeof nm.s) + ux.gen * 7919u +
                    (uint32_t)transport_busy() * 104729u;
     if (ui.force) {

@@ -28,7 +28,7 @@ static const char *const N_ALLOC[] = {"ROT", "REUSE"};
 static const char *const N_ORDER[] = {"NOTE", "PLAY"};
 static const char *const N_CLOCK[] = {"INT", "USB", "TRS"};
 static const char *const N_MIDI_INPUT[] = {"USB", "TRS"};
-static const char *const N_ROUTE[] = {"CH1-4", "SEL", "CH5-8", "CH9-12", "CH13-16"}; /* Keep saved CH1-4/SEL ids; append ranges. */
+static const char *const N_ROUTE[] = {"OMNI", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"}; /* Keep saved CH1-4/SEL ids; append ranges. */
 static const char *const N_NOTE[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const N_DASH[] = {"--"};
 static const char *const N_GO[] = {"--", "GO"};
@@ -143,14 +143,14 @@ static const param_desc_t TP[P_COUNT] = {
     [P_FX2RATE] = PD("RATE", F_LFOHZ, 0, 127, 60), [P_FX2CHAR] = PD("CHAR", F_PCT, 0, 127, 64),
     [P_FX3TYPE] = PE("FX", N_FX, 0), [P_FX3MIX] = PD("MIX", F_PCT, 0, 127, 0),
     [P_FX3RATE] = PD("RATE", F_LFOHZ, 0, 127, 60), [P_FX3CHAR] = PD("CHAR", F_PCT, 0, 127, 64),
-    [P_LN0] = PD("KICK", F_PCT, 0, 127, 127),
-    [P_LN1] = PD("SNARE", F_PCT, 0, 127, 127),
-    [P_LN2] = PD("CLAP", F_PCT, 0, 127, 127),
-    [P_LN3] = PD("HATCL", F_PCT, 0, 127, 127),
-    [P_LN4] = PD("HATOP", F_PCT, 0, 127, 127),
-    [P_LN5] = PD("TOM", F_PCT, 0, 127, 127),
-    [P_LN6] = PD("RIM", F_PCT, 0, 127, 127),
-    [P_LN7] = PD("BELL", F_PCT, 0, 127, 127),
+    [P_LN0] = PD("", F_INT, 0, 0, 0),
+    [P_LN1] = PD("", F_INT, 0, 0, 0),
+    [P_LN2] = PD("", F_INT, 0, 0, 0),
+    [P_LN3] = PD("", F_INT, 0, 0, 0),
+    [P_LN4] = PD("", F_INT, 0, 0, 0),
+    [P_LN5] = PD("", F_INT, 0, 0, 0),
+    [P_LN6] = PD("", F_INT, 0, 0, 0),
+    [P_LN7] = PD("", F_INT, 0, 0, 0),
     [P_LEVEL] = PD("LVL", F_DB, 0, 127, 104),
     [P_ATK] = PD("ATK", F_TIME, 0, 127, 10),
     [P_DEC] = PD("DEC", F_TIME, 0, 127, 70),
@@ -159,7 +159,7 @@ static const param_desc_t TP[P_COUNT] = {
     [P_ED_FLT] = PD("FLT", F_BIPCT, -64, 63, 0),
     [P_ED_PIT] = PD("PIT", F_BIPCT, -64, 63, 0),
     [P_ED_SHP] = PD("SHP", F_BIPCT, -64, 63, 0),
-    [P_RECQ] = PE("QNT", N_RECQ, 0),
+    [P_RECQ] = PD("", F_INT, 0, 0, 0),
     [P_LSYNC] = PE("SYNC", N_LSYNC, 0),
     [P_LTRIG] = PE("TRIG", N_LTRIG, 0),
     [P_LPOL] = PE("POL", N_LPOL, 0),
@@ -184,10 +184,10 @@ static const param_desc_t TP[P_COUNT] = {
     [P_SCALE] = PE("SCL", N_SCALE, 0),
     [P_QUANT] = PE("QNT", N_QUANT, 0),
     [P_TRANS] = PD("TRN", F_SEMI, -24, 24, 0),
-    [P_SLEN] = PD("LEN", F_STEPS, 1, NSTEP, 16),
-    [P_SDIV] = PE("DIV", N_DIV, 2),
-    [P_SSWING] = PD("SWG", F_PCT, 0, 100, 0),
-    [P_SGATE] = PD("GATE", F_PCT, 1, 127, 64),
+    [P_SLEN] = PD("", F_INT, 0, 0, 0),
+    [P_SDIV] = PD("", F_INT, 0, 0, 0),
+    [P_SSWING] = PD("", F_INT, 0, 0, 0),
+    [P_SGATE] = PD("", F_INT, 0, 0, 0),
     [P_RESERVED33] = PD("", F_INT, 0, 127, 0),
     [P_RESERVED34] = PD("", F_INT, 0, 127, 0),
     [P_RESERVED35] = PD("", F_INT, 0, 127, 0),
@@ -244,16 +244,16 @@ static const param_desc_t GP[G_COUNT] = {
     [G_RESERVED10] = PD("", F_INT, 0, 127, 0),
     [G_RESERVED11] = PD("", F_INT, 0, 127, 0),
     [G_MIDI] = PE("MIDI", N_MIDI_INPUT, 0),
-    [G_DRUMCH] = PE("DRUM", N_DRUMCH, 10),
-    [G_ROUTE] = PE("ROUT", N_ROUTE, 0),          /* (was "--": stored 0 = CH1-4, as MIDI IN always was) */
+    [G_DRUMCH] = PD("OUT", F_INT, 1, 16, 1),
+    [G_ROUTE] = PE("IN", N_ROUTE, 0),          /* (was "--": stored 0 = CH1-4, as MIDI IN always was) */
     [G_INFO] = PD("CPU", F_INT, 0, 0, 0),
-    [G_SLOT] = PD("SLOT", F_INT, 1, PROJ_TMPL, 1),     /* PROJ_TMPL: the template (param_format: TMPL) */
-    [G_BOOT] = PE("BOOT", N_BOOT, 0),
-    [G_LOAD] = PE("LOAD", N_GO, 0),
-    [G_SAVE] = PE("SAVE", N_GO, 0),
+    [G_SLOT] = PD("", F_INT, 0, 0, 0),
+    [G_BOOT] = PD("", F_INT, 0, 0, 0),
+    [G_LOAD] = PD("", F_INT, 0, 0, 0),
+    [G_SAVE] = PD("", F_INT, 0, 0, 0),
     [G_ENGSEL] = PE("ENG", N_ENGNAME, 0),
     [G_A4] = {"A4", F_INT, A4_MIN, A4_MAX, A4_DEFAULT, 0, "Hz"},
-    [G_CLRSEQ] = PE("CLRSQ", N_GO, 0),
+    [G_CLRSEQ] = PD("", F_INT, 0, 0, 0),
     [G_INITSND] = PE("INIT", N_GO, 0),
     [G_RESERVED24] = PD("", F_INT, 0, 127, 0),
     [G_RESERVED25] = PD("", F_INT, 0, 127, 0),
@@ -361,11 +361,6 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
 {
     *unit = "";
     fmt_named = d->fmt == F_ENUM;
-    if (d == &GP[G_SLOT] && v == PROJ_TMPL) {
-        str_cpy(val, "TMPL", 8);
-        fmt_named = 1;
-        return;
-    }
     switch (d->fmt) {
     case F_PCT:                                     /* a 0..100 range (SWG) is its value, others a share of 127 */
         fmt_int(val, d->max == 100 ? v : (v * 100 + 63) / 127);
@@ -500,7 +495,7 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
 enum { FAM_HOME, FAM_ENV, FAM_LFO, FAM_SCL, FAM_EDIT, FAM_GLO, FAM_SAVE, FAM_ARP, FAM_SEQ, FAM_TRK,
        FAM_FX, FAM_COUNT };
 enum { SC_TRACK, SC_GLOBAL, SC_ENGINE, SC_STEP, SC_TRK,   /* SC_TRK: the TRACKS page (ui_input.c tracks_edit) */
-       SC_FM6, SC_FMOP, SC_CZ, SC_CZ1, SC_P5, SC_P5STORE, SC_DRUM, SC_DRUMHIT };                         /* FM6: its patch, functions; operator fm6_opsel;
+       SC_FM6, SC_FMOP, SC_CZ, SC_CZ1, SC_P5, SC_P5STORE, SC_DRUM, SC_DRUMHIT, SC_OUTPUT };                         /* FM6: its patch, functions; operator fm6_opsel;
                                                                   * CZ1: a native CZ-1 tone (cz_edit.h) */
 enum { GR_NONE, GR_ADSR, GR_LFO, GR_STEPS, GR_ARP, GR_SCALE, GR_ROLL, GR_BROWSE, GR_SLOTS, GR_USER, GR_TRK,
        GR_MOD, GR_PATS, GR_SONG, GR_MOTION, GR_CHORD, GR_SLICES,
@@ -548,8 +543,6 @@ static const page_t PAGES[] = {
                                                                           * (QNT MPC only), not a page of its own */
     {"EDIT 1", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E0, P_E1, P_E2, P_E3}},
     {"EDIT 2", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E4, P_E5, P_E6, P_E7}},
-    {"DRUM SOUND",FAM_EDIT,SC_DRUM,GR_NONE,{0,1,2,3}},
-    {"DRUM MIX",FAM_EDIT,SC_DRUM,GR_NONE,{0,4,255,255}},
     /* FM6 only (page_visible): the patch as the DX7 has it, its operators (PRESETS picks one), the functions */
     {"P5 STORE",FAM_EDIT,SC_P5STORE,GR_NONE,{0,1,2,3}},
     {"P5 OSC A",FAM_EDIT,SC_P5,GR_NONE,{0,3,4,8}},
@@ -607,29 +600,19 @@ static const page_t PAGES[] = {
     {"OP3 ENV", FAM_EDIT, SC_TRACK, GR_ADSR, {P_FM3_ATK, P_FM3_DEC, P_FM3_SUS, P_FM3_REL}},
     {"OP4 ENV", FAM_EDIT, SC_TRACK, GR_ADSR, {P_FM4_ATK, P_FM4_DEC, P_FM4_SUS, P_FM4_REL}},
     {"OP LEVEL", FAM_EDIT, SC_TRACK, GR_NONE, {P_FM1_LEVEL, P_FM2_LEVEL, P_FM3_LEVEL, P_FM4_LEVEL}},
-    {"LANES", FAM_EDIT, SC_TRACK, GR_NONE, {P_LN0, P_LN1, P_LN2, P_LN3}},
-    {"LANES 2", FAM_EDIT, SC_TRACK, GR_NONE, {P_LN4, P_LN5, P_LN6, P_LN7}},
     {"VOICE", FAM_EDIT, SC_TRACK, GR_NONE, {P_VOICE, P_GLIDE, P_GLMODE, P_PRIO}},
     {"VOICE 2", FAM_EDIT, SC_TRACK, GR_NONE, {P_ALLOC, P_DETUNE, P_PAN, P_MUTE}},
     {"VOICE 3", FAM_EDIT, SC_TRACK, GR_NONE, {P_SPRD, 0xFF, 0xFF, 0xFF}},
+    {"OUTPUT", FAM_GLO, SC_OUTPUT, GR_NONE, {P_LEVEL,P_PAN,P_SPRD,0xFF}},
     {"GLOBAL", FAM_GLO, SC_GLOBAL, GR_NONE, {G_A4, G_BUDGET, G_CLOCK, G_TUNE}}, /* device reference/budget; CLK/TUNE kept */
     {"SYSTEM", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_DRUMCH, G_ROUTE, G_INFO}},
     {"WEIGHTS", FAM_GLO, SC_GLOBAL, GR_NONE, {G_WP5, G_WCZ, G_WFM6, G_WSID}},        /* budget points per voice */
-    {"WEIGHTS 2", FAM_GLO, SC_GLOBAL, GR_NONE, {G_WDRUM, G_BUDGET, 0xFF, G_SAFETY}},  /* SAFETY: overload voice cuts */
+    {"SAFETY", FAM_GLO, SC_GLOBAL, GR_NONE, {G_BUDGET, G_SAFETY, 0xFF, 0xFF}},  /* SAFETY: overload voice cuts */
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: KNOB 1 LIST, 2 / PRESETS the sounds */
     {"USER", FAM_SAVE, SC_GLOBAL, GR_USER, {0xFF, 0xFF, 0xFF, 0xFF}},       /* user presets: SLOT LOAD ERASE SAVE */
-    {"PROJECT", FAM_SAVE, SC_GLOBAL, GR_SLOTS, {G_SLOT, G_BOOT, G_LOAD, G_SAVE}},
     {"ARP", FAM_ARP, SC_TRACK, GR_ARP, {P_AMODE, P_ARATE, P_AOCT, P_AGATE}},
     {"ARP 2", FAM_ARP, SC_TRACK, GR_NONE, {P_ASWING, P_APROB, P_AHOLD, P_AORDER}},
-    {"NOTES", FAM_SEQ, SC_STEP, GR_ROLL, {0, 1, 2, 3}},
-    {"PATTERN", FAM_SEQ, SC_TRACK, GR_STEPS, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},
-    {"TEMPO", FAM_SEQ, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_TRK_RECQ, 0xFF}},   /* the project's: saved with it; QNT: the
-                                                                                  * selected track's (TIMING's, folded in) */
-    {"MIXER", FAM_TRK, SC_TRK, GR_TRK, {0, 1, 2, 3}},   /* GLO button; LEVEL PAN MUTE */
-    {"PATTERNS", FAM_SEQ, SC_GLOBAL, GR_PATGRID, {0xFF, 0xFF, 0xFF, 0xFF}},   /* the 4 x 8 grid: KNOB k track k's (ui_stage.c) */
-    {"SONG", FAM_SEQ, SC_GLOBAL, GR_SONG, {0xFF, 0xFF, 0xFF, 0xFF}},
-    {"MOTION", FAM_SEQ, SC_TRACK, GR_MOTION, {0xFF, 0xFF, 0xFF, 0xFF}},
-    {"DRUM HIT",FAM_SEQ,SC_DRUMHIT,GR_DRUMHIT,{0,1,2,3}},
+    {"TEMPO", FAM_ARP, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_CLOCK, 0xFF}},
 };
 #define NPAGES (sizeof(PAGES) / sizeof(PAGES[0]))
 static uint8_t mod_ui_slot;      /* the MOD page: the matrix slot (0..3) KNOB 2..4 edit */
@@ -741,6 +724,10 @@ static const param_desc_t *fx_rack_desc(const page_t *pg, uint32_t slot, int16_t
 }
 static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **valp)
 {
+    if(pg->scope==SC_OUTPUT){
+        if(slot==3u){*valp=&song.g[G_BPM];return &GP[G_BPM];}
+        *valp=&TSEL->p[pg->id[slot]];return &TP[pg->id[slot]];
+    }
     uint32_t id = pg->id[slot];
     if(pg->scope==SC_P5 || pg->scope==SC_P5STORE){
         if(id==255u || (pg->scope==SC_P5 && (id>=88u || !P5_PANEL[id].label))){*valp=0;return 0;}
@@ -778,21 +765,14 @@ static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **
         *valp = 0;
         return 0;
     }
-    if (id == G_TRK_RECQ) {                          /* (TEMPO's QNT: the selected track's recording quantise) */
-        *valp = &TSEL->p[P_RECQ];
-        return track_desc(TSEL, P_RECQ);
-    }
+
     if (pg->scope == SC_GLOBAL && id >= G_WP5 && id <= G_SAFETY) {   /* GLO > WEIGHTS: the device's settings */
         static const param_desc_t weights[] = {PE("P5", N_VPOINTS, 0), PE("CZ-1", N_VPOINTS, 0), PE("FM6", N_VPOINTS, 0),
             PE("SID", N_VPOINTS, 0), PE("DRUM", N_VPOINTS, 0), PE("GUARD", N_ONOFF, 0)};
         *valp = id == G_SAFETY ? &settings_safety : &settings_vpoints[id - G_WP5];
         return &weights[id - G_WP5];
     }
-    if (pg->scope == SC_GLOBAL && id == G_BOOT) {
-        boot_cell = settings_boot;                       /* (a copy: ui_input.c edit_param writes it back) */
-        *valp = &boot_cell;
-        return global_desc(id);
-    }
+
     if (pg->scope == SC_GLOBAL && id == G_A4) {
         *valp = &tuning_a4;
         return global_desc(id);
@@ -801,11 +781,7 @@ static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **
         *valp = &settings_budget;
         return global_desc(id);
     }
-    if (pg->scope == SC_GLOBAL && id == G_DRUMCH) {
-        drumch_cell = settings_drumch;                   /* (as BOOT) */
-        *valp = &drumch_cell;
-        return global_desc(id);
-    }
+
     if (pg->scope == SC_TRACK && id >= P_FXMIX && id <= P_FX3CHAR) {
         uint32_t base = P_FXTYPE + (id - P_FXTYPE) / FX_PARAMS * FX_PARAMS;
         if (TSEL->p[base] == FX_MIDIVERB && id - base >= 2u) { *valp = 0; return 0; }

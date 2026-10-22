@@ -1,4 +1,6 @@
-# Melodee licensing
+# Saadet / Melodee licensing
+
+Saadet is a single-synth fork of Melodee. New work is by Kerem Kilic (Ellic Studio); retained upstream and third-party notices below continue to apply.
 
 Melodee is a modified version of Felucca by Leo Kuroshita (@kurogedelic), Hügelton Instruments
 (<https://github.com/hugelton/Felucca>), and keeps Felucca's licensing.

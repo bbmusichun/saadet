@@ -93,9 +93,9 @@ static void transitions(void)
     punch.req=-1;test_signal(0);punch_process(l,r,CTL);assert(punch.g>0);
     test_signal(0);punch_process(l,r,CTL);assert(!punch.g && punch.cur==-1);
     punch.req=PX_MONO;test_signal(0);punch_process(l,r,1);assert(punch.g==512);
-    seq_stop();assert(punch.req==-1);
+    transport_stop();assert(punch.req==-1);
     punch_panel_lock=0;fx_clear_all();punch_process(l,r,CTL);assert(punch.cur==-1 && !resource[RES_PUNCH].size);
-    puts("Punch transitions: every effect handoff, 64-sample release, fresh fade-in, Stop and project reset passed");
+    puts("Punch transitions: every effect handoff, 64-sample release, fresh fade-in, Stop and sound reset passed");
 }
 static void freeze(void)
 {
@@ -121,12 +121,12 @@ static void tempo_memory(void)
     test_signal(0);punch_process(l,r,CTL);assert(punch.pre==32);
     test_signal(0);punch_process(l,r,CTL);assert(!punch.pre);
     reset();for(uint32_t id=0;id<RES_COUNT;id++)resource_release(id);
-    assert(resource_get(RES_NOTE_HISTORY,RESOURCE_MAIN_CAPACITY));
+    assert(resource_get(RES_ENGINE0,RESOURCE_MAIN_CAPACITY));
     punch.req=PX_ECHO;test_signal(0);int32_t dry[CTL];memcpy(dry,l,sizeof l);punch_process(l,r,CTL);
     assert(punch_memory_failed && punch.cur==-1 && !memcmp(dry,l,sizeof l));
     uint32_t failures=resource_failures;for(uint32_t i=0;i<8;i++)punch_process(l,r,CTL);assert(failures==resource_failures);
     punch.req=PX_MONO;test_signal(0);punch_process(l,r,CTL);assert(punch.cur==PX_MONO);
-    resource_release(RES_NOTE_HISTORY);punch_reset();punch_panel_lock=0;
+    resource_release(RES_ENGINE0);punch_reset();punch_panel_lock=0;
     puts("Punch timing/memory: measured external tempo, grid wait, dry memory fallback and no allocation retry storm passed");
 }
 static void hot_mix(void)

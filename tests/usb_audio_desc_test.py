@@ -27,7 +27,7 @@ def descriptors(audio, cdc, loader=0):
     product = bytes(ord(x) if isinstance(x, str) else x for x in values)
     assert product[0] == len(product) and product[1] == 3
     name = product[2:].decode("utf-16-le")
-    assert name == ("Melodee FM-1 Update" if loader else "Melodee FM-1")
+    assert name == ("Saadet FM-1 Update" if loader else "Saadet FM-1")
     assert re.search(r"fm-1|felucca|ota|composite|sinco|usb-midi", name, re.I)
     body = re.search(r"CFG_DESC\[.*?\]\s*=\s*\{(.*?)\};", source, re.S)[1]
     data = bytes(int(x.strip(), 0) for x in body.split(",") if x.strip())
@@ -64,7 +64,7 @@ def descriptors(audio, cdc, loader=0):
             assert capture[2:4] == bytes([0x82, 0x05])
             assert feedback[2:6] == bytes([0x83, 0x11, 3, 0])
             assert playback[8] == feedback[2]
-            for ep, channels in ((playback, 2), (capture, 4)):
+            for ep, channels in ((playback, 2), (capture, 2)):
                 assert int.from_bytes(ep[4:6], "little") == 45 * channels * width and ep[6] == 1
         current = None
         formats, links = {}, {}
@@ -81,7 +81,7 @@ def descriptors(audio, cdc, loader=0):
         for (interface, alt), fmt in formats.items():
             width = alt + 1
             assert len(fmt) == 11  # exactly one discrete rate; no hidden 48 kHz entry
-            assert fmt[3:8] == bytes([1, 4 if interface == 4 else 2, width, width * 8, 1])
+            assert fmt[3:8] == bytes([1, 2, width, width * 8, 1])
             assert int.from_bytes(fmt[8:11], "little") == 44100
         # Playback streams into IT1, recording leaves through OT4.
         assert links == {(3, 1): 1, (3, 2): 1, (4, 1): 4, (4, 2): 4}
@@ -103,7 +103,7 @@ def descriptors(audio, cdc, loader=0):
             if source is not None:
                 assert d[7] == source
             else:
-                assert d[7:10] == bytes([4, 0, 0] if unit == 3 else [2, 3, 0])
+                assert d[7:10] == bytes([2, 3, 0])
     print(f"USB descriptors: audio={audio}, CDC={cdc}, loader={loader}, {len(data)} bytes: OK")
 
 

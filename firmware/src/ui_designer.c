@@ -1,5 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
- * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* The sound designer (docs/SOUND_DESIGNER.md): a sound-only transaction over the native editors, which stay the
  * authority for every control. START is NEW SONG's key screen (rings over a large panel, the keys under it), FEATURES
  * a list page (KNOB 2 the row, KNOB 1 its value), the shaping stages the sound pages themselves: the stages as the
@@ -8,21 +7,19 @@
  * No serialized IDs, project formats or DSP defaults change. Included by ui_draw.c */
 enum { DS_OFF, DS_SETUP, DS_SHAPE };
 enum { DG_FREE, DG_BASS, DG_PAD, DG_LEAD, DG_KEYS, DG_PLUCK, DG_FX, DG_COUNT };
-enum { DT_BUILD, DT_SOURCE, DT_TONE, DT_ENV, DT_MOVE, DT_PLAY, DT_COUNT };
+enum { DT_BUILD, DT_SOURCE, DT_TONE, DT_ENV, DT_MOVE, DT_PLAY, DT_FX, DT_COUNT };
 static const char *const DS_GOAL[] = {"FREE", "BASS", "PAD", "LEAD", "KEYS", "PLUCK", "FX"};
-static const char *const DS_TAB[DT_COUNT] = {"Features", "Source", "Tone", "Env", "Motion", "Play"};
+static const char *const DS_TAB[DT_COUNT] = {"Features", "Source", "Tone", "Env", "Mod", "Play", "FX"};
 static void designer_page(void);
 /* One compact snapshot swaps A (original) and B (draft). Editing is allowed
  * only on B; switching engine during setup does not touch the track. */
 typedef struct {
-    uint8_t eng, preset, native;
-    uint16_t user;
+    uint8_t eng, preset, native; uint16_t user;
     int16_t p[P_COUNT];
     union {
         struct { uint8_t patch[FP_SIZE+1u], fn[FM6_NFN], on; } fm;
         cz_patch_t cz;
         p5_patch_t p5;
-        drum_patch_t drum;
     } raw;
 } designer_sound_t;
 #define DS_ROUTES 160u
@@ -43,7 +40,6 @@ static void designer_snapshot(designer_sound_t *s)
     if(s->eng==ENGI_FM6){memcpy(s->raw.fm.patch,fm6_patch[k],sizeof s->raw.fm.patch);memcpy(s->raw.fm.fn,fm6_fn[k],FM6_NFN);s->raw.fm.on=fm6_on[k];}
     else if(s->eng==ENGI_CZ)s->raw.cz=cz_patch[k];
     else if(s->eng==ENGI_PROPHET)s->raw.p5=*p5_patch_of(t);
-    else if(s->eng==ENGI_DRUM)s->raw.drum=drum_patch[k];
 }
 static void designer_restore(const designer_sound_t *s)
 {
@@ -54,7 +50,6 @@ static void designer_restore(const designer_sound_t *s)
     if(s->eng==ENGI_FM6){fm6_put_patch(k,s->raw.fm.patch,0);memcpy(fm6_fn[k],s->raw.fm.fn,FM6_NFN);fm6_on[k]=s->raw.fm.on;}
     else if(s->eng==ENGI_CZ){cz_patch[k]=s->raw.cz;cz_track_accept(t);}
     else if(s->eng==ENGI_PROPHET){p5_patch[k]=s->raw.p5;p5_ready[k]=1;}
-    else if(s->eng==ENGI_DRUM)drum_patch[k]=s->raw.drum;
     sync_reload=1;
 }
 static void designer_compare(void)
@@ -68,24 +63,22 @@ static void designer_draft(void) { if(ds.compare)designer_compare(); }
 static void designer_open(void)
 {
     if(designer_on()){ui.menu=0;ui.force=1;return;}   /* (the menu over it: back to it) */
-    if(chain_busy()){ui_message("STOP SONG TO DESIGN");return;}
     browse_commit();momentary_restore();pop_close();smap.on=0;
     memset(&ds,0,sizeof ds);ds.track=song.sel;ds.eng=TSEL->eng_req;
     if(!eng_ok(ds.eng))ds.eng=ENGI_FM6;
     ds.current=1;ds.old_home=ui.home;ds.old_page=ui.page;
     designer_quit=designer_close;ui.designer_mode=DS_SETUP;ui.home=0;ui.menu=0;ui.layer=ui.lock=ui.ly=0;ui.ly_t0=0;
     ui.pg_down=0;ui.force=1;ui.msg_t=0;ui.act=0;
-    kb_mask=kb_lock=0;
+    kb_mask=kb_lock=0; punch_panel_mask=0; punch_panel_lock=0;
 }
 static void designer_close(int discard)
 {
     if(ui.designer_mode!=DS_SETUP){
         if(discard){if(!ds.compare){fm1_irq_off();designer_restore(&ds.other);fm1_irq_on();}}
         else designer_draft();
-        fm1_irq_off();motion_design_pause&=(uint8_t)~(1u<<ds.track);motion_rebase(&trk[ds.track]);fm1_irq_on();
     }
     designer_quit=0;ui.designer_mode=DS_OFF;ui.home=ds.old_home;ui.page=ds.old_page;
-    ui.home_t0=ui.save_t0=ui.rec_t0=ui.seq_t0=ui.oct_t0=0;
+    ui.home_t0=ui.save_t0=ui.oct_t0=0;
     ui.force=1;sec.ok=0;ui.pg_down=0;song.grid=0;page_entered();
 }
 static void designer_cz_put(uint32_t id,uint32_t v)
@@ -111,10 +104,9 @@ static const uint8_t DS_F_FM[] = {DF_OP1, DF_OP1 + 1, DF_OP1 + 2, DF_OP1 + 3, DF
                                   DF_VOICE};
 static const uint8_t DS_F_CZ[] = {DF_LINES, DF_RING, DF_CZNOISE, DF_DETUNE, DF_CZVIB, DF_VOICE};
 static const uint8_t DS_F_ANY[] = {DF_VOICE, DF_GLIDE, DF_SPREAD, DF_PENV, DF_VIB, DF_WOBBLE, DF_TREM, DF_ENVF};
-static const uint8_t *designer_feats(uint32_t *n)       /* the selected track's engine's (a drum kit: none) */
+static const uint8_t *designer_feats(uint32_t *n)       /* the selected track's engine's */
 {
     uint32_t e=TSEL->eng_req;
-    if(drum_track(TSEL)){*n=0;return 0;}
     *n=e==ENGI_PROPHET?sizeof DS_F_P5:e==ENGI_FM6?sizeof DS_F_FM:e==ENGI_CZ?sizeof DS_F_CZ:sizeof DS_F_ANY;
     return e==ENGI_PROPHET?DS_F_P5:e==ENGI_FM6?DS_F_FM:e==ENGI_CZ?DS_F_CZ:DS_F_ANY;
 }
@@ -308,7 +300,8 @@ static const char *designer_silent(void)
 static void designer_recipe(void)
 {
     track_t *t=TSEL;uint32_t g=ds.goal;
-    if(g==DG_FREE || drum_track(t))return;
+    for(uint32_t slot=0;slot<FX_SLOTS;slot++)t->p[P_FXTYPE+slot*FX_PARAMS]=FX_OFF;
+    if(g==DG_FREE)return;
     int pad=g==DG_PAD, shorty=g==DG_PLUCK||g==DG_KEYS;
     t->p[P_VOICE]=(g==DG_BASS||g==DG_LEAD)?V_MONO:V_POLY;
     if(t->eng_req==ENGI_PROPHET){
@@ -354,6 +347,7 @@ static void designer_recipe(void)
 static int designer_category(uint32_t i)
 {
     const page_t *p=&PAGES[i];const char *s=p->title;
+    if(p->fam==FAM_FX)return DT_FX;
     if(p->fam==FAM_ENV || str_prefix(s,"P5 FLT ENV") || str_prefix(s,"P5 AMP ENV") || str_prefix(s,"P5 ENV MOD") ||
        str_prefix(s,"EG ") || str_prefix(s,"PITCH E") || str_prefix(s,"PITCH L") || str_prefix(s,"C1 ") || str_prefix(s,"C2 "))return DT_ENV;
     if(p->fam==FAM_LFO || str_prefix(s,"P5 LFO") || str_prefix(s,"P5 WHEEL") || str_prefix(s,"P5 POLY") ||
@@ -366,24 +360,23 @@ static int designer_category(uint32_t i)
 static int designer_page_ok(uint32_t i)
 {
     const page_t *p=&PAGES[i];
-    if(!page_visible(i) || (p->fam!=FAM_EDIT && p->fam!=FAM_ENV && p->fam!=FAM_LFO))return 0;
-    if(p->graph==GR_FMSTORE || p->graph==GR_CZTOOLS || p->scope==SC_P5STORE || p->graph==GR_MOTION)return 0;
-    /* Track mixer/performance parameters and the drum lanes' notes are outside a tone. */
-    if(p->scope==SC_GLOBAL || str_prefix(p->title,"LANES"))return 0;
+    if(!page_visible(i) || (p->fam!=FAM_EDIT && p->fam!=FAM_ENV && p->fam!=FAM_LFO && p->fam!=FAM_FX))return 0;
+    if(p->graph==GR_FMSTORE || p->graph==GR_CZTOOLS || p->scope==SC_P5STORE)return 0;
+    /* Shared FX and track mixer/performance parameters are outside a tone. */
+    if(p->scope==SC_GLOBAL)return 0;
     if(TSEL->eng_req==ENGI_PROPHET && (str_eq(p->title,"VOICE") || str_eq(p->title,"VOICE 2")))return 0;
     if(TSEL->eng_req==ENGI_PROPHET && p->scope==SC_ENGINE)return 0;
-    if(drum_track(TSEL) && (str_prefix(p->title,"VOICE") || p->fam==FAM_ENV))return 0;
     return 1;
 }
 /* MAIN pages: the engine's own first. The Prophet, FM6 and CZ-1 have LFOs of their own (the track LFO and the
- * matrix: ALL), a drum kit its sounds; FM6's macros (EDIT 1 / 2) repeat its own pages */
+ * matrix: ALL); FM6's macros (EDIT 1 / 2) repeat its own pages */
 static int designer_guided(uint32_t i)
 {
     static const char *const skip[]={"P5 BEND","FM BEND","FM PORTA","FM WH/FT","FM BR/AT","SCALE","CURVE","VOICE 3","CZ WINDOW",
                                      "PITCH EG","PITCH LV","LFO 2","MOD"};
     const page_t *p=&PAGES[i];const char *s=p->title;uint32_t e=TSEL->eng_req;
     for(uint32_t j=0;j<NELEM(skip);j++)if(str_eq(s,skip[j]))return 0;
-    if(p->scope==SC_TRACK && p->fam==FAM_LFO && (e==ENGI_PROPHET || e==ENGI_FM6 || e==ENGI_CZ || drum_track(TSEL)))return 0;
+    if(p->scope==SC_TRACK && p->fam==FAM_LFO && (e==ENGI_PROPHET || e==ENGI_FM6 || e==ENGI_CZ))return 0;
     if(e==ENGI_FM6 && p->scope==SC_ENGINE)return 0;
     if(str_prefix(s,"C1 PIT") || str_prefix(s,"C2 PIT"))return 0;
     if((str_prefix(s,"C1 ") || str_prefix(s,"C2 ")) && (str_prefix(s+7,"R5") || str_prefix(s+7,"L5")))return 0;
@@ -438,7 +431,7 @@ static void designer_page(void)
 }
 static void designer_begin(void)
 {
-    undo_seal();fm1_irq_off();motion_restore(TSEL);motion_design_pause|=(uint8_t)(1u<<ds.track);designer_snapshot(&ds.other);fm1_irq_on();
+    undo_seal();fm1_irq_off();designer_snapshot(&ds.other);fm1_irq_on();
     load_begin(TSEL,UNDO_SOUND);
     if(!ds.current || ds.eng!=TSEL->eng_req){sound_init_of(TSEL,ds.eng);fm1_irq_off();designer_recipe();fm1_irq_on();}
     load_end(TSEL);undo_seal();
@@ -529,9 +522,20 @@ static void designer_tabs(void)
     }
     tabs_draw(nm,n,cur,cur*7u+n*131u+ds.eng*1031u+ux.gen*977u+ux.pal*31u+song.sel+0x5E5u);
 }
-/* START (large type, C): ENGINE, START (this sound, INIT, or INIT with a goal's recipe), PAGES (MAIN, ALL) as rows
- * (KNOB 1 .. 3 turn them: the row turning tinted), the engine large under them, the keys under that (NEW SONG's) */
-static void new_keys_row(const char *go,uint32_t icon);  /* ui_new.c */
+/* START: ENGINE, START (the sound now, INIT, or INIT with a goal's recipe), PAGES (MAIN, ALL) as rings, the engine
+ * large under them, the keys under that (NEW SONG's key) */
+/* the keys' row at the foot: OCT- back (an undo arrow), OCT+ go on (go, its icon) */
+static void new_keys_row(const char *go, uint32_t icon)
+{
+    int32_t gw = text_w(TY_LB, go) + 30;
+    cv_begin(240, 24, T_BG);
+    cv_rrect(6, 2, 40, 20, 5, T_SURF, T_BG);
+    cv_icon_mid(20, 12, 12, ICON_X_UNDO, T_MID, T_SURF);
+    cv_rrect(234 - gw, 2, gw, 20, 5, T_THEME, T_BG);
+    cv_icon_mid(234 - gw + 8, 12, 12, icon, T_INK, T_THEME);
+    cv_text_on(234 - gw + 22, 4, TY_LB, go, T_INK, T_THEME);
+    cv_blit(0, 212);
+}
 static int designer_init(void) { return !ds.current || ds.eng!=TSEL->eng_req; }
 static uint32_t designer_start(void) { return !designer_init()?0u:ds.goal==DG_FREE?1u:1u+ds.goal; }   /* 0 .. DG_COUNT */
 static void designer_start_set(uint32_t k)
@@ -541,30 +545,31 @@ static void designer_start_set(uint32_t k)
 }
 static void designer_start_draw(void)
 {
-    char b[24];
-    const aafont_t *f=TY_HR;
-    uint32_t k,s=ds.eng*7u+ds.goal*131u+ds.current*1031u+ds.expert*40503u+(ui.hot_t?ui.hot_col+1u:0u)*7919u+ux.gen*977u+
+    char b[48];uint8_t cs=col_style;
+    const aafont_t *f=TY_VL;
+    uint32_t s=ds.eng*7u+ds.goal*131u+ds.current*1031u+ds.expert*40503u+(ui.hot_t?ui.hot_col+1u:0u)*7919u+ux.gen*977u+
                ux.pal*31u+song.sel;
     if(ui.force)lcd_fill(0,H_HEAD,240,240-H_HEAD,T_BG);
     draw_head();
     if(!ui.force && s==ds.sig)return;
     ds.sig=s;
+    col_style=CS_RING;
     uint32_t st=designer_start();
-    for(k=0;k<3u;k++){
-        static const char *const LB[3]={"Engine","Start","Pages"};
-        if(k==0u)menu_words(b,ENGINES[ds.eng]->name,sizeof b);
-        else if(k==1u){if(st<2u)str_cpy(b,st?"Init":"This sound",sizeof b);else{menu_words(b,DS_GOAL[ds.goal],16);str_cpy(b+str_len(b)," from Init",12);}}
-        else str_cpy(b,ds.expert?"All":"Main",sizeof b);
-        cv_begin(240,LIST_ROW,T_BG);
-        row_draw(0,LB[k],b,T_TEXT,ui.hot_t && ui.hot_col==k,0,k);
-        cv_blit(0,(uint32_t)(LIST_Y0+(int32_t)k*LIST_ROW));
-    }
-    if(text_w(f,ENGINES[ds.eng]->name)>220 || !text_has(f,ENGINES[ds.eng]->name))f=TY_VL;
-    for (uint32_t band = 0; band < (uint32_t)(Y_FOOT-(LIST_Y0+3*LIST_ROW)); band += CV_MAX / (240)) {
-        cv_begin_band(240,Y_FOOT-(LIST_Y0+3*LIST_ROW),T_BG,band);   /* (the engine: large) */
-        cv_text_c(120,ty_y((Y_FOOT-(LIST_Y0+3*LIST_ROW))/2,f),f,ENGINES[ds.eng]->name,T_THEME,T_BG);
-        cv_blit_band(0,LIST_Y0+3*LIST_ROW);
-    }
+    draw_column(0,"ENGINE",ENGINES[ds.eng]->name,"",VAL(0u),(int32_t)(eng_rank(ds.eng)*1000u/(NENG_SHOWN-1u)),ICON_NONE);
+    draw_column(1,"START",st==0u?"CURRENT":st==1u?"INIT":DS_GOAL[ds.goal],"",VAL(1u),(int32_t)(st*1000u/DG_COUNT),ICON_NONE);
+    draw_column(2,"PAGES",ds.expert?"ALL":"MAIN","",VAL(2u),ds.expert?1000:0,ICON_NONE);
+    draw_column(3,"","","",T_THEME,-1,ICON_NONE);
+    col_style=cs;
+    cv_begin(240,100,T_BG);
+    cv_rrect(PV_PANEL_X,0,PV_PANEL_W,100,6,T_PANEL,T_BG);
+    if(text_w(f,ENGINES[ds.eng]->name)>216)f=TY_TX;
+    cv_text_c(120,f==TY_VL?22:32,f,ENGINES[ds.eng]->name,T_TEXT,T_PANEL);
+    b[0]=0;                                             /* "From this sound \xB7 main pages", "Pad from INIT \xB7 all pages" */
+    if(st>1u){menu_words(b,DS_GOAL[ds.goal],16);str_cpy(b+str_len(b)," from INIT",12);}
+    else str_cpy(b,st?"From INIT":"From this sound",16);
+    str_cpy(b+str_len(b),ds.expert?" \xB7 all pages":" \xB7 main pages",14);
+    cv_text_c(120,66,TY_LB,b,T_MID,T_PANEL);
+    cv_blit(0,108);
     new_keys_row("Design",ICON_X_RIGHT);
 }
 /* FEATURES: a row a path, its state at the right (off: dim); an FM operator says what it is in the algorithm */
@@ -613,15 +618,14 @@ static int designer_foot(void)
     sig=str_hash(str_hash(nx*7u+song.sel*131u+ux.gen*977u+ux.pal*31u+0xF00Du,go),nm);
     if(!ui.force && sig==pv.sound)return 1;
     pv.sound=sig;
-    gw=text_w(TY_TX,go)+42;
-    cv_begin(240,240-PV_SOUND_Y,T_BG);                  /* (NEW SONG's keys, the sound between them) */
-    cv_rrect(4,2,48,24,6,T_SURF,T_BG);
-    cv_icon_mid(20,14,16,ICON_X_UNDO,T_MID,T_SURF);
-    if(text_w(TY_LB,nm)<=236-gw-8-60)                  /* (the sound's name where it fits whole) */
-        cv_text_on(60,ty_y(14,ty_fit(TY_TX,nm,236-gw-8-60)),ty_fit(TY_TX,nm,236-gw-8-60),nm,T_SEC,T_BG);
-    cv_rrect(236-gw,2,gw,24,6,T_THEME,T_BG);
-    cv_icon_mid(236-gw+10,14,16,nx<DT_COUNT?ICON_X_RIGHT:ICON_X_CHECK,T_INK,T_THEME);
-    cv_text_on(236-gw+32,ty_y(14,TY_TX),TY_TX,go,T_INK,T_THEME);
+    gw=text_w(TY_LB,go)+30;
+    cv_begin(240,240-PV_SOUND_Y,T_BG);
+    cv_rrect(6,1,34,18,5,T_SURF,T_BG);
+    cv_icon_mid(17,10,12,ICON_X_UNDO,T_MID,T_SURF);
+    cv_free_text(48,2,TY_LB,nm,T_SEC,T_BG,234-gw-8-48);
+    cv_rrect(234-gw,1,gw,18,5,T_THEME,T_BG);
+    cv_icon_mid(234-gw+8,10,12,nx<DT_COUNT?ICON_X_RIGHT:ICON_X_CHECK,T_INK,T_THEME);
+    cv_text_on(234-gw+22,3,TY_LB,go,T_INK,T_THEME);
     cv_blit(0,PV_SOUND_Y);
     return 1;
 }

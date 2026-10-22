@@ -149,11 +149,7 @@ static int up_cz_raw(const up_rec_t *r,uint8_t *raw)
     memcpy(raw,r->packed,CZ_BYTES);return cz_patch_valid(raw);
 }
 static int up_bank_shape(uint32_t len,uint32_t rsize){return len==sizeof(up_bank_t) && rsize==sizeof(up_rec_t);}
-static int up_drum_raw(const up_rec_t *r,drum_patch_t *p)
-{
-    uint8_t b[DRUM_WIRE_BYTES];if(r->np>sizeof r->packed-8u)return 0;
-    memcpy(b,r->cz_extra,sizeof r->cz_extra);memcpy(b+sizeof r->cz_extra,r->packed+r->np,8u);return drum_patch_unpack(p,b);
-}
+
 
 static int up_valid(const up_rec_t *r)
 {
@@ -172,7 +168,6 @@ static int up_valid(const up_rec_t *r)
     if (!((r->used & ~UP_STAR) == UP_USED && (r->ver == UP_VER || r->ver == UP_VER_GRID || (r->engine==ENGI_DRUM && (r->ver==UP_VER_DRUM || r->ver==UP_VER_DRUM_GRID))) && r->engine < USER_GENERAL &&
           r->np >= 8u && r->np <= UP_PMAX * 2u && r->name[0])) return 0;
     for (uint32_t i = 0; i < r->np; i++) if (r->packed[i] > 191u) return 0;
-    if(r->engine==ENGI_DRUM && (r->ver==UP_VER_DRUM || r->ver==UP_VER_DRUM_GRID)){drum_patch_t p;if(!up_drum_raw(r,&p))return 0;}
     return 1;
 }
 
@@ -304,19 +299,11 @@ static void up_pat_norm(uint8_t *note, uint8_t *flags)   /* tie: no note; rest: 
         *note = 0;
         *flags = 4;
     } else {
-        *flags = *note ? (uint8_t)(*flags & (SF_ACCENT | SF_SLIDE)) : 0u;
+        *flags = *note ? (uint8_t)(*flags & 3u) : 0u;
     }
 }
 
-static void up_pat_from(up_rec_t *r, const step_t *st)   /* the first 16 steps -> the pattern */
-{
-    uint32_t i;
-    for (i = 0; i < 16u; i++) {
-        r->note[i] = st[i].time == ST_NOTE && st[i].n ? st[i].note[0] : 0u;
-        r->flags[i] = st[i].time == ST_TIE ? 4u : st[i].flags;
-        up_pat_norm(&r->note[i], &r->flags[i]);
-    }
-}
+
 
 /* UP_PUT arguments: slot, engine, name, P_COUNT x v14, 16 x (note, flags) [, kind, 16 x hi] -> *r (values not
  * yet clamped); 0 ok, 1 bad arguments. *slot gets the slot byte when there is one. kind 1 (and its 16 bytes):
@@ -331,7 +318,7 @@ static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
         ;
     k = 3u + n;                                  /* after the name's 0 */
     end = k + 2u * P_COUNT + 32u;
-    if (a[0] >= 128u || a[1] >= NENGINES || 2u + n >= na || !up_name_ok(a + 2, n) ||
+    if (a[0] >= 128u || !eng_ok(a[1]) || 2u + n >= na || !up_name_ok(a + 2, n) ||
         (na != end && (na != end + 17u || a[end] > 1u)))
         return 1;
     up_rec_t staged, *target = r;
@@ -542,17 +529,11 @@ static int up_store_to(uint32_t k,uint32_t tr,const char *name)
         else if(r.engine==ENGI_PROPHET)memcpy(r.packed,p5_patch_of(t),sizeof(p5_patch_t));
         else memcpy(r.packed,cz_patch[tr].raw,CZ_BYTES);
         r.np=sizeof UP_NATIVE_PARAMS;
-        for(uint32_t i=0;i<r.np;i++)r.cz_extra[i]=(uint8_t)(motion_base_value(t,UP_NATIVE_PARAMS[i])+64);
+        for(uint32_t i=0;i<r.np;i++)r.cz_extra[i]=(uint8_t)(t->p[UP_NATIVE_PARAMS[i]]+64);
         if(name && name[0])up_native_name(&r,name);
         return up_put(k,&r);
     }
-    for(uint32_t i=0;i<P_COUNT;i++)up_set_value(&r,i,(param_fx(i)||param_fx_send(i))?param_desc_of(r.engine,i)->def:motion_base_value(t,i));
-    up_pat_from(&r,t->step);
-    if(drum_track(t)){
-        uint32_t any=0;for(uint32_t i=0;i<16u;i++)any|=step_lanes(&t->step[i]);
-        if(any){r.ver=UP_VER_GRID;for(uint32_t i=0;i<16u;i++){r.note[i]=(uint8_t)step_lanes(&t->step[i]);r.flags[i]=(uint8_t)step_accents(&t->step[i]);}}
-    }
-    if(r.engine==ENGI_DRUM){uint8_t b[DRUM_WIRE_BYTES];drum_patch_pack(b,&drum_patch[tr]);memcpy(r.cz_extra,b,sizeof r.cz_extra);memcpy(r.packed+r.np,b+sizeof r.cz_extra,8u);r.ver=r.ver==UP_VER_GRID?UP_VER_DRUM_GRID:UP_VER_DRUM;}
+    for(uint32_t i=0;i<P_COUNT;i++)up_set_value(&r,i,(param_fx(i)||param_fx_send(i))?param_desc_of(r.engine,i)->def:t->p[i]);
     return up_put(k,&r);
 }
 static int up_store(uint32_t k,const char *name){return up_store_to(k,song.sel,name);}
@@ -584,6 +565,7 @@ static int up_load_to(uint32_t k,uint32_t tr)
     if (!up_used(k))
         return 1;
     rec = *up_rec(k);
+    if(!eng_ok(rec.engine))return 1;
     up_values(r, v);
     load_begin(t, UNDO_SOUND);                          /* (ui.c: the copy for EDIT held = undo) */
     panic_req |= (uint8_t)(1u << tr);
@@ -595,7 +577,6 @@ static int up_load_to(uint32_t k,uint32_t tr)
                 t->p[i] = param_reserved(i) ? 0 : v[i];
         t->preset = 0;
         if (up_native_cz(r))up_cz_raw(r,cz_patch[tr].raw);
-        if(r->engine==ENGI_DRUM){memset(&drum_patch[tr],0,sizeof(drum_patch_t));if(r->ver==UP_VER_DRUM || r->ver==UP_VER_DRUM_GRID)up_drum_raw(r,&drum_patch[tr]);}
         if(r->engine==ENGI_PROPHET && r->ver==UP_VER_P5){memcpy(&p5_patch[tr],r->packed,sizeof(p5_patch_t));p5_ready[tr]=1;p5_track_accept(t);}
         cz_track_accept(t);
         fm1_irq_on();
@@ -657,7 +638,7 @@ static void up_ui_named(uint32_t op, uint32_t k, const char *name)   /* 0 load, 
         ui_message(up_old(k) ? "OLD FORMAT" : "EMPTY SLOT");
         return;
     }
-    if (op && (song.playing || chain_busy() || transport_req == 1u)) {    /* (up_put refuses too) */
+    if (op && (song.playing)) {    /* (up_put refuses too) */
         ui_message("STOP TO SAVE");
         return;
     }

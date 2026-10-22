@@ -26,7 +26,7 @@ typedef struct {
 static const layer_t LAYERS[LAYER_N] = {
     {0, 0, 0, "", {{0, 0}, {0, 0}, {0, 0}}},
     {B_FX, LK_HOLD, FAM_FX, "[FX] HOLD", {{KC_KEYS, "PUNCH"}, {0, 0}, {0, 0}}},
-    {B_GLO, LK_SET, FAM_HOME, "[GLO] SET", {{KC_PLAY, "RESTART"}, {KC_OCTDN, "UNDO"}, {KC_GLO, "DONE"}}},
+    {B_GLO, LK_SET, FAM_GLO, "[GLO] SET", {{KC_PLAY, "RESTART"}, {KC_OCTDN, "UNDO"}, {KC_GLO, "DONE"}}},
     {B_SCL, LK_SET, FAM_SCL, "[SCL] SET", {{KC_KEYS, "ROOT"}, {KC_OCTDN, "UNDO"}, {KC_SCL, "DONE"}}},
 };
 /* SCL's knobs: the key and its chord (cur_page() while the layer edits or draws them: page_over) */
@@ -49,7 +49,7 @@ static const uint32_t LY_DTAP_MS=300u;
 
 
 
-static int layer_allowed(void) { return !ui.menu && !ui.confirm && !ui.uboot && !name_on() && !new_on() && !pop.on && !smap.on; }
+static int layer_allowed(void) { return !ui.menu && !ui.confirm && !ui.uboot && !name_on() && !pop.on && !smap.on; }
 static uint32_t ly_bit(uint32_t l) { return 1u << panel.btn[LAYERS[l].btn]; }
 static uint32_t ly_down(uint32_t l) { return l && ((fm1_in.buttons & ly_bit(l)) != 0u || ui.lock == l); }
 static uint32_t layer_bits(void)
@@ -57,8 +57,6 @@ static uint32_t layer_bits(void)
     uint32_t l, m = 0;
     for (l = LAYER_FX; l < LAYER_N; l++)
         m |= ly_bit(l);
-    if (step_modifier_context())
-        m &= ~step_modifier_mask();                      /* synth STEP: SCL, EDIT edit notes */
     return m;
 }
 static uint32_t layer_btn(void) { return LAYERS[ui.layer % LAYER_N].btn; }
@@ -79,7 +77,7 @@ static void layer_masks(void)
 {
     uint32_t m = !layer_allowed() || (ui.ly && (ui.ly_t0 & LY_DEAD)) ? 0u
                : ui.ly ? ly_bit(ui.ly) : layer_bits() & ~fm1_in.buttons;
-    kb_mask = m | (layer_allowed() && !ui.ly ? 1u << panel.btn[B_SEQ] : 0u);
+    kb_mask = m;
 
     kb_lock = m && ui.lock ? 1u : 0u;
     punch_panel_mask = (m & ly_bit(LAYER_FX));
@@ -107,19 +105,10 @@ static void layer_arm(uint32_t pressed, uint32_t now)
 /* the layer opened: SET: what OCT- will put back */
 static void layer_opened(uint32_t l)
 {
-    uint32_t k;
-    lys.l = (uint8_t)l;
-    lys.trk = song.sel;
-    if (l == LAYER_FX) return;
-    for (k = 0; k < 4u; k++)
-        if (l == LAYER_GLO) {
-            lys.v[k] = trk[k].p[P_MUTE];
-            lys.v[4u + k] = trk[k].p[P_LEVEL];
-        } else {
-            lys.v[k] = TSEL->p[P_ROOT + k];
-            lys.v[4u + k] = k < 2u ? TSEL->p[P_CHRD + k] : 0;
-        }
-    lys.v[8] = song.g[G_BPM];
+    lys.l=(uint8_t)l;lys.trk=0;
+    if(l==LAYER_FX)return;
+    if(l==LAYER_GLO){lys.v[0]=TSEL->p[P_LEVEL];lys.v[1]=TSEL->p[P_PAN];lys.v[2]=TSEL->p[P_SPRD];lys.v[3]=song.g[G_BPM];}
+    else {for(uint32_t k=0;k<4u;k++)lys.v[k]=TSEL->p[P_ROOT+k];lys.v[4]=TSEL->p[P_CHRD];lys.v[5]=TSEL->p[P_VOIC];}
 }
 
 
@@ -165,8 +154,8 @@ static uint32_t layer_gesture(uint32_t now, uint32_t combo)
     if (l && lys.dtap) {                                /* #83: a double tap: locked open (no tap) */
         lys.dtap = 0;
         ui.home=lys.nv.home; ui.page=lys.nv.page; ui.act=lys.nv.act;
-        memcpy(ui.fam_last,lys.nv.fam,sizeof ui.fam_last); song.seq_mode=lys.nv.seq;
-        ui.entry_open=0; ui.msg_t=0; ui.lock=(uint8_t)l;
+        memcpy(ui.fam_last,lys.nv.fam,sizeof ui.fam_last);
+         ui.msg_t=0; ui.lock=(uint8_t)l;
         ui.ly_t0=(now&~15u)|1u|LY_OPEN; ui.force=1; layer_opened(l);
         return 0;
     }
@@ -188,7 +177,7 @@ static void layer_show(void)
 static void layer_tap(uint32_t l)
 {
     lys.dt_l=(uint8_t)l; lys.dt_ms=fm1_ms;
-    lys.nv.home=ui.home; lys.nv.page=ui.page; lys.nv.act=ui.act; lys.nv.seq=song.seq_mode;
+    lys.nv.home=ui.home; lys.nv.page=ui.page; lys.nv.act=ui.act;
     memcpy(lys.nv.fam,ui.fam_last,sizeof ui.fam_last);
     page_tap(LAYERS[l].btn);
 }
@@ -218,79 +207,25 @@ static void glo_tap(void)
 }
 
 /* a key pressed in layer l (k: 0 = F3 .. 26 = G5) */
-static void layer_key(uint32_t l, uint32_t k)
+static void layer_key(uint32_t l,uint32_t k)
 {
-    uint32_t p = key_place(k), i;
-    if (l == LAYER_GLO) {
-        if (key_black(k)) {
-            if (p < trk_n())
-                trk[p].p[P_MUTE] = (int16_t)!trk[p].p[P_MUTE];
-        } else if (p < NTRK) {
-            if (p < trk_n())                            /* (a track not in use: nothing) */
-                lys.solo |= 1u << k;                    /* (layer_masks: track_solo while held) */
-        } else if (p == 4u) {
-            for (i = 0; i < NTRK; i++)
-                trk[i].p[P_MUTE] = 0;
-        } else if (p == 7u) {
-            glo_tap();
-        }
-    } else if (l == LAYER_SCL) {
-        TSEL->p[P_ROOT] = (int16_t)((k + 5u) % 12u);    /* the key's note name (F3 = F) */
-        scale_share(TSEL);
-    }
+    if(l==LAYER_GLO){if(!key_black(k) && key_place(k)==7u)glo_tap();}
+    else if(l==LAYER_SCL){TSEL->p[P_ROOT]=(int16_t)((k+5u)%12u);scale_share(TSEL);}
 }
 /* each pass: the keys the layer got now; then GLO's solo: the tracks of its keys still held (perform.c) */
 static void layer_keys(uint32_t keys)
-{
-    uint32_t k, l = layer_open() ? layer_open() : ui.layer, s = 0;
-    for (k = 0; keys && k < 27u; k++)
-        if ((keys >> k) & 1u)
-            layer_key(l, k);
-    lys.solo &= kb_layer;
-    for (k = 0; k < 27u; k++)
-        if ((lys.solo >> k) & 1u)
-            s |= 1u << key_place(k);
-    track_solo = (uint8_t)s;
-}
+{for(uint32_t k=0;k<27u;k++)if(keys&(1u<<k))layer_key(layer_open()?layer_open():ui.layer,k);}
 
 /* KNOB 1..4 in the open layer: its own (GLO levels), else the four of its page */
-static void layer_knob(uint32_t k, int32_t s)
+static void layer_knob(uint32_t k,int32_t step)
 {
-    uint32_t l = layer_open();
-    if (l == LAYER_FX) {
-        if (!k) ui.punch_view=(uint8_t)clamp((int32_t)ui.punch_view+s,0,PUNCH_NFX-1u);
-        return;
-    }
-    if (l == LAYER_GLO) {                 /* T1..T4 LEVEL (those in use), recorded as on MIXER */
-        int16_t *vp = &trk[k].p[P_LEVEL];
-        if (k >= trk_n())
-            return;
-        *vp = (int16_t)clamp(*vp + accel(EN_K1 + k, s, TP[P_LEVEL].max - TP[P_LEVEL].min), TP[P_LEVEL].min, TP[P_LEVEL].max);
-        motion_capture(&trk[k], P_LEVEL, *vp);
-    } else if (l) {                                     /* the page's knobs, wherever the page is */
-        uint8_t h = ui.home, pg = ui.page;
-        ui.home = 0;
-        ui.page = (uint8_t)page_first(LAYERS[l].fam);
-        page_over = l == LAYER_SCL ? &LY_SCL : 0;
-        edit_param(k, s);
-        page_over = 0;
-        ui.home = h;
-        ui.page = pg;
-    }
+    uint32_t l=layer_open();
+    if(l==LAYER_FX){if(!k)ui.punch_view=(uint8_t)clamp((int32_t)ui.punch_view+step,0,PUNCH_NFX-1u);return;}
+    if(l){uint8_t h=ui.home,pg=ui.page;ui.home=0;ui.page=(uint8_t)page_first(LAYERS[l].fam);page_over=l==LAYER_SCL?&LY_SCL:0;edit_param(k,step);page_over=0;ui.home=h;ui.page=pg;}
 }
 
 /* PLAY with GLO held open: RESTART (from the top, playing on); stopped: PLAY. 1 = done here */
-static int layer_play(void)
-{
-    if (layer_open() != LAYER_GLO || chain_busy())
-        return 0;
-    if (song.g[G_CLOCK] && song.playing) {
-        ui_message("RESTART: CLK IS EXT");
-        return 1;
-    }
-    transport_req = song.playing ? 3u : 1u;
-    return 1;
-}
+static int layer_play(void) { return 0; }
 
 /* OCT- / OCT+ in a SET layer: no octave; OCT- let go puts back what the layer changed. Returns the taps left */
 static uint32_t layer_oct(uint32_t pressed, uint32_t oct)
@@ -300,13 +235,8 @@ static uint32_t layer_oct(uint32_t pressed, uint32_t oct)
         lys.oct |= (uint8_t)(((pressed >> dn) & 1u) | ((pressed >> up) & 1u) << 1);
     mine = oct & lys.oct;
     if (mine & 1u) {                                    /* OCT-: back to when it opened */
-        if (lys.l == LAYER_GLO) {
-            for (k = 0; k < NTRK; k++) {
-                trk[k].p[P_MUTE] = lys.v[k];
-                trk[k].p[P_LEVEL] = lys.v[4u + k];
-            }
-            song.g[G_BPM] = lys.v[8];
-            ui_message("MIX PUT BACK");
+        if(lys.l==LAYER_GLO){
+            TSEL->p[P_LEVEL]=lys.v[0];TSEL->p[P_PAN]=lys.v[1];TSEL->p[P_SPRD]=lys.v[2];song.g[G_BPM]=lys.v[3];ui_message("OUTPUT PUT BACK");
         } else {
             for (k = 0; k < 4u; k++)
                 trk[lys.trk % NTRK].p[P_ROOT + k] = lys.v[k];
@@ -322,7 +252,7 @@ static uint32_t layer_oct(uint32_t pressed, uint32_t oct)
 
 /* --------------------------------------------------------- the LEDs --- */
 /* lit = in effect now (held, the value, a track sounding), slow blink = can be pressed, dark = nothing there */
-static int glo_sounding(uint32_t t) { return !trk[t].p[P_MUTE] && (!track_solo || ((track_solo >> t) & 1u)); }
+
 static uint32_t layer_leds(void)
 {
     uint32_t k, m = 0, blink = ((fm1_ms / 250u) & 1u) == 0u, l = ui.layer;
@@ -332,9 +262,7 @@ static uint32_t layer_leds(void)
         if (l == LAYER_FX) {
             on = punch.req == punch_fx_of_key(k) || blink;
         } else if (l == LAYER_GLO) {
-            on = b ? p < trk_n() && glo_sounding(p) :
-                 p < NTRK ? p < trk_n() && (((lys.solo >> k) & 1u) | blink) : p == 4u ? blink :
-                 p == 7u && !song.g[G_CLOCK] && blink;
+            on=!b && p==7u && !song.g[G_CLOCK] && blink;
         } else if (l == LAYER_SCL) {                    /* the root lit, the scale's notes blink */
             e = (k + 5u + 12u - root) % 12u;
             on = e == 0u || (((mask >> e) & 1u) && blink);
@@ -388,64 +316,12 @@ static void layer_scl(void)                             /* KNOB 2's scales as a 
 }
 /* GLO held (docs/design: mock/r6_pages GLO): the keys as a keyboard: the black keys MUTE 1..4 (muted: red), the white
  * keys SOLO 1..4 (held: the track's colour), C unmutes all, the high F taps the tempo (an outside clock: dim) */
-static void layer_glo_keys(int32_t h)
-{
-    static const char *const WL[8][2] = {{"Solo", "1"}, {"Solo", "2"}, {"Solo", "3"}, {"Solo", "4"}, {"Mute", "all"},
-                                         {"", ""}, {"", ""}, {"Tap", "bpm"}};
-    static const uint8_t BX[NTRK] = {0, 1, 2, 4};       /* black key t: between white BX and BX + 1 (F# G# A# C#) */
-    const int32_t kw = 28, x0 = 1, wy = 50, by = 6, bh = 40;
-    uint32_t i;
-    for (i = 0; i < 8u; i++) {                          /* the white keys: the solos' numerals, All (unmute), Tap */
-        int32_t x = x0 + (int32_t)i * (kw + 1);
-        int on = i < NTRK && ((track_solo >> i) & 1u), none = !WL[i][0][0] || (i < NTRK && i >= trk_n()),
-            dim = i == 7u && song.g[G_CLOCK];
-        uint16_t f = on ? T_TRK(i) : none ? ux_mix(T_PANEL, T_SURF, 50) : T_SURF, ink = on ? T_INK : dim ? T_DIM :
-                     i < NTRK ? T_TRK(i) : T_TEXT;
-        cv_rrect(x, wy, kw, h - wy - 6, 4, f, T_PANEL);
-        if (!none)
-            cv_text_c(x + kw / 2, ty_y(h - 26, i < NTRK ? TY_TX : TY_LB), i < NTRK ? TY_TX : TY_LB,
-                      i < NTRK ? WL[i][1] : i == 4u ? "All" : "Tap", ink, f);
-    }
-    for (i = 0; i < NTRK; i++) {                        /* the black keys: the mutes (muted: red) */
-        int32_t x = x0 + (int32_t)(BX[i] + 1u) * (kw + 1) - 14;
-        int m = trk[i].p[P_MUTE] != 0;
-        uint16_t f = m ? T_REC : T_LIFT;
-        char n[2] = {(char)('1' + i), 0};
-        if (i >= trk_n()) {                             /* (a track not in use: its key blank) */
-            cv_rrect(x, by, 26, bh, 4, ux_mix(T_PANEL, T_SURF, 50), T_PANEL);
-            continue;
-        }
-        cv_rrect(x, by, 26, bh, 4, f, T_PANEL);
-        cv_icon_mid(x + 5, by + 12, 16, ICON_MUTE, m ? T_TEXT : T_SEC, f);
-        cv_text_c(x + 13, ty_y(by + bh - 10, TY_LB), TY_LB, n, m ? T_TEXT : T_SEC, f);
-    }
-}
+
 
 static void layer_cards(uint32_t l)
 {
-    char val[12];
-    const char *unit;
-    uint32_t c;
-    if (l == LAYER_GLO) {                 /* T1..T4 LEVEL (the track's icon; muted: dim) */
-        for (c = 0; c < NTRK; c++) {
-            if (c >= trk_n()) {                         /* (a track not in use: an empty card) */
-                draw_column(c, "", "", "", T_THEME, -1, ICON_NONE);
-                continue;
-            }
-            param_format(&TP[P_LEVEL], trk[c].p[P_LEVEL], val, &unit);
-            draw_column(c, "LEVEL", val, unit, glo_sounding(c) ? VAL(c) : T_DIM, RATIO(&TP[P_LEVEL], trk[c].p[P_LEVEL]),
-                        trk_icon(c, 1));
-        }
-    } else {                                            /* the page's four (SCL: LY_SCL) */
-        uint8_t h = ui.home, pg = ui.page;
-        ui.home = 0;
-        ui.page = (uint8_t)page_first(LAYERS[l].fam);
-        page_over = l == LAYER_SCL ? &LY_SCL : 0;
-        draw_columns();
-        page_over = 0;
-        ui.home = h;
-        ui.page = pg;
-    }
+    uint8_t h=ui.home,pg=ui.page;ui.home=0;ui.page=(uint8_t)page_first(LAYERS[l].fam);
+    page_over=l==LAYER_SCL?&LY_SCL:0;draw_columns();page_over=0;ui.home=h;ui.page=pg;
 }
 
 static void draw_punch_layer(void)
@@ -478,48 +354,24 @@ static void draw_punch_layer(void)
 }
 static void draw_layer(void)
 {
-    uint32_t l = ui.layer % LAYER_N, sig = l * 7919u + ux.gen * 977u, c;
+    uint32_t l=ui.layer%LAYER_N;
     if(l==LAYER_FX){draw_punch_layer();return;}
-    if (l == LAYER_GLO) {                               /* the four levels as strips at the top, each track's colour */
-        uint8_t cs = col_style;
-        if (ui.force)
-            lcd_fill(0, H_HEAD, 240, 240 - H_HEAD, T_BG);
-        col_style = CS_CARD;
-        for (c = 0; c < NTRK; c++)
-            card_tc[c] = T_TRK(c);
-        layer_cards(l);
-        memset(card_tc, 0, sizeof card_tc);
-        col_style = cs;
-    } else {
-        layer_cards(l);
-    }
-    if (l == LAYER_GLO)
-        sig += track_solo * 31u + (uint32_t)song.g[G_CLOCK] * 5u + trk_n() * 40503u +
-               (uint32_t)(trk[0].p[P_MUTE] | trk[1].p[P_MUTE] << 1 | trk[2].p[P_MUTE] << 2 | trk[3].p[P_MUTE] << 3) * 131u;
-    else if (l == LAYER_SCL)
-        sig += (uint32_t)TSEL->p[P_SCALE] * 31u;
-
-    if (l == LAYER_GLO) {                               /* (R6: levels at the top, the keys as a keyboard under them) */
-        if (ui.force || sig != ui.layer_sig) {
-            ui.layer_sig = sig;
-            pv_panel(Y_GRAPH, 240 - Y_GRAPH - 2, layer_glo_keys);
+    layer_cards(l);
+    if(l==LAYER_GLO){
+        if(ui.force){
+            lcd_fill(0,Y_GRAPH,240,240-Y_GRAPH,T_BG);
+            draw_text_box(8,110,224,TY_TX,"OUTPUT",T_THEME,1);
+            draw_text_box(8,142,224,TY_LB,"Level / Pan / Spread / Tempo",T_TEXT,1);
+            draw_text_box(8,176,224,TY_LB,"White key C4: tap tempo",T_SEC,1);
         }
         return;
     }
-    if (ui.force || sig != ui.layer_sig) {
-        ui.layer_sig = sig;
-        for (uint32_t band = 0; band < (uint32_t)(H_GRAPH); band += CV_MAX / (240)) {
-            cv_begin_band(240,H_GRAPH,T_BG,band);
-            cv_rrect(BOX_X, 0, BOX_W, H_GRAPH, 6, T_SURF, T_BG);
-            cv_bg = T_SURF;
-            layer_scl();
-            cv_blit_band(0, Y_GRAPH);
+    uint32_t sig=l*7919u+ux.gen*977u+TSEL->p[P_ROOT]*131u+TSEL->p[P_SCALE];
+    if(ui.force || sig!=ui.layer_sig){
+        ui.layer_sig=sig;
+        for(uint32_t band=0;band<H_GRAPH;band+=CV_MAX/240u){
+            cv_begin_band(240,H_GRAPH,T_BG,band);cv_rrect(BOX_X,0,BOX_W,H_GRAPH,6,T_SURF,T_BG);cv_bg=T_SURF;
+            layer_scl();cv_blit_band(0,Y_GRAPH);
         }
-    }
-    if (ui.force) {                                     /* the footer: what the keys, knobs and buttons do */
-        cv_begin(240, H_FOOT, T_BG);
-        cv_key_row(4, 236, (H_FOOT - KC_PH) / 2, LAYERS[l].foot, LAYERS[l].foot[2].act ? 3u : 2u, 7u, T_BG);
-        cv_blit(0, Y_FOOT);
-        ui.foot_sig = 0;
     }
 }

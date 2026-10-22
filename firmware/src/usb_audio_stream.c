@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
-/* UAC1 stereo playback and selectable stereo master / four-track capture.
+/* UAC1 stereo playback and stereo post-FX master capture.
  * Callers serialize USB service and each short audio block. Capture precedes
  * computer playback, so DAW monitoring cannot feed itself through capture.
  *
@@ -9,7 +9,7 @@
  * USB and I2S both run at the native 44.1 kHz rate; no resampler is needed. */
 #include <stdint.h>
 #define UA_RATE 44100u
-#define UA_CAP_CHANNELS 4u                    /* maximum; active stride follows the enumerated mode */
+#define UA_CAP_CHANNELS 2u                    /* fixed stereo capture */
 static uint8_t ua_cap_channels = 2u;
 #define UA_MAX_FRAMES 45u                      /* ceil(44.1 + maximum feedback correction) */
 #define UA_PLAY_PACKET (UA_MAX_FRAMES * 2u * 3u)
@@ -20,7 +20,7 @@ static uint8_t ua_cap_channels = 2u;
 #ifdef __APPLE__
 #define UA_POOL                                 /* (the host tests: Mach-O has no such section) */
 #else
-#define UA_POOL __attribute__((section(".pool")))   /* fixed stereo rings, 8 KiB; extra stems use the arena */
+#define UA_POOL __attribute__((section(".pool")))   /* fixed stereo rings, 8 KiB */
 #endif
 
 static struct {
@@ -32,18 +32,6 @@ static struct {
     uint32_t poll_max_ticks, service_max_ticks;
     int16_t play[UA_RING * 2u], cap[UA_RING * 2u];
 } ua UA_POOL;
-/* Stereo is always available. Four-track mode obtains a second stereo-sized
- * bank before re-enumerating; it retains the same 1,024-frame jitter margin.
- * The main loop prepares/releases it with audio and USB interrupts guarded.
- * TIMER5 and per-sample paths never allocate or resize. */
-static int16_t *ua_track_extra;
-static int ua_tracks_memory_prepare(int enabled)
-{
-    int16_t *p=UA_TRACKS_MEMORY(enabled?UA_RING*2u*sizeof(int16_t):0u);
-    if(enabled&&!p)return 0;
-    ua_track_extra=p;return 1;
-}
-
 #define UA_VOLUME_MIN (-64 * 256)
 /* Standard UAC1 volume: signed 1/256 dB, -64..0 dB in one-dB steps.
  * Q15 gain table: round(32768 * 10^(-dB/20)); no floating point in USB service. */
@@ -194,7 +182,6 @@ static uint32_t ua_transmit(uint8_t *p)
         if (take) {
             uint32_t at = (ua.cr++ & (UA_RING - 1u)) * 2u;
             sample[0]=ua.cap[at];sample[1]=ua.cap[at+1u];
-            if(ua_cap_channels==4u && ua_track_extra){sample[2]=ua_track_extra[at];sample[3]=ua_track_extra[at+1u];}
         }
         for (ch = 0; ch < ua_cap_channels; ch++)
             ua_encode(p + (i * ua_cap_channels + ch) * width, width, sample[ch]);
@@ -206,11 +193,10 @@ static uint32_t ua_transmit(uint8_t *p)
  * Stereo copies the finished synth output; playback follows MASTER and the
  * host's standard volume/mute controls, with a short gain ramp.
  * Call in blocks of CTL (32), with USB service excluded during this copy.
- * In track mode a null stem pointer skips capture for a block collected while
- * capture was disabled. Stereo requires no stems or additional DSP pass. */
-static void ua_audio(int32_t *out, const int32_t *tracks, uint32_t n, uint32_t master_q12)
+ * Capture uses the completed stereo master before computer playback is added. */
+static void ua_audio(int32_t *out, uint32_t n, uint32_t master_q12)
 {
-    uint32_t i, capture = ua.cap_alt && (ua_cap_channels == 2u || (tracks && ua_track_extra)), playback = 0;
+    uint32_t i, capture = ua.cap_alt, playback = 0;
     int32_t gain = ua_host_gain_q15, target = ua_host_mute ? 0 : ua_host_target_q15;
     uint32_t play_gain_q15 = (master_q12 * (uint32_t)gain) >> 12;
     if (capture && ua.cw - ua.cr + n > UA_RING) {
@@ -234,15 +220,8 @@ static void ua_audio(int32_t *out, const int32_t *tracks, uint32_t n, uint32_t m
         uint32_t pi = ((ua.pr + i) & (UA_RING - 1u)) * 2u;
         int32_t l = out[2u * i], r = out[2u * i + 1u];
         if (capture) {
-            if (ua_cap_channels == 2u) {
-                ua.cap[ci] = (int16_t)l;
-                ua.cap[ci + 1u] = (int16_t)r;
-            } else {
-                ua.cap[ci]=(int16_t)ua_clip(tracks[i*4u]);
-                ua.cap[ci+1u]=(int16_t)ua_clip(tracks[i*4u+1u]);
-                ua_track_extra[ci]=(int16_t)ua_clip(tracks[i*4u+2u]);
-                ua_track_extra[ci+1u]=(int16_t)ua_clip(tracks[i*4u+3u]);
-            }
+            ua.cap[ci]=(int16_t)ua_clip(l);
+            ua.cap[ci+1u]=(int16_t)ua_clip(r);
         }
         if (playback) {
             if (gain != target) {            /* at most 128 samples (~3 ms) for a full-scale change */

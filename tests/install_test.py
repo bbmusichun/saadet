@@ -3,11 +3,11 @@
 # Copyright (C) 2026 Kerem Kilic (Ellic Studio)
 # Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 """tools/fm1_install.py against a simulated FM-1 (no hardware, no mido).
-The fake device is the one in web/test_web.mjs: identity on the handshake,
+The fake device models the update protocol: identity on the handshake,
 then "device asks, host answers" reads of the logical image. Run from the repo root:
   python3 tests/install_test.py
 Also checks logical_image/product_of against web/fm1pkg.js (needs node and
-build/melodee.fwsc, skipped otherwise)."""
+build/saadet.fwsc, skipped otherwise)."""
 import io
 import queue
 import shutil
@@ -285,9 +285,9 @@ def loaders():
 
 
 def against_js():
-    clean = ROOT / "build/melodee.fwsc"
+    clean = ROOT / "build/saadet.fwsc"
     if not shutil.which("node") or not clean.exists():
-        print("logical image vs fm1pkg.js: skipped (needs node and build/melodee.fwsc)")
+        print("logical image vs fm1pkg.js: skipped (needs node and build/saadet.fwsc)")
         return
     js = ("import { logicalImage, productOf } from %r; import { readFileSync } from 'node:fs';"
           "const p = readFileSync(process.argv[1]); process.stderr.write(productOf(p));"

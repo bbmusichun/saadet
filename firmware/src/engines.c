@@ -17,7 +17,6 @@
 #include "eng_trio.c"
 #include "eng_wheel.c"
 #include "eng_phys.c"           /* PHYS: DaisySP physical models (phys_dsp.c, MIT) */
-#include "eng_drum.c"           /* DRUM: synthesized 808 circuits (drum_808.c), the 909, a C64's SID (drum_sid.c) */
 #if MELODEE_LEGACY_EXTRAS
 #include "eng_noise.c"
 #endif
@@ -63,7 +62,6 @@ static uint32_t eng_state_size(uint32_t e)
 #endif
     case ENGI_CZ: return sizeof(cz_part_t);
     case 3: return sizeof(sid_part_t);              /* SID (eng_sid.c) */
-    case ENGI_DRUM: return sizeof(drum909_part_t);
     case ENGI_FM6: return sizeof(fm6_part_t);
 #if MELODEE_SLICE
     case ENGI_SLICE: return sizeof(slc_rb_t);
@@ -78,13 +76,10 @@ static void eng_state_clear(uint32_t part)
 static void eng_state_reset(void) { for (uint32_t k = 0; k < NPART; k++) eng_state_clear(k); }
 static int eng_state_prepare(const track_t *t)
 {
-    uint32_t size = t->engine==ENGI_DRUM?drum_bytes(t):eng_state_size(t->engine);
+    uint32_t size = eng_state_size(t->engine);
     return !size || resource_get(RES_ENGINE0 + (uint32_t)(t - trk), size) != 0;
 }
 static phys_slot_t *phys_slots(uint32_t part) { return resource_get(RES_ENGINE0 + part % NPART, sizeof(phys_slot_t) * PHYS_POLY); }
-static drum909_part_t *drum909_part(uint32_t part) { return resource_get(RES_ENGINE0 + part % NPART, sizeof(drum909_part_t)); }
-static drum_lane_t *drum_kit_part(uint32_t part) { return resource_get(RES_ENGINE0 + part % NPART, sizeof(drum_lane_t) * DV_NLANE); }
-static dsk_part_t *dsk_part(uint32_t part) { return resource_get(RES_ENGINE0 + part % NPART, sizeof(dsk_part_t)); }
 static drw_part_t *drw_of(const track_t *t) { return resource_get(RES_ENGINE0 + (uint32_t)(t - trk), sizeof(drw_part_t)); }
 static fm6_part_t *fm6_part(uint32_t part) { return resource_get(RES_ENGINE0 + part % NPART, sizeof(fm6_part_t)); }
 static cz_part_t *cz_part(uint32_t part) { return resource_get(RES_ENGINE0 + part % NPART, sizeof(cz_part_t)); }
@@ -132,7 +127,7 @@ static const engine_t *const ENGINES[NENGINES] = {
 #else
     &ENG_RETIRED,                /* 9: retired PHYS; stored ID reserved */
 #endif
-    &ENG_DRUM,                   /* 10 (ENGI_DRUM) */
+    &ENG_RETIRED,                /* 10: DRUM retired in Saadet; stored ID reserved. */
 #if MELODEE_LEGACY_EXTRAS
     &ENG_NOISE,                  /* 11 */
 #else
@@ -186,7 +181,6 @@ static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
 #if MELODEE_SLICE
     13,                          /* SLICE */
 #endif
-    10,                          /* DRUM */
 };
 
 /* Retired synth records (ANALOG and DIGITAL since 2.0 too) retain their stored identity and render silence.
@@ -202,7 +196,7 @@ static int eng_extra_retired(uint32_t e)
  * eng_vis(n), e's place among them eng_rank(e), the next / previous one eng_step(e, dir) (wraps) */
 static int eng_ok(uint32_t e)
 {
-    return e < NENGINES && !(e >= 16u && e <= 18u) && !eng_extra_retired(e) && e != 4u && e != 8u && e != 14u && (MELODEE_SLICE || e != ENGI_SLICE);
+    return e != ENGI_DRUM && e < NENGINES && !(e >= 16u && e <= 18u) && !eng_extra_retired(e) && e != 4u && e != 8u && e != 14u && (MELODEE_SLICE || e != ENGI_SLICE);
 }
 static uint32_t eng_sound_idx(uint32_t e)
 {
@@ -226,4 +220,4 @@ static uint32_t eng_step(uint32_t e, int32_t dir)
 /* the parts at power-on and in a new song (engine, preset; the steps empty): poly, bass, lead, drums. IT'S A
  * PROPHET 5, FM6 SOLID BASS, CZ-1 SYNTH.LEAD 1, 808 KIT (until 2026-10-16: PROPHET FUNK BASS II, FM6 PAD, SID INIT
  * SID, 808 KIT) */
-static const uint8_t TRK_DEF[NPART][2] = {{ENGI_PROPHET, 1}, {ENGI_FM6, 10}, {ENGI_CZ, 52}, {ENGI_DRUM, 0}};
+static const uint8_t TRK_DEF[NPART][2] = {{ENGI_PROPHET, 1}};

@@ -15,7 +15,7 @@ Tap FX: track rack. Hold FX: silent effect keys. Double tap: lock the layer;
 tap again: unlock. Last pressed key wins; its release fades dry in 64 samples.
 A previously held musical key remains a musical key. Closing the layer while
 an effect key is still down leaves that effect active until its key releases.
-Stop, project changes and modal cancellation end a request.
+Transport stop, sound changes and modal cancellation end a request.
 
 | White key | Effect | Black key | Effect |
 | --- | --- | --- | --- |
@@ -69,6 +69,6 @@ loops, effect transitions, exact dry bypass, key ownership, transport phase,
 memory rejection, freeze sustain and the completed stereo master/return sum.
 `tests/echoverb_test.c` checks exact native PCM history, delay extremes,
 decaying normal tails and insert/shared integration. UI renders cover both
-fonts, crowded recording headers, lock, memory status and restored Echoverb.
+fonts, crowded synth headers, lock, memory status and restored Echoverb.
 Physical musical feel, output sound and stressed device deadlines require
 hardware listening/measurement; builds and simulated audio alone do not prove them.

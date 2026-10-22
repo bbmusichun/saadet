@@ -5,7 +5,7 @@
 #include "ui_test.c"
 #include <assert.h>
 
-static int sounding(uint32_t tr, uint32_t note)
+static int note_sounding(uint32_t tr, uint32_t note)
 {
     for (uint32_t v = 0; v < NVOICE; v++) if (trk[tr].v[v].gate && trk[tr].v[v].note == note) return 1;
     return 0;
@@ -38,39 +38,39 @@ static void timing(void)
     reset(); delay(TSEL, 0, 1, 32); /* eighth note; lose roughly 25% each hit */
     int16_t before[P_COUNT]; memcpy(before, TSEL->p, sizeof before);
     trk_note_on(TSEL, 60, 100); trk_note_off(TSEL, 60);
-    trk_note_on(&trk[1], 64, 100); trk_note_off(&trk[1], 64);
+
     advance(FS / 4u - 1u); assert(!gates()); advance(1);
-    assert(sounding(0, 60) && velocity(0, 60) == 74 && !sounding(1, 64));
+    assert(note_sounding(0, 60) && velocity(0, 60) == 74);
     advance(FS / 8u); assert(!gates()); advance(FS / 4u - FS / 8u);
-    assert(sounding(0, 60) && velocity(0, 60) == 55);
+    assert(note_sounding(0, 60) && velocity(0, 60) == 55);
     assert(!memcmp(before, TSEL->p, sizeof before) && !mo_w);
-    seq_stop(); advance(FS); assert(!gates() && !midi_insert.pending);
+    transport_stop(); advance(FS); assert(!gates() && !midi_insert.pending);
     /* The 11025-sample eighth does not divide a 32-sample control block.
      * Servicing it late must not accumulate lateness in later deadlines. */
     reset(); delay(TSEL, 0, 1, 32); trk_note_on(TSEL, 60, 100); trk_note_off(TSEL, 60);
     advance(FS / 4u + CTL - 1u);
     uint32_t next_due = 0;
     for (uint32_t k = 0; k < MD_QUEUE; k++) if (midi_insert.q[k].track == 0 && midi_insert.q[k].vel) next_due = midi_insert.q[k].due;
-    assert(next_due == 2u * (FS / 4u)); seq_stop();
+    assert(next_due == 2u * (FS / 4u)); transport_stop();
     /* Every division uses sample time and continues with external clock stopped. */
     for (uint32_t d = 0; d < NELEM(N_DIV); d++) {
         reset(); delay(TSEL, 2, d, 64); song.g[G_CLOCK] = 1;
         trk_note_on(TSEL, 67, 100); trk_note_off(TSEL, 67);
         uint32_t gap = division_samples(FS / 2u, d);
-        advance(gap - 1u); assert(!gates()); advance(1); assert(sounding(0, 67));
+        advance(gap - 1u); assert(!gates()); advance(1); assert(note_sounding(0, 67));
         trk_all_off(TSEL); assert(!midi_insert.pending);
     }
-    puts("MIDI inserts: timed repeats, velocity decay, track isolation, all divisions and stopped clock passed");
+    puts("MIDI inserts: timed repeats, velocity decay, all divisions and stopped clock passed");
 }
 static void ownership(void)
 {
     reset(); delay(TSEL, 0, 1, 32);
-    trk_note_on(TSEL, 60, 100); advance(FS / 4u); assert(sounding(0, 60));
-    advance(FS / 8u); assert(sounding(0, 60)); /* echo's release cannot cut a held source */
-    trk_note_off(TSEL, 60); assert(!sounding(0, 60));
-    advance(FS / 4u - FS / 8u); assert(sounding(0, 60));
-    trk_note_on(TSEL, 60, 90); advance(FS / 8u); assert(sounding(0, 60));
-    trk_note_off(TSEL, 60); seq_stop(); advance(FS); assert(!gates());
+    trk_note_on(TSEL, 60, 100); advance(FS / 4u); assert(note_sounding(0, 60));
+    advance(FS / 8u); assert(note_sounding(0, 60)); /* echo's release cannot cut a held source */
+    trk_note_off(TSEL, 60); assert(!note_sounding(0, 60));
+    advance(FS / 4u - FS / 8u); assert(note_sounding(0, 60));
+    trk_note_on(TSEL, 60, 90); advance(FS / 8u); assert(note_sounding(0, 60));
+    trk_note_off(TSEL, 60); transport_stop(); advance(FS); assert(!gates());
     /* Editing/removing an insert cancels scheduled repeats and sounding echoes. */
     trk_note_on(TSEL, 65, 100); trk_note_off(TSEL, 65); advance(FS / 4u);
     TSEL->p[P_FXTYPE] = FX_OFF; advance(1); assert(!gates() && !midi_insert.pending);
@@ -113,7 +113,7 @@ static void verb(void)
     midi_insert_tick(0, FS / 2u); assert(midi_verb[0] == 100 && !midi_verb[1]);
     uint8_t after[FM6_PACKED]; fm6_pack(fm6_ed(TSEL), after); assert(!memcmp(native, after, sizeof native));
     TSEL->p[P_FXMIX] = 0; midi_insert_tick(0, FS / 2u); assert(!midi_verb[0]);
-    puts("MIDIVerb: audible native-engine release, track isolation, bypass and unchanged instrument patch passed");
+    puts("MIDIVerb: audible native-engine release, bypass and unchanged instrument patch passed");
 }
 /* Original per-tick release calculation is the oracle. Changing the amount,
  * bypassing it, editing R4 and re-keying must invalidate the cached rate. */
@@ -156,36 +156,6 @@ static void fm6_release_rates(void)
     midi_verb[0] = 0;
     puts("FM6 MIDI release: 3000 changing, bypassed, edited and retriggered blocks match uncached envelopes");
 }
-static void original_recording(void)
-{
-    reset(); delay(TSEL, 0, 1, 32);
-    TSEL->p[P_FX2TYPE] = FX_MIDIVERB; TSEL->p[P_FX2MIX] = 90;
-    song.rec = song.rec_latch = 1; seq_start(); seq_advance(0);
-    input_on(TSEL, 60, 73); seq_advance(1200); input_off(TSEL, 60);
-    advance(FS / 4u); assert(sounding(0, 60));
-    seq_stop();
-    assert(recording[0].note == 60 && recording[0].vel == 73 && recording[0].duration && !recording[1].vel);
-    puts("MIDI inserts: recording retains source pitch, velocity and duration without capturing echoes");
-}
-static void ui_storage(void)
-{
-    reset(); go_title("FX"); fx_rack_row[0] = 0;
-    edit_param(0, FX_MIDIVERB); assert(TSEL->p[P_FXTYPE] == FX_MIDIVERB && TSEL->p[P_FXMIX] == 64);
-    int16_t *vp;
-    const page_t *slot = &PAGES[page_titled("FX 1")];
-    assert(str_eq(page_desc(slot, 0, &vp)->label, "REL"));
-    assert(!page_desc(slot, 1, &vp) && !page_desc(slot, 2, &vp) && !page_desc(slot, 3, &vp));
-    edit_param(0, 1); assert(TSEL->p[P_FXTYPE] == FX_MIDIDELAY && TSEL->p[P_FXRATE] == 1);
-    assert(page_desc(slot, 1, &vp)->fmt == F_ENUM && page_desc(slot, 1, &vp)->max == 9);
-    assert(str_eq(page_desc(slot, 2, &vp)->label, "DECAY") && !page_desc(slot, 3, &vp));
-    assert(GP[G_MFXTYPE].max == FX_CHORUS && GP[G_MFX2TYPE].max == FX_CHORUS && GP[G_MFX3TYPE].max == FX_CHORUS);
-    delay(TSEL, 1, 4, 31); TSEL->p[P_FX3TYPE] = FX_MIDIVERB; TSEL->p[P_FX3MIX] = 90;
-    project_t q; project_store_t p; project_capture(&q); assert(proj_pack(&p, &q) && proj_import(&proj_scratch, &p, sizeof p));
-    for (uint32_t k = P_FXTYPE; k <= P_FX3CHAR; k++) assert(proj_scratch.t[0].p[k] == TSEL->p[k]);
-    template_save(); memset(TSEL->p + P_FXTYPE, 0, FX_SLOTS * FX_PARAMS * sizeof(int16_t)); template_load();
-    assert(TSEL->p[P_FXTYPE] == FX_MIDIDELAY && TSEL->p[P_FX2TYPE] == FX_MIDIDELAY && TSEL->p[P_FX3TYPE] == FX_MIDIVERB);
-    int32_t b[CTL] = {10000}; assert(!fx_process(TSEL, b, CTL));
-    for (uint32_t k = 0; k < FX_SLOTS; k++) assert(!resource[RES_FX0+k].size);
-    puts("MIDI inserts: rack controls, shared exclusion, project/template round trips and no DSP allocation passed");
-}
-int main(void) { timing(); ownership(); verb(); fm6_release_rates(); original_recording(); ui_storage(); printf("MIDI insert state: %zu bytes\n", sizeof midi_insert + sizeof midi_verb); return 0; }
+
+
+int main(void) { timing(); ownership(); verb(); fm6_release_rates();  printf("MIDI insert state: %zu bytes\n", sizeof midi_insert + sizeof midi_verb); return 0; }

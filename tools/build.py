@@ -252,7 +252,6 @@ def build_stub():
 # ---- app
 
 def build_app(stub):
-    subprocess.run([sys.executable, SRC / "tools/gen_909_tables.py", GEN / "x0x_drum_tables.h"], check=True)
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("MELODEE_FLASH", "MELODEE_OTA", "MELODEE_OTA_DRYRUN", "MELODEE_OTA_RAMONLY", "MELODEE_CDC",
                  "MELODEE_UART", "MELODEE_USB_AUDIO", "MELODEE_ICONS", "MELODEE_PROPHET_PROTOTYPE", "MELODEE_CORE1_FALLBACK",
@@ -513,7 +512,7 @@ def main():
             cpu_flags[flag] = int(os.environ[flag])
         cpu_sources = {str(p.relative_to(SRC)): hashlib.sha256(p.read_bytes()).hexdigest()
                        for p in sorted(FW.rglob('*')) if p.is_file()}
-    name = "melodee.fwsc"
+    name = "saadet.fwsc"
     if os.environ.get("MELODEE_DUAL_CORE", "1") != "1":
         ap.error("Single-core firmware is retired; MELODEE_DUAL_CORE must be 1")
     os.environ["MELODEE_DUAL_CORE"] = "1"
@@ -523,11 +522,11 @@ def main():
         except ValueError as error:
             raise SystemExit(str(error)) from error
         VERSION = "v" + a.release.lower()      # e.g. v1.0, v1.1-rc1
-        name = f"melodee-{a.release}.fwsc"
+        name = f"saadet-{a.release}.fwsc"
     if a.nightly:
         revision = subprocess.check_output(["git", "rev-parse", "--short=7", "HEAD"], cwd=SRC, text=True).strip()
-        VERSION = "next-" + revision
-        name = f"melodee-nightly.fwsc"
+        VERSION = "saadet-next-" + revision
+        name = "saadet-nightly.fwsc"
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:

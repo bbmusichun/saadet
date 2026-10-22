@@ -77,7 +77,7 @@ static void setup_case(uint32_t alg, uint32_t eng, uint32_t voices)
     memset(&mod, 0, sizeof mod);
     memset(resource, 0, sizeof resource);
     memset(mix_cache, 0, sizeof mix_cache);
-    track_solo = 0;
+
     for (uint32_t i=0;i<NPART;i++) solo_gain[i]=32768;
     lim_env = LIM_T;
     dc_l = dc_r = dce_l = dce_r = 0;
@@ -118,7 +118,7 @@ static void render_case(int parallel, uint32_t alg, uint32_t eng, uint32_t voice
         if (pos == CTL * 32u) midi_bend_target[0] = 256;
         if (pos == CTL * 64u) for (uint32_t i = 0; i < voices; i++) trk_note_off(&trk[i % NTRK], 48u + i);
         if (pos == CTL * 96u) for (uint32_t i = 0; i < voices; i++) trk_note_on(&trk[i % NTRK], 60u + i, 110u);
-        if (pos == CTL * 160u) { trk[0].eng_req = 0; trk[0].p[P_E0] = 1; }
+        if (pos == CTL * 160u) { trk[0].eng_req = 3; trk[0].p[P_E0] = 1; }
         mix_block(out, CTL);
         assert(!fm6_pending);
         assert(AW_LOAD(&audio_worker.request) == AW_LOAD(&audio_worker.complete));
@@ -198,7 +198,7 @@ static void prophet_allocation(void)
     for(uint32_t i=0;i<8;i++)trk_note_on(&trk[0],48+i,100);
     assert(active_voices(&trk[0])==8 && voices_busy()==VBUDGET);
     for(uint32_t i=1;i<NTRK;i++)trk_note_on(&trk[i],60+i,100);
-    assert(active_voices(&trk[0])==6 && voices_busy()<=VBUDGET);
+    assert(active_voices(&trk[0])==8 && voices_busy()==VBUDGET);
     for(uint32_t i=1;i<NTRK;i++)assert(active_voices(&trk[i])==1);
     /* Native factory unison stays at its requested five; an explicit count
      * of eight is allowed only with an online worker. */
@@ -383,7 +383,7 @@ static int dual_core_suite(void)
     for(uint32_t eng=0;eng<3;eng++){fm6_control_jobs(0,eng);fm6_control_jobs(1,eng);}
     puts("FM6 control jobs: immediate/deferred PCM and complete native state exact under stealing, modulation and MIDI release edits");
     for(uint32_t type=1;type<FX_AUDIO_COUNT;type++){if(fx_retired(type))continue;shared_bus_case(0,type);shared_bus_case(1,type);}
-    puts("Shared FX bus: 8 three-effect chains, four live synth tracks, serial/concurrent bit equality and joins: OK");
+    puts("Shared FX bus: 8 three-effect chains, one live synth part, serial/concurrent bit equality and joins: OK");
     shared_bus_retire();
     prophet_allocation();
     uint32_t prophet_cases=0;
@@ -422,7 +422,7 @@ static int dual_core_suite(void)
     assert(AW_LOAD(&audio_worker.request) == 0);
     assert(!pthread_cancel(thread));
     assert(!pthread_join(thread, 0));
-    printf("dual-core: 1536 FM6 + %u Prophet serial/concurrent cases identical; %u FM6 / %u Prophet pairs; eight-voice allocation, retire mid-song, busy/offline/wrap ok\n", prophet_cases,fm6_pairs,p5_pairs);
+    printf("dual-core: 1536 FM6 + %u Prophet serial/concurrent cases identical; %u concurrent batch groups; eight-voice allocation, retire mid-session, busy/offline/wrap ok\n", prophet_cases,audio_batch_pairs);
     return 0;
 }
 

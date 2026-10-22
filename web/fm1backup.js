@@ -1,17 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Kerem Kilic (Ellic Studio)
 // Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
-// Local, complete musical archives. Requests name whitelisted objects, never flash addresses.
-export const BACKUP_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 32, 33, 34];   // 8: the FM6 patch bank (firmware with FM6)
-const BACKUP_IDS_V1 = BACKUP_IDS.filter((id) => id !== 8);              // firmware before FM6, and its archives
-const BACKUP_IDS_BANKS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
-const BACKUP_IDS_CZ = Array.from({length:17},(_,i)=>i);
-const BACKUP_IDS_OWN = Array.from({length:21},(_,i)=>i);
-const BACKUP_IDS_NATIVE = Array.from({length:23},(_,i)=>i);
-const BACKUP_IDS_SHARED = Array.from({length:29},(_,i)=>i);
-const BACKUP_IDS_P5 = Array.from({length:28},(_,i)=>i);
-const maxSize = id => id >= 32 ? 81920 : (id === 0 || (id >= 2 && id <= 5)) ? 27904 : 3840;
-const idsOf = (n) => (n === BACKUP_IDS.length ? BACKUP_IDS : n === BACKUP_IDS_V1.length ? BACKUP_IDS_V1 : n === 9 ? BACKUP_IDS_BANKS : n === 17 ? BACKUP_IDS_CZ : n === 21 ? BACKUP_IDS_OWN : n === 23 ? BACKUP_IDS_NATIVE : n === 28 ? BACKUP_IDS_P5 : n===29?BACKUP_IDS_SHARED:null);
+// Saadet archives use explicit object identities; object 32 is synth state.
+export const BACKUP_IDS=[1,6,7,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,32];
+const maxSize=()=>3840;
 export const BACKUP_CMD = { LIST: 65, GET: 66, PUT: 67 };
 const BACKUP_CHUNK = 256;
 export const bkU32 = (n) => Array.from({ length: 5 }, (_, i) => (n >>> (i * 7)) & (i === 4 ? 15 : 127));
@@ -52,141 +44,49 @@ function bkCheck(rc) {
   if (rc) throw new Error(({ 1: "Invalid archive object", 2: "Archive data failed validation", 3: "Stop playback first", 4: "Flash write failed", 5: "Start a fresh backup" })[rc] || `Archive error ${rc}`);
 }
 export function bkManifest(a) {
-  if (a[0] !== 1) throw new Error("Unsupported archive protocol");
-  bkCheck(a[1]);
-  const ids = idsOf(a[2]);
-  if (!ids || a.length !== 3 + a[2] * 11) throw new Error("Incomplete archive manifest");
-  return ids.map((id, i) => {
-    const p = 3 + i * 11;
-    if (a[p] !== id) throw new Error("Unexpected archive object");
-    const size = bkR32(a, p + 1), crc = bkR32(a, p + 6);
-    if (size > maxSize(id) || (!size && crc)) throw new Error("Archive object too large");
-    return { id, size, crc };
-  });
+  if(a[0]!==1)throw Error("Unsupported archive protocol");bkCheck(a[1]);
+  if(a[2]!==BACKUP_IDS.length || a.length!==3+BACKUP_IDS.length*11)throw Error("Not a Saadet archive manifest");
+  return BACKUP_IDS.map((id,i)=>{const at=3+i*11;if(a[at]!==id)throw Error("Unexpected archive object");const size=bkR32(a,at+1),crc=bkR32(a,at+6);if(size>maxSize(id)||(!size&&crc))throw Error("Invalid archive size");return {id,size,crc};});
 }
-const bkBase64 = (bytes) => { let s = ""; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); };
+function fnv(bytes){let h=2166136261;for(const b of bytes)h=Math.imul(h^b,16777619)>>>0;return h;}
 export function readBackup(file) {
-  if (typeof file === "string") file = JSON.parse(file);
-  const ids = file && Array.isArray(file.objects) ? idsOf(file.objects.length) : null;
-  if (!file || file.format !== "felucca-backup" || file.version !== 1 || !ids)
-    throw new Error("Not a complete Melodee backup");
-  const objects = file.objects.map((o, i) => {
-    if (!o || o.id !== ids[i] || !Number.isInteger(o.size) || o.size < 0 || o.size > maxSize(o.id) ||
-        !Number.isInteger(o.crc) || o.crc < 0 || o.crc > 0xffffffff || typeof o.data !== "string" ||
-        o.data.length !== 4 * Math.ceil(o.size / 3) || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(o.data))
-      throw new Error("Invalid backup object");
-    const bytes = Uint8Array.from(atob(o.data), (c) => c.charCodeAt(0));
-    if (bytes.length !== o.size || bkCrc(bytes) !== o.crc) throw new Error("Backup checksum mismatch");
-    const shared=o.id>=6&&o.id<=28&&o.id!==8&&o.size===3716&&new DataView(bytes.buffer).getUint32(0,true)===0x32425055;
-    if(shared){const v=new DataView(bytes.buffer);if(v.getUint16(4,true)!==206||v.getUint16(6,true)!==18)throw Error("Invalid shared preset bank");}
-    if(o.id>=23&&o.id<=27&&o.size&&!shared){
-      if(o.size!==3600)throw Error("Invalid Prophet bank size");const v=new DataView(bytes.buffer),used=v.getUint32(4,true),fav=v.getUint32(8,true),mask=(1<<(o.id===27?24:26))-1;
-      if(v.getUint32(0,true)!==0x31553550||(used&~mask)||(fav&~(mask|(o.id===23?0x80000000:0))))throw Error("Invalid Prophet bank");
-      for(let k=0;k<26;k++)if(used>>k&1){const b=bytes.subarray(12+k*138,12+(k+1)*138);if(![128,133].includes(b[133])||![49,50].includes(b[134])||![2,3].includes(b[135])||b[135]===2&&(b[136]>9||b[137]>39))throw Error("Invalid Prophet program");}
-    }
-    if(o.id>=19 && o.id<=22 && o.size===2060){
-      const v=new DataView(bytes.buffer),used=v.getUint32(8,true);
-      if(v.getUint32(0,true)!==0x314d464e || v.getUint16(4,true)!==1 || v.getUint16(6,true)!==16 || used>>>16)throw new Error("Invalid native FM6 preset object");
-      for(let k=0;k<16;k++)if(used>>k&1)if(bytes.subarray(12+k*128,12+(k+1)*128).some(x=>x>127))throw new Error("Invalid native DX7 voice");
-    }
-    if(o.id>=21 && o.id<=22 && o.size && o.size!==2060 && !shared)throw new Error("Invalid native FM6 preset size");
-    if(o.id>=9 && o.id<=16 && o.size && !shared){
-      if(o.size!==2332)throw new Error("Invalid CZ bank size");const v=new DataView(bytes.buffer),used=v.getUint32(8,true);
-      if(v.getUint32(0,true)!==0x42435a43 || ![1,2].includes(v.getUint16(4,true)) || v.getUint16(6,true)!==16 || used>>>16 || !bytes[12] || Array.from(bytes.slice(12,28)).some(x=>x>126 || x>0&&x<32))throw new Error("Invalid CZ bank");
-      for(let i=0;i<16;i++)if(used>>i&1){const b=bytes.subarray(28+i*144,28+(i+1)*144);if((b[0]&240)||(b[0]>>2)>2||b[1]>1||(b[2]&3)||b[3]>47||[0,57].some(j=>(b[16+j]&15)>9||(b[16+j]>>4)>14||b[18+j]>9||[20,37,54].some(k=>b[k+j]&8)))throw new Error("Invalid CZ bank tone");}
-    }
-    if (o.id >= 32 && o.size) {
-      if (o.size < 512) throw new Error("Short sample backup");
-      const view = new DataView(bytes.buffer), length = view.getUint32(16, true), count = bytes[6];
-      if (view.getUint32(0, true) !== 0x504d5346 || view.getUint16(4, true) !== 1 || !count || count > 16 ||
-          length !== o.size - 512 || bkCrc(bytes.subarray(512)) !== view.getUint32(20, true)) throw new Error("Invalid sample backup");
-      for (let z = 0; z < count; z++) {
-        const off = 32 + z * 28, start = view.getUint32(off,true), n = view.getUint32(off+4,true),
-          ls = view.getUint32(off+8,true), le = view.getUint32(off+12,true), rate = view.getUint32(off+16,true);
-        if (!n || start > length || Math.ceil(n/2) > length - start || n > 163840 || ls > le || le >= n ||
-            !rate || rate > 262144 || bytes[off+24] > 88 || bytes[off+25] > bytes[off+26]) throw new Error("Invalid sample zone");
-      }
-    }
-    return { ...o, bytes };
+  if(typeof file==="string")file=JSON.parse(file);
+  if(!file||file.format!=="saadet-backup"||file.version!==1||!Array.isArray(file.objects)||file.objects.length!==BACKUP_IDS.length)throw Error("Not a complete Saadet backup");
+  const objects=file.objects.map((o,i)=>{
+    if(!o||o.id!==BACKUP_IDS[i]||!Number.isInteger(o.size)||o.size<0||o.size>maxSize(o.id)||!Number.isInteger(o.crc)||o.crc<0||o.crc>0xffffffff||typeof o.data!=="string"||o.data.length!==4*Math.ceil(o.size/3)||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(o.data))throw Error("Invalid backup object");
+    const bytes=Uint8Array.from(atob(o.data),c=>c.charCodeAt(0));if(bytes.length!==o.size||bkCrc(bytes)!==o.crc)throw Error("Backup checksum mismatch");
+    const v=new DataView(bytes.buffer);
+    if(o.id===32){if(o.size<512||v.getUint32(0,true)!==0x31534453||v.getUint32(4,true)!==o.size||v.getUint32(o.size-4,true)!==fnv(bytes.subarray(0,-4)))throw Error("Invalid synth state");}
+    else if(o.id===1){if(o.size<604||v.getUint32(0,true)!==0x50455235)throw Error("Invalid settings record");}
+    else if(o.size&&(o.size!==3716||v.getUint32(0,true)!==0x32425055||v.getUint16(4,true)!==206||v.getUint16(6,true)!==18))throw Error("Invalid shared sound bank");
+    return {...o,bytes};
   });
-  if (!objects[0].size || !objects[1].size) throw new Error("Backup is missing the current music or settings");
-  return { ...file, objects };
+  return {...file,objects};
 }
-export async function captureBackup(request, firmware, onProgress = () => {}) {
-  const manifest = bkManifest(await request([BACKUP_CMD.LIST, []], { timeout: 3000, retries: 0 }));
-  const objects = [], total = manifest.reduce((n, o) => n + o.size, 0); let done = 0;
-  for (const o of manifest) {
-    const bytes = new Uint8Array(o.size);
-    for (let off = 0; off < o.size; off += BACKUP_CHUNK) {
-      const size = Math.min(BACKUP_CHUNK, o.size - off);
-      const a = await request([BACKUP_CMD.GET, [o.id, ...bkU32(off), size & 127, size >>> 7]], { timeout: 1000, retries: 1 });
-      bkCheck(a[1]);
-      if (a[0] !== o.id || bkR32(a, 2) !== off || (a[7] | a[8] << 7) !== size) throw new Error("Unexpected backup reply");
-      bytes.set(bkUnpack(a.slice(9), size), off);
-      done += size; onProgress(done, total);
-    }
-    if (bkCrc(bytes) !== o.crc) throw new Error("The device changed during backup. Try again while stopped.");
-    objects.push({ ...o, data: bkBase64(bytes) });
+const bkBase64=bytes=>{let s="";for(const b of bytes)s+=String.fromCharCode(b);return btoa(s);};
+export async function captureBackup(request,firmware,onProgress=()=>{}) {
+  const manifest=bkManifest(await request([BACKUP_CMD.LIST,[]],{timeout:3000,retries:0})),objects=[];
+  const total=manifest.reduce((n,o)=>n+o.size,0);let done=0;
+  for(const o of manifest){
+    const bytes=new Uint8Array(o.size);
+    for(let off=0;off<o.size;off+=BACKUP_CHUNK){const size=Math.min(BACKUP_CHUNK,o.size-off),a=await request([BACKUP_CMD.GET,[o.id,...bkU32(off),size&127,size>>>7]],{timeout:1000,retries:1});bkCheck(a[1]);if(a[0]!==o.id||bkR32(a,2)!==off||(a[7]|a[8]<<7)!==size)throw Error("Unexpected backup reply");bytes.set(bkUnpack(a.slice(9),size),off);done+=size;onProgress(done,total);}
+    if(bkCrc(bytes)!==o.crc)throw Error("The device changed during backup; start again");objects.push({...o,data:bkBase64(bytes)});
   }
-  const file = { format: "felucca-backup", version: 1, firmware, created: new Date().toISOString(), objects };
-  readBackup(file); return file;
+  const file={format:"saadet-backup",version:1,firmware,created:new Date().toISOString(),objects};readBackup(file);return file;
 }
-export async function restoreBackup(request, file, onProgress = () => {}) {
-  const archive = readBackup(file); // Validate every byte before the first destructive request.
-  const total = archive.objects.reduce((n, o) => n + o.size, 0); let done = 0;
-  const ask = async (r, o = {}) => request(r, { timeout: 4000, retries: 0, ...o });
-  const supported = bkManifest(await ask([BACKUP_CMD.LIST, []]));
-  const liveSize = supported.find(o => o.id === 0)?.size || 0;
-  for (const o of archive.objects) if ((o.id === 0 || o.id >= 2 && o.id <= 5) && o.size > liveSize && !(liveSize >= 19008 && [19084,19092,20224].includes(o.size)))
-    throw new Error("This backup needs firmware with larger recording storage");
-  for (const o of archive.objects) if (!supported.some(x => x.id === o.id) && o.size) throw new Error("This firmware does not support a nonempty object in this backup");
-  const put = async (args) => { const a = await ask([BACKUP_CMD.PUT, args]); bkCheck(a[2]); return a; };
-  // Validate every object's supported size before replacing any saved object.
-  // Project preflight may erase an unpublished inactive copy; abort leaves
-  // the current committed project intact. Older archives restore on 1.2 first.
-  for (const o of archive.objects) if (o.id < 32 && o.size && supported.some(x => x.id === o.id)) {
-    const a = await ask([BACKUP_CMD.PUT, [0, o.id, ...bkU32(o.size), ...bkU32(o.crc)]]);
-    await ask([BACKUP_CMD.PUT, [3, o.id]]);
-    if (a[2] === 1) throw new Error("This backup holds an older format. Restore it with Melodee 1.2 first.");
-    bkCheck(a[2]);
+export async function restoreBackup(request,file,onProgress=()=>{}) {
+  const archive=readBackup(file),ask=(r,o={})=>request(r,{timeout:4000,retries:0,...o}),put=async args=>{const a=await ask([BACKUP_CMD.PUT,args]);if(a[0]!==args[0]||a[1]!==args[1])throw Error("Unexpected restore reply");bkCheck(a[2]);return a;};
+  bkManifest(await ask([BACKUP_CMD.LIST,[]]));
+  // Preflight every object before the first committed write; begin/cancel only stages RAM.
+  for(const o of archive.objects){await put([0,o.id,...bkU32(o.size),...bkU32(o.crc)]);await put([3,o.id]);}
+  const total=archive.objects.reduce((n,o)=>n+o.size,0);let done=0;
+  const order=[...archive.objects.filter(o=>o.id!==1&&o.id!==32),archive.objects.find(o=>o.id===1),archive.objects.find(o=>o.id===32)];
+  for(const o of order){
+    await put([0,o.id,...bkU32(o.size),...bkU32(o.crc)]);
+    try{for(let off=0;off<o.size;off+=BACKUP_CHUNK){const chunk=o.bytes.subarray(off,off+BACKUP_CHUNK);await put([1,o.id,...bkU32(off),...bkPack(chunk)]);done+=chunk.length;onProgress(done,total);}await put([2,o.id]);}
+    catch(error){try{await put([3,o.id]);}catch{}throw error;}
   }
-  if(archive.objects.length===28 && supported.some(o=>o.id===28)){
-    await put([0,28,...bkU32(0),...bkU32(0)]);await put([2,28]);
-  }
-  // Restore live music last. Other objects commit individually; a disconnect can leave a partial restore.
-  for (const o of [...archive.objects.slice(2), archive.objects[1], archive.objects[0]]) {
-    if (!supported.some(x => x.id === o.id)) continue;
-    if (o.id >= 32) {
-      const slot = o.id - 32;
-      const check = (a) => { if (a[0] !== slot) throw new Error("Unexpected sample reply"); bkCheck(a.at(-1)); };
-      if (!o.size) check(await ask([14, [slot]]));
-      else {
-        if (o.size < 512) throw new Error("Short sample backup");
-        check(await ask([11, [slot]]));
-        for (let off = 512; off < o.size; off += BACKUP_CHUNK) {
-          const chunk = o.bytes.subarray(off, off + BACKUP_CHUNK);
-          check(await ask([12, [slot, off & 127, off >>> 7 & 127, off >>> 14 & 127, ...bkPack(chunk)]]));
-          done += chunk.length; onProgress(done, total);
-        }
-        check(await ask([13, [slot, ...bkPack(o.bytes.subarray(0, 480))]]));
-        done += 512; onProgress(done, total);
-      }
-    } else {
-      await put([0, o.id, ...bkU32(o.size), ...bkU32(o.crc)]);
-      try {
-        for (let off = 0; off < o.size; off += BACKUP_CHUNK) {
-          const chunk = o.bytes.subarray(off, off + BACKUP_CHUNK);
-          await put([1, o.id, ...bkU32(off), ...bkPack(chunk)]);
-          done += chunk.length; onProgress(done, total);
-        }
-        await put([2, o.id]);
-      } catch (e) { await put([3, o.id]).catch(() => {}); throw e; }
-    }
-  }
-  return archive;
 }
-
-// Installer connection: no editor page or watcher owns this input simultaneously.
 export class BackupConnection {
   constructor(input, output) {
     this.input = input; this.output = output; this.pending = null;

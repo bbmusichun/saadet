@@ -35,7 +35,7 @@
 #define MELODEE_ID "FM-1_900"    /* package identity (build.py: the .fwsc marker string) */
 #endif
 #ifndef MELODEE_VERSION
-#define MELODEE_VERSION "v1.4.0-rc.4" /* shown in the menu, the console and the editor; build.py --release X.Y[.Z] */
+#define MELODEE_VERSION "v0.1.0-dev" /* shown in the menu, the console and the editor; build.py --release X.Y[.Z] */
 #endif
 #if MELODEE_OTA && !MELODEE_FLASH
 #error "MELODEE_OTA needs MELODEE_FLASH"
@@ -83,7 +83,7 @@
 #if MELODEE_UART
 #include "midi_uart.c"
 #endif
-#include "song_chain.c"
+
 #include "seq.c"
 #include "audio.c"
 
@@ -104,11 +104,11 @@
 #include "storage.c"
 #endif
 #include "upreset.c"             /* user presets (RAM mirror; flash with MELODEE_FLASH) */
-#include "project.c"
+#include "persist.c"
 #include "cz_store.c"
 #include "fm6_store.c"            /* FM6: DX7 SysEx, the STORE shortcut to user presets */
 #if MELODEE_OTA
-#define OTA_SCRATCH proj_wire_borrow()   /* the update entry stages in the project staging RAM */
+#define OTA_SCRATCH transfer_borrow()
 #include "ota.c"
 #include "ota_hw.c"
 #include "editor.c"              /* web editor SysEx (needs the OTA SysEx plumbing) */

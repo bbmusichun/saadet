@@ -4,6 +4,8 @@
 /* Editor protocol: SysEx for the web editor (web/EDITOR_PROTOCOL.md; v2 = user presets + live sync,
  * v3 = four tracks: the v1 / v2 commands act on the selected track, cmds 27-30 reach any track;
  * v4 = TRACK_PARAM (31) and the TRACK_CHANGED push (32), enabled by WATCH bit 1).
+ * The synth build: one track, no sequencer: the step, pattern, song, motion and project commands get no reply;
+ * INFO says 0 steps and carries tag 0x53 ('S', the synth build).
  *   F0 7D 46 4C cmd args.. F7     (7D = non-commercial ID, "FL")
  * Values are 14 bit, two 7-bit bytes LSB first, offset by 8192 (so -8192..8191).
  * Every request gets a reply with the same cmd; 23/24/26 are also pushed
@@ -78,10 +80,7 @@ static uint32_t ed_unpack7(const uint8_t *a, uint32_t na, uint8_t *out, uint32_t
     }
     return na ? 0u : n;
 }
-#include "scratch.h"
-/* Backup chunks are bounded to 256 bytes. They are consumed synchronously
- * before sending a reply; storage reads here do not use the page-write buf. */
-#define ed_transfer_buf (main_scratch.transfer)
+static uint8_t ed_smp_buf[512] __attribute__((aligned(4)));
 /* the engine byte of DUMP / RELOAD / TRACK */
 static uint32_t ed_eng(const track_t *t) { return t->eng_req % NENGINES; }
 
@@ -102,34 +101,25 @@ static struct {
     uint32_t pos, last_ms, run_ms, resets;
     int16_t v[ED_NV];                                    /* TSEL->p[], then song.g[] */
     uint16_t t[ED_NV];                                   /* ms (low 16 bits) of the last push */
-    uint32_t st[NSTEP];                                  /* step signatures */
     int16_t tv[ED_NT];                                   /* v4: trk[k].p[ED_TIDS[j]] at k * 3 + j */
     uint16_t tt[ED_NT];
-    uint32_t tpos, pattern_gen;
+    uint32_t tpos;
 } ed_w;
 
 static int16_t *ed_val(uint32_t i)
 {
-    return i<P_COUNT?&TSEL->p[i]:i==P_COUNT+G_A4?&tuning_a4:i==P_COUNT+G_BUDGET?&settings_budget:&song.g[i-P_COUNT];
-}
-static uint32_t ed_step_sig(const step_t *s)
-{
-    return ((uint32_t)s->note[0] | (uint32_t)s->note[1] << 7 | (uint32_t)s->note[2] << 14 | (uint32_t)s->note[3] << 21) ^
-           ((uint32_t)s->n << 28) ^ ((uint32_t)s->time * 0x9E3779B1u) ^ ((uint32_t)s->flags * 0x85EBCA6Bu) ^
-           ((uint32_t)s->vel * 0xC2B2AE35u) ^ ((uint32_t)(s->hit | s->acc << 8) * 0x27D4EB2Fu) ^ ((uint32_t)s->probability * 0x165667B1u);
+    return i < P_COUNT ? &TSEL->p[i] : i == P_COUNT + G_A4 ? &tuning_a4 : &song.g[i - P_COUNT];
 }
 static void ed_shadow(void)                              /* the editor is in sync */
 {
     uint32_t i;
     for (i = 0; i < ED_NV; i++)
         ed_w.v[i] = *ed_val(i);
-    for (i = 0; i < NSTEP; i++)
-        ed_w.st[i] = ed_step_sig(&seq_steps(TSEL)[i]);
     for (i = 0; i < ED_NT; i++)
         ed_w.tv[i] = trk[i / 3u].p[ED_TIDS[i % 3u]];
     ed_w.eng = (uint8_t)ed_eng(TSEL);
     ed_w.preset = TSEL->preset;
-    ed_w.sel = song.sel; ed_w.pattern_gen = TSEL->pattern_gen;
+    ed_w.sel = song.sel;
     sync_reload = 0;
 }
 static int ed_room(void) { return so_w - so_r + 8u <= SXQ / 2u; }
@@ -155,7 +145,7 @@ static void ed_sync(void)                                /* main loop */
         ed_w.on = 0;                                     /* no host, USB reset, or 3 s without a request */
         return;
     }
-    if (sync_reload || TSEL->pattern_gen != ed_w.pattern_gen || ed_eng(TSEL) != ed_w.eng || TSEL->preset != ed_w.preset || song.sel != ed_w.sel) {
+    if (sync_reload || ed_eng(TSEL) != ed_w.eng || TSEL->preset != ed_w.preset || song.sel != ed_w.sel) {
         if (!ed_room())
             return;
         ed_shadow();
@@ -166,19 +156,6 @@ static void ed_sync(void)                                /* main loop */
         ed_b(TSEL->preset >> 7);                     /* presets past 127 (PROPHET): high bits last */
         ed_send();
         return;
-    }
-    for (i = 0; i < NSTEP && n < ED_PUSH_MAX; i++) {
-        uint32_t h = ed_step_sig(&seq_steps(TSEL)[i]);
-        if (h == ed_w.st[i])
-            continue;
-        if (!ed_room())
-            return;
-        ed_w.st[i] = h;
-        ed_begin(ED_STEP_CHANGED);
-        ed_b(i);
-        ed_b(song.sel);
-        ed_send();
-        n++;
     }
     for (i = 0; i < ED_NV && n < ED_PUSH_MAX; i++) {    /* round robin: nothing starves */
         uint32_t k = (ed_w.pos + i) % ED_NV;
@@ -228,58 +205,14 @@ static const param_desc_t *ed_desc(uint32_t scope, uint32_t id, int16_t **vp)
     }
     if (scope == 1 && id < G_COUNT) {
         *vp = ed_val(P_COUNT + id);
-        return global_desc(id);
+        return &GP[id];
     }
     return 0;
 }
 
-/* a step as STEP_SET / TRACK_STEP send it (na bytes): n, 4 notes, time, flags, vel, then (v5) the lane hits
- * and their accents: hit & 127, acc & 127, bit 7 of each (bit 0 hit, bit 1 acc); each value made valid. 8
- * bytes (an editor of before the grid): the hits stay */
-static void ed_step_put(step_t *st, const uint8_t *a, uint32_t na)
-{
-    uint32_t i, gate = step_gate(st);
-    st->n = (uint8_t)(a[0] > 4u ? 4u : a[0]);
-    for (i = 0; i < 4u; i++)
-        st->note[i] = a[1 + i] & 0x7Fu;
-    st->time = (uint8_t)(a[5] > ST_REST ? ST_REST : a[5]);
-    st->flags = a[6] & (SF_ACCENT | SF_SLIDE);
-    st->vel = a[7] & 0x7Fu;
-    if (na >= 11u) {
-        st->hit = (uint8_t)((a[8] & 0x7Fu) | (a[10] & 1u) << 7);
-        st->acc = st->hit ? (uint8_t)(((a[9] & 0x7Fu) | (a[10] & 2u) << 6) & st->hit) : (uint8_t)gate;
-    }
-    if (!st->hit && st->time == ST_REST) st->acc = 0;
-    if (na >= 12u) step_set_chance(st, a[11] <= 100u ? a[11] : 100u);
-    ui.force = 1;
-}
-static void ed_step_reply(const step_t *st)              /* the same 11 bytes */
-{
-    uint32_t i;
-    ed_b(st->n);
-    for (i = 0; i < 4u; i++)
-        ed_b(st->note[i]);
-    ed_b(st->time);
-    ed_b(st->flags & (SF_ACCENT | SF_SLIDE));
-    ed_b(st->vel);
-    ed_b(st->hit & 0x7Fu);
-    ed_b(st->hit ? st->acc & 0x7Fu : 0u);
-    ed_b((uint32_t)(st->hit >> 7) | (st->hit ? (uint32_t)(st->acc >> 7) << 1 : 0u));
-    ed_b(step_chance(st));
-}
-
-/* a flash write from the editor while the transport runs: stop it first (the erase silences the audio and
- * stalls the sequencer; the device's own SAVE refuses with "STOP TO SAVE", the editor's confirmed save stops) */
-static int ed_flash_stop(void)
-{
-    uint32_t t0 = fm1_ms;
-    if (!transport_busy())
-        return 0;
-    transport_req = 2;
-    while ((song.playing || seq_counting() || chain_busy()) && fm1_ms - t0 < 100u)          /* the audio ISR stops it at its next block */
-        fm1_wdt_feed();
-    return song.playing || seq_counting() || chain_busy();
-}
+/* a flash write from the editor while the external transport runs: refused (the erase would stall the audio it
+ * times; the device's own SAVE says "STOP TO SAVE") */
+static int ed_flash_stop(void) { return transport_busy(); }
 
 #include "editor_preferences.c"
 #include "editor_backup.c"
@@ -288,45 +221,28 @@ static int ed_flash_stop(void)
 #include "editor_native.c"
 #include "editor_library.c"
 #include "editor_prophet.c"
-#include "editor_cpu_lab.h"
 
-static void ed_motion_reply(uint32_t k, uint32_t rc)
-{
-    track_t *t = &trk[k];
-    ed_b(k); ed_b(rc); ed_b(motion_enabled(t)); ed_b(motion_count(t)); ed_b(MOTION_MAX);
-    for (uint32_t i = 0; i < motion.count; i++) {
-        const motion_event_t *e = &motion.event[i];
-        if ((e->place >> 6) != k || motion_pattern[i] != t->pattern) continue;
-        ed_b((e->place & 63u) | ((e->param & 128u) >> 1)); ed_b(e->param); ed_v(e->value);
-    }
-}
 static int ed_args_ok(uint32_t cmd, const uint8_t *a, uint32_t n)
 {
     switch (cmd) {
+    case ED_STEP_GET: case ED_STEP_SET: case ED_PROJECT: case ED_TRACK_STEP: case ED_MOTION:
+    case ED_PATTERN: case ED_BANK_SONG: case ED_SONG:
+        return 0;                                  /* (no sequencer, no projects: no reply) */
     case ED_INFO: case ED_DUMP: case ED_SMP_INFO: case ED_PING:
     case ED_UI_STATE: case ED_UI_PALETTES:
         return !n;
-    case ED_GET: case ED_DESC: case ED_PRESET: case ED_PROJECT: case ED_UP_LIST:
+    case ED_GET: case ED_DESC: case ED_PRESET: case ED_UP_LIST:
     case ED_TRACK_PARAM:
         return n == 2u || (cmd == ED_TRACK_PARAM && n == 4u) || (cmd == ED_PRESET && n == 3u);
     case ED_SET:
         return n == 4u;
-    case ED_STEP_GET: case ED_NAMES: case ED_SMP_BEGIN: case ED_SMP_ERASE:
+    case ED_NAMES: case ED_SMP_BEGIN: case ED_SMP_ERASE:
     case ED_UP_GET: case ED_UP_LOAD: case ED_UP_ERASE: case ED_WATCH: case ED_TRACK_DUMP:
         return n == 1u || (cmd == ED_NAMES && n == 3u);
-    case ED_STEP_SET:
-        return n == 9u || n == 12u || (n == 13u && a[12] <= 100u);                 /* notes only, or the complete grid extension */
     case ED_TRACK:
         return n <= 1u;
     case ED_TRACK_MIX:
         return n == 1u || n == 4u;
-    case ED_TRACK_STEP:
-        return n == 2u || n == 10u || n == 13u || (n == 14u && a[13] <= 100u);
-    case ED_MOTION:
-        return (n == 1u || (n == 2u && a[1] == 2u) || (n == 3u && a[1] == 1u && a[2] <= 1u) ||
-                (n == 6u && a[1] == 3u) || ((n == 4u || n == 6u) && a[1] == 4u)) && a[0] < NTRK;
-    case ED_BANK_SONG: case ED_SONG:
-        return n && (a[0] == 1u || n == 1u);
     default:
         return 1;                                  /* variable payloads validate in their handler */
     }
@@ -348,139 +264,15 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     if(ed_prophet_handle(cmd,a,na)){ed_send();return;}
 
     if (ed_ui_handle(cmd, a, na)) { ed_send(); return; }
+    if (ed_library_handle(cmd,a,na)) { ed_send(); return; }
     if (ed_backup_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_fm6_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_cz_handle(cmd, a, na)) { ed_send(); return; }
-    if (ed_library_handle(cmd,a,na)) { ed_send(); return; }
     if (ed_native_handle(cmd, a, na)) { ed_send(); return; }
     switch (cmd) {
-#if MELODEE_AUDIO_PROFILE && MELODEE_AUDIO_BENCH
-    case 101:
-        ed_cpu_reply(a, na);
-        break;
-#endif
-    case 100: {
-#ifdef FM1_IRQ_TARGET
-        if(na){ed_b(1);break;}
-        uint32_t values[8u+NPART];fm1_irq_off();
-        values[0]=fm1_clock_mhz_of(fm1_clock_mult());values[1]=audio_timer5_max_ticks;values[2]=audio_irq_max_ticks;
-        values[3]=MELODEE_AUDIO_PROFILE;values[4]=MELODEE_AUDIO_BENCH;values[5]=MELODEE_ADMISSION;values[6]=HALF_FRAMES;
-        for(uint32_t p=0;p<NPART;p++)values[7u+p]=trk_nvoice(&trk[p]);
-        values[7u+NPART]=(uint32_t)settings_budget;
-        fm1_irq_on();ed_b(0);ed_b(2);ed_b(8u+NPART);
-        for(uint32_t k=0;k<8u+NPART;k++)for(uint32_t j=0;j<5u;j++)ed_b(values[k]>>(7u*j));
-#else
-        ed_b(2);
-#endif
-        break;
-    }
-    case 98: {
-#if MELODEE_AUDIO_PROFILE
-#if MELODEE_AUDIO_BENCH
-        /* Guarded, RAM-only scheduler calibration. One group's split is
-         * fixed at publication; the next group sees a new allowance. */
-        if(na && a[0]==5u){
-            if((na!=1u && na!=6u) || (na==6u && (a[5]>15u || (ed_bk_r32(a+1u)>31000u && ed_bk_r32(a+1u)!=AUDIO_BATCH_SERVICE_AUTO)))){ed_b(1);break;}
-            if(na==6u){
-                if(!AUDIO_LAB_GUARDED()){ed_b(3);break;}
-                audio_batch_service_allowance=ed_bk_r32(a+1u);
-            }
-            ed_b(0);ed_b(5);ed_bk_u32(audio_batch_service_allowance);break;
-        }
-#endif
-        if(na==1u && a[0]==4u){
-            /* Actual committed headers, including settings (backup inventory
-             * exports live preferences). Reads validate object CRCs as usual. */
-            ed_b(0);ed_b(4);ed_b(OBJ_COUNT);
-            for(uint32_t obj=0;obj<OBJ_COUNT;obj++){
-                st_hdr_t h;int cur=st_current(obj,&h);
-                ed_b(cur>=0);
-                ed_bk_u32(cur>=0?h.len:0);ed_bk_u32(cur>=0?h.crc:0);ed_bk_u32(cur>=0?h.seq:0);
-                fm1_wdt_feed();
-            }
-            break;
-        }
-        if(na && a[0]==3u){
-            static uint8_t original_slot;
-            if(na>2u || (na==2u && a[1]>1u)){ed_b(1);break;}
-            if(na==2u){
-                if(a[1] && !audio_lab_guard){
-                    uint32_t busy=transport_busy() || momentary.active || template_old();
-                    for(uint32_t p=0;p<NPART;p++)for(uint32_t v=0;v<NVOICE;v++)busy|=trk[p].v[v].active;
-                    if(busy){ed_b(3);break;}
-                    original_slot=proj_cur;
-                }
-                if(!a[1] && audio_lab_guard)proj_cur=original_slot;
-                audio_lab_guard=a[1];
-            }
-            ed_b(0);ed_b(3);ed_b(audio_lab_guard);break;
-        }
-        if(na==1u && a[0]==2u){
-            uint32_t hist[AP_HIST_BINS],peak;
-            fm1_irq_off();memcpy(hist,audio_profile_hist,sizeof hist);peak=audio_profile_irq_max;fm1_irq_on();
-            ed_b(0);ed_b(2);ed_b(AP_HIST_BINS);
-            for(uint32_t j=0;j<5u;j++)ed_b(AP_HIST_TICKS>>(7u*j));
-            for(uint32_t j=0;j<5u;j++)ed_b(peak>>(7u*j));
-            for(uint32_t k=0;k<AP_HIST_BINS;k++)for(uint32_t j=0;j<5u;j++)ed_b(hist[k]>>(7u*j));
-            break;
-        }
-        uint32_t values[AP_COUNT*3u+5u];
-        if(na>1u || (na && a[0]>1u)){ed_b(1);break;}
-        fm1_irq_off();
-        for(uint32_t k=0;k<AP_COUNT;k++){
-            values[k*3u]=audio_profile[k].ticks;values[k*3u+1u]=audio_profile[k].calls;values[k*3u+2u]=audio_profile[k].max_ticks;
-        }
-#if MELODEE_DUAL_CORE
-        values[AP_COUNT*3u]=audio_worker.job_ticks;values[AP_COUNT*3u+1u]=audio_worker.wait_ticks;
-        values[AP_COUNT*3u+2u]=audio_worker.jobs;values[AP_COUNT*3u+3u]=audio_worker.waits;
-#else
-        for(uint32_t k=0;k<4u;k++)values[AP_COUNT*3u+k]=0;
-#endif
-#ifdef FM1_IRQ_TARGET
-        values[AP_COUNT*3u+4u]=fm1_clock_mhz_of(fm1_clock_mult());
-#else
-        values[AP_COUNT*3u+4u]=0;
-#endif
-        if(na && a[0]){
-            memset(audio_profile,0,sizeof audio_profile);
-            memset(audio_profile_hist,0,sizeof audio_profile_hist);
-            audio_profile_irq_pending=audio_profile_irq_max=0;
-#if MELODEE_DUAL_CORE
-            audio_worker.job_ticks=audio_worker.wait_ticks=audio_worker.waits=0;
-#endif
-        }
-        fm1_irq_on();ed_b(0);ed_b(1);ed_b(AP_COUNT);
-        for(uint32_t k=0;k<AP_COUNT*3u+5u;k++)for(uint32_t j=0;j<5u;j++)ed_b(values[k]>>(7u*j));
-#else
-        ed_b(2);
-#endif
-        break;
-    }
-#if MELODEE_AUDIO_BENCH
-    case 99: {
-        if(na==3u && a[0]==2u && a[1]<NTRK && a[2]<=FM6_OPL){
-            fm1_irq_off();fm6_fn_set(a[1],FN_ENGINE,a[2]);fm1_irq_on();ed_b(0);break;
-        }
-        if(na!=1u || a[0]>1u){ed_b(1);break;}
-        fm1_irq_off();audio_bench_until=a[0]?fm1_ticks()+30u*24000000u:0;fm1_irq_on();
-        ed_b(0);break;
-    }
-#endif
-#if defined(MELODEE_FX_PROFILE) && MELODEE_FX_PROFILE && defined(FM1_IRQ_TARGET)
-    case 97: {
-        uint32_t rc=0;
-        if((na==6u || (na==7u && a[6]<=1u)) && a[0]<=15u && a[1]<FX_AUDIO_COUNT && a[2]<FX_AUDIO_COUNT && a[3]<FX_AUDIO_COUNT){
-            fx_profile_request=a[0]?((uint32_t)(na==7u?a[6]:0u)<<30u)|((uint32_t)a[0]<<26u)|((uint32_t)a[5]<<19u)|((uint32_t)a[4]<<12u)|((uint32_t)a[3]<<8u)|((uint32_t)a[2]<<4u)|a[1]:0;
-        }else if(na)rc=1;
-        uint32_t values[14];fm1_irq_off();values[0]=fx_profile_control;values[13]=fx_hw_status;
-        for(uint32_t k=0;k<4u;k++){values[1+k*3]=fx_profile_ticks[k];values[2+k*3]=fx_profile_blocks[k];values[3+k*3]=fx_profile_max[k];}fm1_irq_on();
-        ed_b(rc);for(uint32_t k=0;k<14u;k++)for(uint32_t j=0;j<5u;j++)ed_b(values[k]>>(j*7u));
-        break;
-    }
-#endif
 #if MELODEE_USB_AUDIO
     case ED_AUDIO_STATS: {                         /* flags: 1 resets maxima, 2 voices, 4 cores, 8 memory, 16 part victims */
-        uint32_t snapshot[64] = {0}, k, count = na && (a[0] & 32u) ? 64u : na && (a[0] & 16u) ? 55u : na && (a[0] & 8u) ? 47u : na && (a[0] & 4u) ? 32u : na && (a[0] & 2u) ? 26u : 20u;
+        uint32_t snapshot[55] = {0}, k, count = na && (a[0] & 16u) ? 55u : na && (a[0] & 8u) ? 47u : na && (a[0] & 4u) ? 32u : na && (a[0] & 2u) ? 26u : 20u;
         fm1_irq_off();
         snapshot[0] = ua.play_alt;
         snapshot[1] = ua.cap_alt;
@@ -545,35 +337,19 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
                     (uintptr_t)resource[r].ptr < (uintptr_t)_resource_cache_end)
                     snapshot[46] += resource[r].size;
         }
-        if (count >= 55u)
+        if (count == 55u)
             for (uint32_t p = 0; p < NPART; p++) {
                 snapshot[47u+p] = shed_part[p];
                 snapshot[51u+p] = voice_kills_part[p];
             }
-        if(count==64u){
-            /* Upper envelope includes measured C entry/exit and allows one
-             * TIMER5 preemption during the short assembly footer, plus 4 us
-             * for register/timestamp/return overhead at supported clocks. */
-            uint32_t upper=(audio_irq_max_ticks+audio_timer5_max_ticks+96u+23u)/24u;
-            snapshot[55]=audio_full_max_us>upper?audio_full_max_us:upper;snapshot[56]=audio_full_last_us;
-            snapshot[57]=audio_deadline_misses;snapshot[58]=audio_target_exceeded;
-            snapshot[59]=audio_batch_pairs;snapshot[60]=capacity_steals;snapshot[61]=admission_rejections;
-            snapshot[62]=MELODEE_ADMISSION;
-#if MELODEE_AUDIO_BENCH
-            snapshot[63]=(uint32_t)audio_bench_active()|(audio_bench_shed_requests<<1u);
-#endif
-        }
         if (na && (a[0] & 1u)) {
-            audio_full_max_us=0;
-            audio_irq_max_ticks=0;
-            audio_timer5_max_ticks=0;
             ua.poll_max_ticks = ua.service_max_ticks = melodee_dbg.max_us = 0;
 #if MELODEE_DUAL_CORE
             audio_worker.max_job_ticks = audio_worker.max_wait_ticks = 0;
 #endif
         }
         fm1_irq_on();
-        ed_b(count == 64u ? 7u : count == 55u ? 6u : count == 47u ? 5u : count == 32u ? 4u : count == 26u ? 3u : 2u);
+        ed_b(count == 55u ? 6u : count == 47u ? 5u : count == 32u ? 4u : count == 26u ? 3u : 2u);
         for (i = 0; i < count; i++)
             for (k = 0; k < 5u; k++)
                 ed_b(snapshot[i] >> (7u * k));
@@ -623,7 +399,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             for (i = 0; i < FM1_RAILS; i++)
                 v[i] = fm1_power_get(i);
             v[3] = (uint32_t)fm1_core1_barred(); v[4] = bootguard.failed;
-            v[5] = 0;                           /* (reserved: the boot retune's undo flag until 1.3.4 / 1.4, which never retune) */
+            v[5] = (uint32_t)fm1_clock_undo;   /* 1: the boot retune timed out or met an unknown clock: left there */
             fm1_clock_regs(v + 6);
             v[11] = audio_worker.misread; v[12] = fm1_core1_fault.count;
             v[13] = fm1_cpu_ticks();
@@ -665,59 +441,38 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         break;
     }
 #endif
-    case ED_MOTION: {
-        track_t *t = &trk[a[0]]; uint32_t rc = 0;
-        if (na > 1u && chain_busy()) rc = 3;
-        else if (na > 1u) {
-            if (a[1] == 1u) motion_set_enabled(t, a[2]);
-            else if (a[1] == 2u) { load_begin(t, UNDO_PAT); motion_clear(t); load_end(t); }
-            else if (a[1] == 3u) rc = motion_set_event(t, a[2] & 63u, a[3] | ((a[2] & 64u) << 1), (int16_t)ed_rv(a + 4));
-            else if (a[1] == 4u) {
-                uint32_t id = a[3] | ((a[2] & 64u) << 1);
-                if (motion_param(id) || (id >= MO_NATIVE && id < MO_NATIVE + MO_NATIVE_N))
-                    motion_delete_event(t, a[2] & 63u, na==6u ? id|(motion_native_event(id,ed_rv(a+4))?256u:0u) : id|512u);
-                else rc = 1;
-            }
-            else rc = 1;
-            ui.force = 1;
-        }
-        ed_motion_reply(a[0], rc);
-        break;
-    }
     case ED_INFO:
-        ed_str("MELODEE " MELODEE_VERSION, 24);
+        ed_str("SAADET " MELODEE_VERSION, 24);
         ed_b(NENGINES);
         ed_b(P_COUNT);
         ed_b(G_COUNT);
-        ed_b(NSTEP);
+        ed_b(0);                                          /* NSTEP: no steps in the synth build */
         ed_b(P_E0);
         for (i = 0; i < NENGINES; i++)
             ed_str(ENGINES[i]->name, 8);
         ed_b(NTRK);                                       /* v3 */
         ed_b(0);                                          /* project-based SONG retired: tagged bank SONG below */
         ed_b(0x55); ed_b(1); ed_b(ed_ui_caps());             /* tagged preferences v1: commands 34..38 */
-        ed_b(0x4d); ed_b(2); ed_b(MOTION_MAX); ed_b(1); /* motion v2: native ids, chance v1 */
         ed_b(0x42); ed_b(1); ed_b(3); /* bounded full-backup read + restore */
-        ed_b(0x50); ed_b(1); ed_b(NPAT); ed_b(CHAIN_ROWS);     /* bank controls: 73/74 */
+        ed_b(0x53); ed_b(1);                              /* the synth build: one track, no sequencer, no projects */
         ed_b(0x46); ed_b(1); ed_b(FM6_NFAC); ed_b(0);   /* FM6 patches: cmds 68..71 */
         ed_b(0x43); ed_b(1); ed_b(CZ_BYTES & 127u); ed_b(CZ_BYTES >> 7); ed_b(0); ed_b(0); /* old CZ bank controls retired */
-        ed_b(0x35);ed_b(1);ed_b(ENGI_PROPHET);ed_b(USER_GENERAL);ed_b(USER_NATIVE_FM);ed_b(USER_NATIVE_CZ);ed_b(USER_NATIVE_P5);ed_b(0);ed_b(1); /* legacy native clients see their addressable prefix */
-        ed_b(0x4e); ed_b(1); ed_b(64); ed_b(0); ed_b(0); ed_b(1); /* legacy command 78 addressable prefixes */
-        ed_b(0x55);ed_b(1);ed_b(UP_SLOTS&127u);ed_b(UP_SLOTS>>7); /* shared library, command 80 */
+        ed_b(0x35);ed_b(1);ed_b(ENGI_PROPHET);ed_b(USER_GENERAL);ed_b(USER_NATIVE_FM);ed_b(USER_NATIVE_CZ);ed_b(USER_NATIVE_P5);ed_b(0);ed_b(1); /* Prophet/native stable namespaces */
+        ed_b(0x4e); ed_b(1); ed_b(NATIVE_FM_SLOTS); ed_b(0); ed_b(NATIVE_CZ_SLOTS&127u); ed_b(NATIVE_CZ_SLOTS>>7); /* native user pools, command 78 */
+        ed_b(0x55);ed_b(1);ed_b(UP_SLOTS&127u);ed_b(UP_SLOTS>>7); /* shared library */
         break;
     case ED_GET:
     case ED_SET:
         if (na < 2u || !(d = ed_desc(a[0], a[1], &vp)))
             return;
-        if (cmd == ED_SET && na >= 4u && !(a[0] ? global_reserved(a[1]) : param_reserved(a[1])) && !(chain_busy() && !a[0] && a[1] >= P_SLEN && a[1] <= P_SGATE)) {
+        if (cmd == ED_SET && na >= 4u) {
             if (a[0] == 1 && a[1] == G_ENGSEL) {          /* engine change: the safe path */
                 set_engine((uint32_t)clamp(ed_rv(a + 2), 0, NENGINES - 1));
             } else if (d->max > d->min) {
                 *vp = (int16_t)enum_orig(d, clamp(ed_rv(a + 2), d->min, d->max));
-                if (a[0] == 1 && (a[1] == G_A4 || a[1] == G_BUDGET))
+                if (a[0] == 1 && a[1] == G_A4)
                     settings_save();
                 if (a[0] == 0) {
-                    (void)motion_capture(TSEL, a[1], *vp);
                     load_extend(TSEL);                      /* (ui.c undo: an audition's values after G_ENGSEL) */
                     if (scale_shared(a[1]))
                         scale_share(TSEL);
@@ -736,7 +491,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(ed_eng(TSEL));
         ed_b(TSEL->preset);
         for (i = 0; i < P_COUNT; i++)
-            ed_v(motion_base_value(TSEL, i));
+            ed_v(TSEL->p[i]);
         for (i = 0; i < G_COUNT; i++)
             ed_v(*ed_val(P_COUNT + i));
         ed_b(TSEL->preset >> 7);
@@ -756,20 +511,6 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             for (i = 0; i <= (uint32_t)(d->max - d->min) && i < 96u; i++)
                 ed_str(d->names[i+d->min], 8);
         break;
-    case ED_STEP_GET:
-    case ED_STEP_SET: {
-        step_t *st;
-        if (na < 1u || a[0] >= NSTEP)
-            return;
-        st = &TSEL->step[a[0]];
-        if (cmd == ED_STEP_SET && na >= 9u && !chain_busy()) {
-            ed_step_put(st, a + 1, na - 1u);
-        }
-        ed_w.st[a[0]] = ed_step_sig(&seq_steps(TSEL)[a[0]]);
-        ed_b(a[0]);
-        ed_step_reply(&seq_steps(TSEL)[a[0]]);
-        break;
-    }
     case ED_PRESET:                                        /* engine, preset */
         if (na < 2u || a[0] >= NENGINES)
             return;
@@ -782,19 +523,6 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(ed_eng(TSEL));
         ed_b(TSEL->preset);
         ed_b(TSEL->preset >> 7);
-        break;
-    case ED_PROJECT:                                       /* 0 = load, 1 = save, 2 = query; slot 0..3 */
-        if (na < 2u || a[0] > 2u || a[1] >= 4u)
-            return;
-        if (a[0] == 1u) {
-            if (ed_flash_stop() || project_save(a[1]))
-                return;                              /* the legacy reply has no failure bit: do not confirm a failed save */
-        }
-        else if (a[0] == 0u)
-            project_load(a[1] & 3u);
-        ed_b(a[0]);
-        ed_b(a[1] & 3u);
-        ed_b(project_used(a[1] & 3u));
         break;
     case ED_NAMES: {                                       /* engine [, first lo, hi] -> preset names of an engine */
         const engine_t *en;
@@ -837,8 +565,10 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             return;
         s0 = a[0];
         cnt = a[1] > 16u ? 16u : a[1];
-        if (s0 >= 128u)cnt=0;
-        else if(s0+cnt>128u)cnt=128u-s0;
+        if (s0 >= 128u)
+            cnt = 0;
+        else if (s0 + cnt > 128u)
+            cnt = 128u - s0;
         ed_b(s0);
         ed_b(cnt);
         ed_b(128u);
@@ -958,7 +688,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             ed_b(trk[i].preset);
             ed_v(trk[i].p[P_LEVEL]);
             ed_b(trk[i].p[P_MUTE] != 0);
-            ed_b((song.rec >> i) & 1u);
+            ed_b(0);                                      /* (armed: never) */
         }
         for (i = 0; i < NTRK; i++)                         /* the presets' high bits, last */
             ed_b(trk[i].preset >> 7);
@@ -989,33 +719,18 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(ed_eng(&trk[a[0]]));
         ed_b(trk[a[0]].preset);
         for (i = 0; i < P_COUNT; i++)
-            ed_v(motion_base_value(&trk[a[0]], i));
+            ed_v(trk[a[0]].p[i]);
         ed_b(trk[a[0]].preset >> 7);
         break;
-    case ED_TRACK_STEP: {                                  /* track, index [, step] -> track, index, step (as STEP_GET) */
-        step_t *st;
-        if (na < 2u || a[0] >= NTRK || a[1] >= NSTEP)
-            return;
-        st = &trk[a[0]].step[a[1]];
-        if (na >= 10u && !chain_busy())
-            ed_step_put(st, a + 2, na - 2u);
-        if (a[0] == song.sel)
-            ed_w.st[a[1]] = ed_step_sig(&seq_steps(&trk[a[0]])[a[1]]);
-        ed_b(a[0]);
-        ed_b(a[1]);
-        ed_step_reply(&seq_steps(&trk[a[0]])[a[1]]);
-        break;
-    }
     case ED_TRACK_PARAM: {                                 /* track, id [, v14] -> track, id, v14 */
         track_t *t;
         if (na < 2u || a[0] >= NTRK || a[1] >= P_COUNT)
             return;
         t = &trk[a[0]];
         d = ed_tdesc(t, a[1]);
-        if (na >= 4u && !param_reserved(a[1]) && !(chain_busy() && a[1] >= P_SLEN && a[1] <= P_SGATE)) {
+        if (na >= 4u) {
             if (d->max > d->min)                           /* as SET: clamped; a fixed value stays */
                 t->p[a[1]] = (int16_t)enum_orig(d, clamp(ed_rv(a + 2), d->min, d->max));
-            (void)motion_capture(t, a[1], t->p[a[1]]);
             if (scale_shared(a[1]))
                 scale_share(t);
             ed_known(a[0], a[1]);
@@ -1024,76 +739,6 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(a[0]);
         ed_b(a[1]);
         ed_v(t->p[a[1]]);
-        break;
-    }
-    case ED_PATTERN: {
-        if (na < 2u || a[0] >= NTRK || a[1] > 2u || na != (a[1] == 0u ? 2u : a[1] == 1u ? 3u : 4u)) return;
-        track_t *t = &trk[a[0]]; uint32_t rc = 0;
-        if (a[1] == 1u) rc = pattern_request(t, a[2]);
-        if (a[1] == 2u) rc = pattern_copy(t, a[2], a[3]);
-        ed_b(a[0]); ed_b(a[1]); ed_b(rc); ed_b(t->pattern); ed_b(t->pattern_next < NPAT ? t->pattern_next : 127u); ed_b(NPAT);
-        ui.force = 1;
-        break;
-    }
-    case ED_BANK_SONG: {
-        if (!na || a[0] > 3u) return;
-        uint32_t rc = 0;
-        if (a[0] == 1u) {
-            if (na < 2u || a[1] > CHAIN_ROWS || na != 2u + a[1] * 5u) rc = 1;
-            else if (chain_busy()) rc = 2;
-            else {
-                for (uint32_t row = 0; row < a[1]; row++) {
-                    for (uint32_t k = 0; k < NTRK; k++) if (a[2u + row * 5u + k] >= NPAT) rc = 1;
-                    if (!a[6u + row * 5u] || a[6u + row * 5u] > 16u) rc = 1;
-                }
-                if (!rc) {
-                    chain_defaults(&chain_config); memset(chain_patterns, 0, sizeof chain_patterns);
-                    chain_config.count = a[1];
-                    for (uint32_t row = 0; row < a[1]; row++) {
-                        memcpy(chain_patterns[row], a + 2u + row * 5u, NTRK);
-                        chain_config.row[row] = (chain_row_t){chain_patterns[row][0], a[6u + row * 5u]};
-                    }
-                    ui.song_row = 0; ui.force = 1;
-                }
-            }
-        } else if (a[0] == 2u) rc = chain_prepare();
-        else if (a[0] == 3u) transport_req = 2;
-        ed_b(a[0]); ed_b(rc); ed_b(chain_config.count); ed_b(chain.running); ed_b(chain.row); ed_b(chain.remaining);
-        for (uint32_t row = 0; row < chain_config.count; row++) {
-            for (uint32_t k = 0; k < NTRK; k++) ed_b(chain_patterns[row][k]);
-            ed_b(chain_config.row[row].repeat);
-        }
-        break;
-    }
-    case ED_SONG: {
-        uint32_t rc = 0, op;
-        chain_config_t c;
-        if (!na || a[0] > 3u) return;
-        op = a[0];
-        if (op == 1u) {
-            chain_defaults(&c);
-            if (na < 2u || a[1] > CHAIN_ROWS || na != 2u + 2u * a[1]) rc = 1;
-            else {
-                c.count = a[1];
-                for (i = 0; i < c.count; i++) {
-                    c.row[i].slot = a[2u + 2u * i];
-                    c.row[i].repeat = a[3u + 2u * i];
-                }
-                if (!chain_valid(&c)) rc = 1;
-                else if (chain_busy()) rc = 2;
-                else {
-                    chain_config = c;
-                    for (uint32_t row = 0; row < c.count; row++) memset(chain_patterns[row], c.row[row].slot, NTRK);
-                    ui.song_row = 0; ui.force = 1;
-                }
-            }
-        } else if (op == 2u) rc = chain_prepare();
-        else if (op == 3u) transport_req = 2;
-        ed_b(op); ed_b(rc); ed_b(chain_config.count);
-        ed_b(chain.running); ed_b(chain.row); ed_b(chain.remaining);
-        for (i = 0; i < chain_config.count; i++) {
-            ed_b(chain_config.row[i].slot); ed_b(chain_config.row[i].repeat);
-        }
         break;
     }
     default:

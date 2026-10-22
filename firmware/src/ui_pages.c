@@ -40,25 +40,12 @@ static uint32_t pv_nbox;
 
 static uint32_t pv_kind(void)
 {
-    const page_t *pg = cur_page();
-    if (!ui.home && grid_on() && (pg->graph == GR_ROLL || pg->graph == GR_DRUMHIT) && !ui.layer)
-        return PV_GRID;
-    if (ui.home || act_cols() || grid_on())
-        return PV_NONE;
-    if ((pg->graph == GR_ADSR && pg->scope == SC_TRACK) || pg->graph == GR_LFO || pg->graph == GR_FMEG ||
-        pg->graph == GR_FMPEG)
-        return PV_CURVE;
-    if (pg->graph == GR_NONE || pg->graph == GR_ARP || pg->graph == GR_STEPS ||
-        pg->graph == GR_CHORD)
-        return PV_RINGS;
-    if (pg->graph == GR_TRK)
-        return PV_MIXER;
-    if (pg->graph == GR_ROLL && !drum_track(TSEL))
-        return PV_NOTES;
-    if (pg->graph == GR_MOD)
-        return PV_MOD;
-    if (pg->graph == GR_FXRACK)
-        return PV_RACK;
+    const page_t *pg=cur_page();
+    if(ui.home || act_cols())return PV_NONE;
+    if(pg->graph==GR_MOD)return PV_MOD;
+    if(pg->graph==GR_FXRACK)return PV_RACK;
+    if(pg->graph==GR_ADSR || pg->graph==GR_LFO || pg->graph==GR_FMEG || pg->graph==GR_FMPEG)return PV_CURVE;
+    if(pg->graph==GR_NONE || pg->graph==GR_ARP || pg->graph==GR_CHORD)return PV_RINGS;
     return PV_NONE;
 }
 
@@ -436,51 +423,10 @@ static void pv_curve(int32_t h)
 /* the drum grid (mock/r6_pages STEP): the eight lanes down the panel, 16 steps of the page across; a hit a cell in the
  * track's colour (an accent in text), an empty step a dot (every fourth brighter); the lane picked a band, its name in
  * the track's colour, the cursor a frame on it; the step playing marked over the lanes */
-static int32_t pv_grid_play(void)                       /* the step playing on the page shown, -1 */
-{
-    uint32_t idx = TSEL->seq_idx;
-    return song.playing && idx < (uint32_t)TSEL->p[P_SLEN] && idx / 16u == ui.bank ? (int32_t)(idx % 16u) : -1;
-}
+
 #define PV_GX(i) (40 + (int32_t)(i) * 11 + (int32_t)(i) / 4 * 4)   /* step i's cell (9 px) */
-static void pv_grid_mark(void)                          /* (rows 1 .. 3, over the lanes) */
-{
-    if (pv.gplay >= 0)
-        cv_rect(PV_GX(pv.gplay), 1, 9, 3, T_TEXT);
-}
-static void pv_grid(int32_t h)
-{
-    const track_t *t = TSEL;
-    uint32_t l, i, len = (uint32_t)t->p[P_SLEN], base = ui.bank * 16u, sound = ui.drum_sound % drum_sound_count(t);
-    (void)h;
-    pv_grid_mark();
-    for (l = 0; l < NLANE; l++) {                       /* (lanes 18 apart from row 6: the name in the label face) */
-        int32_t y = 6 + (int32_t)l * 18;
-        int sel = l == ui.lane;
-        int pick = sel && cur_page()->scope == SC_DRUMHIT && drum_lane(drum_sound_note(t, sound)) == l;   /* DRUM HIT:
-                                                         * the lane is KNOB 2's drum, named; its other drums hollow */
-        uint16_t row = sel ? T_LIFT : T_PANEL;
-        if (sel)
-            cv_rrect(2, y, PV_PANEL_W - 4, 17, 4, T_LIFT, T_PANEL);
-        cv_text_on(6, ty_y(y + 8, TY_LB), TY_LB, pick ? drum_sound_abbr(t, sound) : drum_lane_abbr(t, l),
-                   sel ? T_KNOB(l) : ux_mix(T_PANEL, T_KNOB(l), 70), row);
-        for (i = 0; i < 16u && base + i < len; i++) {
-            const step_t *st = &seq_steps(t)[base + i];
-            uint32_t b = 1u << l;
-            int32_t x = PV_GX(i);
-            if (sel && base + i == ui.cursor) {         /* the cursor: a rounded ring around the cell */
-                cv_rrect(x - 2, y, 13, 17, 4, T_SEC, row);
-                cv_rrect(x - 1, y + 1, 11, 15, 3, row, T_SEC);
-            }
-            if (step_lanes(st) & b) {
-                uint16_t col = (step_accents(st) & b) ? T_TEXT : T_KNOB(l);   /* (each lane a colour) */
-                cv_rrect(x, y + 2, 9, 13, 3, col, row);
-                if (pick && step_sound_note(t, st, sound) < 0)
-                    cv_rrect(x + 2, y + 4, 5, 9, 2, row, col);
-            } else
-                cv_disc(x + 4, y + 8, i % 4u == 0u || sel ? 4 : 3, i % 4u == 0u || sel ? T_MID : T_DIM, 0);
-        }
-    }
-}
+
+
 /* EG RATE / EG LVL: the operators as tabs over the panel, the one shown filled */
 #define PV_OPTAB_H 24
 static void pv_optabs(int32_t y)
@@ -570,19 +516,7 @@ static void pv_arp(int32_t h)
 /* PATTERN (mock/r6_pages PATTERN): the 64 steps as dots, four rows of 16: a note or a hit the track's colour, a rest
  * a line, past LEN dimmer still; the step playing white; LEN of 64 as the bar under them */
 #define PV_STEP_X(s) (22 + (int32_t)((s) % 16u) * 12 + (int32_t)((s) % 16u / 4u) * 4)   /* a step's dot (7 px) */
-static void pv_steps(int32_t h)
-{
-    const track_t *t = TSEL;
-    uint32_t len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), s, ph = pv.pplay >= 0 ? (uint32_t)pv.pplay : 0xFFu;
-    for (s = 0; s < NSTEP; s++) {
-        int32_t x = PV_STEP_X(s), y = 16 + (int32_t)(s / 16u) * (h - 40) / 3;
-        uint16_t c = s == ph ? T_TEXT : s >= len ? ux_mix(T_PANEL, T_LINE, 50) :
-                     step_on(&seq_steps(t)[s]) ? T_KNOB(s % 16u / 4u) : T_LINE;   /* (each beat a colour) */
-        cv_disc(x, y, s == ph || (s < len && step_on(&seq_steps(t)[s])) ? 7 : 5, c, 0);
-    }
-    cv_rrect(16, h - 12, 208, 4, 2, T_LINE, T_PANEL);
-    cv_rrect(16, h - 12, (int32_t)len * 208 / NSTEP, 4, 2, T_THEME, T_LINE);
-}
+
 
 
 static uint32_t pv_pic(int32_t *cut, int32_t *res)
@@ -674,7 +608,7 @@ static void pv_picture(void)
 {
     int32_t cut, res, y = PV_PIC_Y + pv_tab_h, h = PV_PIC_H - pv_tab_h;
     uint32_t pic = pv_pic(&cut, &res), sig = pv_curve_sig() ^ pic * 131u ^ (uint32_t)(cut + 1) * 7919u ^ (uint32_t)h * 613u, i;
-    int32_t pp = pic == 6u && song.playing ? (int32_t)(TSEL->seq_idx % (uint32_t)clamp(TSEL->p[P_SLEN], 1, NSTEP)) : -1;
+    int32_t pp=-1;
     sig ^= pic == 0u ? (ui.frame >> 1) * 2654435761u : 0u;   /* (the scope: every other frame) */
     if (pic == 9u) {                                    /* FX: the slot's effect (no column) and its buffer */
         uint32_t m = cur_page()->scope == SC_GLOBAL, id = cur_page()->id[0];
@@ -682,7 +616,6 @@ static void pv_picture(void)
                (uint32_t)fx_state[(m ? NPART : song.sel % NPART) * FX_SLOTS + (id - (m ? G_MFXMIX : P_FXMIX)) / FX_PARAMS].failed * 347u;
     }
     if (pic >= 5u) {                                    /* ARP, PATTERN: the keys and steps */
-        sig ^= steps_hash(TSEL) + (song.playing ? 1u + TSEL->seq_idx * 257u : 0u) * 2246822519u;
         for (i = 0; i < TSEL->nheld && i < 16u; i++)
             sig = (sig ^ TSEL->held[i]) * 16777619u;
         sig ^= TSEL->nheld * 131u;
@@ -706,7 +639,7 @@ static void pv_picture(void)
         cv_rrect(PV_PANEL_X, 0, PV_PANEL_W, h, 6, T_PANEL, T_BG);
         cv_bg = T_PANEL;
         if (pic == 5u) pv_arp(h);
-        else if (pic == 6u) pv_steps(h);
+
         else if (pic == 3u) pv_filter(cut, res, h);
         else if (pic == 9u) pv_fx(h);
         else stage_wave(T_THEME, 8, h - 16);
@@ -722,154 +655,17 @@ static void pv_picture(void)
 #define PV_MIX_BAR_X 46                                 /* the level's bar: x 46 .. 46 + PV_MIX_BAR_W, in the row */
 #define PV_MIX_BAR_W 120
 static struct { uint32_t strip[NTRK]; uint8_t meter[NTRK]; } pvm;
-static int32_t pv_mix_y(int32_t h) { return (h - (TY_TX->cap + 8 + 10)) / 2; }   /* the row's block: its first capital */
+   /* the row's block: its first capital */
 /* track k's meter: a 3 px bar under its level's, as long as the output now */
-static void pv_meter_draw(uint32_t k, int32_t x, int32_t y, uint16_t c, uint16_t bg)
-{
-    int32_t w = pvm.meter[k] * PV_MIX_BAR_W / (TS_MH - 2);
-    cv_rrect(x, y, PV_MIX_BAR_W, 3, 1, ux_mix(bg, T_LINE, 60), bg);
-    if (w > 0)
-        cv_rrect(x, y, w, 3, 1, c, T_LINE);
-}
-static void pv_meter(uint32_t k, uint16_t c)
-{
-    int32_t h = st_row_h();
-    uint16_t bg = ux_mix(T_BG, c, k == song.sel ? 24 : 11);
-    cv_begin(PV_MIX_BAR_W, 3, bg);
-    pv_meter_draw(k, 0, 0, c, bg);
-    cv_blit((uint32_t)(BOX_X + PV_MIX_BAR_X), (uint32_t)(st_row_y(k) + pv_mix_y(h) + TY_TX->cap + 8 + 7));
-}
-static void pv_strip(uint32_t k)
-{
-    track_t *t = &trk[k];
-    uint32_t sel = k == song.sel, mute = t->p[P_MUTE] != 0, arm = (song.rec >> k) & 1u, lvl = trk_level(k), sig;
-    uint32_t hot = sel && ui.hot_t ? ui.hot_col + 1u : 0u;   /* 1 LEVEL, 2 PAN, 3 unused, 4 MUTE */
-    int32_t pk = t->peak, m, pan = clamp(t->p[P_PAN], -64, 63), h = st_row_h(), y = st_row_y(k), top;
-    uint16_t tc = mute ? T_DIM : T_TRK(k), bg = ux_mix(T_BG, mute ? T_TRK(k) : tc, sel ? 24 : 11);
-    const aafont_t *tf = TY_TX, *lf = TY_LB;
-    int32_t T = pv_mix_y(h), ly = T + tf->cap + 8, cs = h >= 80 ? 34 : 26;
-    char nm[20], b[12], d[2] = {(char)('1' + k), 0};
-    t->peak = 0;
-    m = mute ? 0 : meter_px(pk);
-    if (m < pvm.meter[k] - 1)
-        m = pvm.meter[k] - 1;                           /* (falls ~2 dB a frame) */
-    sound_name(t, nm);
-    sig = str_hash(1u + sel * 2u + mute * 4u + arm * 8u + hot * 16u, nm) + lvl * 7919u +
-          (uint32_t)(pan + 128) * 104729u + (uint32_t)h * 31u + ux.gen * 977u + ux.pal * 31u;
-    if (!ui.force && sig == pvm.strip[k]) {
-        if (m != pvm.meter[k]) {                        /* the meter alone */
-            pvm.meter[k] = (uint8_t)(m < 0 ? 0 : m);
-            pv_meter(k, tc);
-        }
-        return;
-    }
-    pvm.strip[k] = sig;
-    pvm.meter[k] = (uint8_t)(m < 0 ? 0 : m);
-    for (top = 0; top < h; top += (int32_t)(CV_LOGICAL_MAX / BOX_W)) {   /* (a tall row: in slices) */
-        int32_t sh = h - top < (int32_t)(CV_LOGICAL_MAX / BOX_W) ? h - top : (int32_t)(CV_LOGICAL_MAX / BOX_W), x;
-        for (uint32_t band = 0; band < (uint32_t)((uint32_t)sh); band += CV_MAX / (BOX_W)) {
-            cv_begin_band(BOX_W,(uint32_t)sh,T_BG,band);
-            cv_oy = -top;
-            if (sel) {
-                cv_rrect(0, 0, BOX_W, h, 8, mute ? T_DIM : T_TRK(k), T_BG);
-                cv_rrect(2, 2, BOX_W - 4, h - 4, 6, bg, mute ? T_DIM : T_TRK(k));
-            } else {
-                cv_rrect(0, 0, BOX_W, h, 8, bg, T_BG);
-            }
-            cv_rrect(6, h / 2 - cs / 2, cs, cs, 7, tc, bg);  /* the numeral */
-            cv_text_c(6 + cs / 2, ty_y(h / 2, tf), tf, d, T_INK, tc);
-            if (arm)
-                cv_disc(6 + cs - 2, h / 2 - cs / 2 + 2, 9, T_REC, 0);
-            /* the level in dB at the right, the sound before it */
-            if (lvl) {
-                int32_t db = LEVEL_DB_X10[lvl];
-                fmt_int(b, (db + (db < 0 ? -5 : 5)) / 10);
-            } else {
-                str_cpy(b, "Off", sizeof b);
-            }
-            x = 228;
-            if (lvl && text_w(lf, nm) <= 228 - text_w(lf, "dB") - 3 - text_w(tf, b) - 8 - PV_MIX_BAR_X)   /* (the unit goes
-                                                             * before the name is cut) */
-                x = cv_text_r(x, ty_y(T + tf->cap / 2, lf), lf, "dB", T_MID, bg) - 3;
-            x = cv_text_r(x, ty_y(T + tf->cap / 2, tf), tf, b, hot == 1u ? tc : mute ? T_DIM : T_TEXT, bg);
-            cv_free_text(PV_MIX_BAR_X, ty_y(T + tf->cap / 2, ty_fit(tf, nm, x - 8 - PV_MIX_BAR_X)), ty_fit(tf, nm, x - 8 - PV_MIX_BAR_X),
-                         nm, mute ? T_DIM : T_TEXT, bg, x - 8 - PV_MIX_BAR_X);
-            /* the level's bar, the meter under it; the pan (or Mute) at the right */
-            cv_rrect(PV_MIX_BAR_X, ly, PV_MIX_BAR_W, 5, 2, ux_mix(bg, T_LINE, 60), bg);
-            if (lvl)
-                cv_rrect(PV_MIX_BAR_X, ly, (int32_t)lvl * PV_MIX_BAR_W / 127 < 4 ? 4 : (int32_t)lvl * PV_MIX_BAR_W / 127, 5, 2,
-                         hot == 1u ? T_TEXT : tc, T_LINE);
-            pv_meter_draw(k, PV_MIX_BAR_X, ly + 7, tc, bg);
-            if (mute) {
-                cv_text_r(228, ty_y(ly + 5, lf), lf, "Mute", hot == 4u ? T_TEXT : T_REC, bg);
-            } else {
-                if (pan) {
-                    b[0] = pan < 0 ? 'L' : 'R';
-                    fmt_int(b + 1, pan < 0 ? -pan : pan);
-                } else {
-                    str_cpy(b, "C", sizeof b);
-                }
-                cv_text_r(228, ty_y(ly + 5, lf), lf, b, hot == 2u ? T_TEXT : T_MID, bg);
-            }
-            cv_oy = 0;
-            cv_blit_band(BOX_X, (uint32_t)(y + top));
-        }
-    }
-}
+
+
+
 
 /* ----------------------------------------------------------- draw --- */
 static void pv_draw(void)
 {
     uint32_t kind = pv_kind(), sig;
     int32_t px;
-    if (kind == PV_NOTES) {
-        if (ui.force) {
-            lcd_fill(0, H_HEAD, 240, 240 - H_HEAD, T_BG);
-            ui.graph_sig = 0;
-        }
-        draw_head();
-        col_style = CS_CARD;                            /* (the strip, as a page's) */
-        draw_columns();
-        sig = graph_sig(0);
-        px = notes_play_x(TSEL);
-        if (ui.force || sig != ui.graph_sig || px != proll.play) {   /* the roll, in two slices (its labels may cross
-                                                                      * the seam); the playhead alone: its columns */
-            int32_t top, from = proll.play, cols = !ui.force && sig == ui.graph_sig;
-            ui.graph_sig = sig;
-            proll.play = px;
-            for (top = 0; top < PR_H; top += (int32_t)(CV_MAX/240u)) {
-                int32_t sh = PR_H - top < (int32_t)(CV_MAX/240u) ? PR_H - top : (int32_t)(CV_MAX/240u);
-                cv_begin(240, (uint32_t)sh, T_BG);
-                cv_oy = -top;
-                cv_rrect(PV_PANEL_X, 0, PV_PANEL_W, PR_H, 6, T_PANEL, T_BG);
-                cv_bg = T_PANEL;
-                cv_scroll = 1;
-                graph_recorded_notes(TSEL, T_THEME);
-                cv_scroll = 0;
-                cv_oy = 0;
-                if (cols)
-                    pv_cols((uint32_t)(PR_TOP + top), from, px, 1);
-                else
-                    cv_blit(0, (uint32_t)(PR_TOP + top));
-            }
-        }
-        return;
-    }
-    if (kind == PV_GRID) {
-        if (ui.force)
-            lcd_fill(0, H_HEAD, 240, 240 - H_HEAD, T_BG);
-        draw_head();
-        col_style = CS_CARD;                            /* (the strip, as a page's) */
-        draw_columns();
-        sig = graph_sig(0);
-        px = pv_grid_play();
-        if (ui.force || sig != ui.graph_sig || px != pv.gplay) {   /* (the step playing alone: cv_blit sends its mark) */
-            ui.graph_sig = sig;
-            pv.gplay = px;
-            pv_panel(PV_GRID_Y, PV_GRID_H, pv_grid);
-        }
-        return;
-    }
     if (kind == PV_MOD || kind == PV_RACK) {
         if (ui.force)
             lcd_fill(0, H_HEAD, 240, 240 - H_HEAD, T_BG);
@@ -882,18 +678,6 @@ static void pv_draw(void)
             draw_columns();
             pv_rack_rows();
         }
-        return;
-    }
-    if (kind == PV_MIXER) {
-        uint32_t k;
-        if (ui.force)
-            lcd_fill(0, H_HEAD, 240, 240 - H_HEAD, T_BG);
-        draw_head();
-        for (k = 0; k < stage_rows(); k++)
-            if (k < trk_n())
-                pv_strip(k);
-            else
-                stage_free(k, &pvm.strip[k]);   /* (UNUSED TRACKS SHOW: a greyed row, "Add track") */
         return;
     }
     pv_tab_h = (kind == PV_RINGS || kind == PV_CURVE) && designer_on() && designer_tabs_on() ? SEC_TAB_H : 0;

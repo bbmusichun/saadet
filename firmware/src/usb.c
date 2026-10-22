@@ -138,9 +138,6 @@ static void midi_out_event(uint32_t pkt)            /* from the audio ISR */
  * bcdDevice: 3.00 MIDI, 3.01 with CDC, 3.30..3.37 with USB audio.
  * Each audio layout has its own revision (hosts cache descriptors per version). */
 #if MELODEE_USB_AUDIO
-#ifndef UA_TRACKS_MEMORY
-#define UA_TRACKS_MEMORY(bytes) resource_resize(RES_USB_TRACKS,bytes)
-#endif
 #ifndef UA_MEMORY_GUARD_OFF
 #ifdef FM1_IRQ_TARGET
 #define UA_MEMORY_GUARD_OFF() fm1_irq_off()
@@ -210,12 +207,9 @@ static const uint8_t STR1[] = {26, 3, 'E', 0, 'l', 0, 'l', 0, 'i', 0, 'c', 0, ' 
 /* Keep FM-1 in the USB name: macOS may retain this MIDI port name after a
  * firmware switch, and other installers recognise the hardware family. */
 #ifdef MELODEE_LOADER
-static const uint8_t STR2[] = {40, 3, 'M', 0, 'e', 0, 'l', 0, 'o', 0, 'd', 0, 'e', 0, 'e', 0, ' ', 0,
-                               'F', 0, 'M', 0, '-', 0, '1', 0, ' ', 0, 'U', 0, 'p', 0,
-                               'd', 0, 'a', 0, 't', 0, 'e', 0};
+static const uint8_t STR2[] = {38, 3, 'S', 0, 'a', 0, 'a', 0, 'd', 0, 'e', 0, 't', 0, ' ', 0, 'F', 0, 'M', 0, '-', 0, '1', 0, ' ', 0, 'U', 0, 'p', 0, 'd', 0, 'a', 0, 't', 0, 'e', 0};
 #else
-static const uint8_t STR2[] = {26, 3, 'M', 0, 'e', 0, 'l', 0, 'o', 0, 'd', 0, 'e', 0, 'e', 0, ' ', 0,
-                               'F', 0, 'M', 0, '-', 0, '1', 0};
+static const uint8_t STR2[] = {24, 3, 'S', 0, 'a', 0, 'a', 0, 'd', 0, 'e', 0, 't', 0, ' ', 0, 'F', 0, 'M', 0, '-', 0, '1', 0};
 #endif
 #if MELODEE_USB_AUDIO                                   /* audio uses the product name (STR2) */
 static uint8_t ua_cfg[sizeof CFG_DESC];                 /* the configuration as sent (usb_audio.c ua_cfg_build) */
@@ -363,11 +357,7 @@ static void e0_send(const uint8_t *p, uint16_t len, uint16_t wlen)
 
 #if MELODEE_USB_AUDIO
 #include "usb_audio.c"
-static int ua_capture_active(void)
-{
-    /* Only track mode needs the mixer to collect a second set of samples. */
-    return usb.up && usb.config && !usb.suspended && ua.cap_alt && ua_cap_channels == 4u;
-}
+
 #endif
 
 static void ep0_service(void)
@@ -932,9 +922,7 @@ static void usb_start(void)                             /* boot, or main-loop re
 #if MELODEE_USB_AUDIO
     UA_MEMORY_GUARD_OFF();
     ua_reset();
-    int ready=ua_tracks_memory_prepare(ua_tracks&&!(ua_off&UA_OFF_IN));
     UA_MEMORY_GUARD_ON();
-    if(!ready){usb.up=0;return;}
     ua_rate_pending = 0;
     ua_feature_pending = 0;
     ua_host_volume_reset();
@@ -992,31 +980,13 @@ static void ua_off_set(uint32_t bit, int on, uint32_t now_ms)
     }
 }
 
-static void ua_tracks_set(int tracks, uint32_t now_ms)
-{
-    if (ua_tracks_want != !!tracks) {
-        ua_tracks_want = (uint8_t)!!tracks;
-        ua_off_ms = now_ms;
-    }
-}
+
 
 static int ua_off_apply(uint32_t now_ms)
 {
-    if ((ua_off_want == ua_off && ua_tracks_want == ua_tracks) || now_ms - ua_off_ms < 600u)
-        return 0;
-    UA_MEMORY_GUARD_OFF();
-    int extra=ua_tracks_want&&!(ua_off_want&UA_OFF_IN);
-    if(extra&&!ua_tracks_memory_prepare(1)){
-        ua_tracks_want=ua_tracks;ua_off_want=ua_off;
-        UA_MEMORY_GUARD_ON();return 2;
-    }
-    ua_reset();                         /* no old four-channel reader before release */
-    if(!extra)ua_tracks_memory_prepare(0);
-    ua_off = ua_off_want;
-    ua_tracks = ua_tracks_want;
-    UA_MEMORY_GUARD_ON();
-    usb_replug(now_ms);
-    return 1;
+    if(ua_off_want==ua_off || now_ms-ua_off_ms<600u)return 0;
+    UA_MEMORY_GUARD_OFF();ua_reset();ua_off=ua_off_want;UA_MEMORY_GUARD_ON();
+    usb_replug(now_ms);return 1;
 }
 
 /* TIMER5 (main.c), every 250 us at most and nested in the render too: the isochronous endpoints */

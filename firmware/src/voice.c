@@ -131,7 +131,7 @@ static uint32_t voice_units(const track_t *t)
 {
     const engine_t *e = ENGINES[t->engine];
     /* GLO > WEIGHTS: the player's points per voice replace the built-in rule; AUTO (0) keeps it. */
-    int k = e == &ENG_P5_TEST ? 0 : e == &ENG_CZ ? 1 : e == &ENG_FM6 ? 2 : e == &ENG_SID ? 3 : e == &ENG_DRUM ? 4 : -1;
+    int k = e == &ENG_P5_TEST ? 0 : e == &ENG_CZ ? 1 : e == &ENG_FM6 ? 2 : e == &ENG_SID ? 3 : -1;
     if (k >= 0 && settings_vpoints[k] > 0)
         return (uint32_t)settings_vpoints[k];
 #if MELODEE_ADMISSION
@@ -139,7 +139,7 @@ static uint32_t voice_units(const track_t *t)
         return voice_p5_parts()>1u?4u:3u;
     }
     if(e==&ENG_CZ)return 3u;
-    if(e==&ENG_FM6 || e==&ENG_SID || e==&ENG_DRUM)return 2u;
+    if(e==&ENG_FM6 || e==&ENG_SID)return 2u;
 #endif
     return e->units ? e->units(t) : trk_nvoice(t) > NPOLY ? 1u : 2u;
 }
@@ -277,11 +277,6 @@ static voice_t *voice_alloc(track_t *t, uint32_t note)
         if (!v->active || v->stage == 4u)
             voice_room(t, 0);
         return v;
-    }
-    if (t->engine == ENGI_DRUM) {
-        voice_t *v = drum_reuse(t, note);
-        if (v)
-            return voice_reuse(t, v);
     }
     for (i = 0; i < np; i++) {
         if (t->v[i].active && t->v[i].note == note)
@@ -536,9 +531,9 @@ static void trk_note_on_work(track_t *t, uint32_t note, uint32_t vel)
         if (sounding && want == t->mono_note)
             return;                                     /* LOW / HIGH priority: this key does not win */
         if (mode == V_MONO)                             /* MONO: always retrigger, glide when GLIDE is set */
-            mono_play(t, want, vel, 1, t->p[P_GLIDE] != 0 || t->slide_glide);
+            mono_play(t, want, vel, 1, t->p[P_GLIDE] != 0);
         else                                            /* LEGATO / UNISON: glide only between held notes */
-            mono_play(t, want, vel, !sounding, sounding && (t->p[P_GLIDE] != 0 || t->slide_glide));
+            mono_play(t, want, vel, !sounding, sounding && (t->p[P_GLIDE] != 0));
     }
 }
 
@@ -735,27 +730,24 @@ static __attribute__((noinline)) void tune_cache_update(void)
 }
 typedef struct {
     track_t *track;voice_t *voice;const engine_t *engine;vmod_t modulation;uint32_t n;
-    int16_t engine_params[8],lane_params[DV_NLANE];
+    int16_t engine_params[8];
 } engine_batch_t;
 _Static_assert(sizeof(engine_batch_t)<=AUDIO_BATCH_BYTES,"Engine batch descriptor");
 static void engine_batch_kernel(const void *data,int32_t *pcm)
 {
     const engine_batch_t *j=data;int16_t params[P_COUNT];
     for(uint32_t k=0;k<8u;k++)params[P_E0+k]=j->engine_params[k];
-    for(uint32_t k=0;k<DV_NLANE;k++)params[P_LN0+k]=j->lane_params[k];
-    if(j->engine==&ENG_DRUM){dr_scratch_t scratch;drum_render_into(j->track,j->voice,pcm,j->n,&j->modulation,&scratch,params);}
-    else if(j->engine==&ENG_SID)sid_render_into(j->track,j->voice,pcm,j->n,&j->modulation,params);
+    if(j->engine==&ENG_SID)sid_render_into(j->track,j->voice,pcm,j->n,&j->modulation,params);
     else j->engine->render(j->track,j->voice,pcm,j->n,&j->modulation);
 }
 
 static inline void engine_join(void) {}
 static void engine_render(track_t *t,voice_t *v,const engine_t *e,int32_t *out,uint32_t n,const vmod_t *m)
 {
-    if(audio_batch_active && (e==&ENG_CZ || e==&ENG_SID || e==&ENG_DRUM)){
+    if(audio_batch_active && (e==&ENG_CZ || e==&ENG_SID)){
         engine_batch_t j;j.track=t;j.voice=v;j.engine=e;j.modulation=*m;j.n=n;
         for(uint32_t k=0;k<8u;k++)j.engine_params[k]=t->p[P_E0+k];
-        for(uint32_t k=0;k<DV_NLANE;k++)j.lane_params[k]=t->p[P_LN0+k];
-        audio_batch_push(engine_batch_kernel,&j,sizeof j,out,n,e==&ENG_CZ?AP_CZ:e==&ENG_SID||drum_issid(t)?AP_SID:drum_is909(t)?AP_909:AP_808);return;
+        audio_batch_push(engine_batch_kernel,&j,sizeof j,out,n,e==&ENG_CZ?AP_CZ:AP_SID);return;
     }
     e->render(t,v,out,n,m);
 }
@@ -771,9 +763,7 @@ static __attribute__((noinline)) uint32_t track_render_audio(track_t *t, int32_t
     int32_t tune, tune_fine;
     int32_t bend, bend16, bend_fine;
     uint32_t ti = (uint32_t)(t - trk);
-    if (ENGINES[eng_idx(t->eng_req)] == &ENG_DRUM) {
-        midi_bend_q8[ti] = midi_bend_target[ti] = 0;
-    } else {
+    {
         int32_t d = midi_bend_target[ti] - midi_bend_q8[ti];
         /* ~6 ms smoothing, with an exact landing (no permanent small offset). */
         midi_bend_q8[ti] += d > 0 ? (d < 4 ? d : (d + 3) / 4) : (d > -4 ? d : (d - 3) / 4);

@@ -15,7 +15,6 @@
 #define UA_OFF_IN 2u
 #define UA_NO_IF 0xFFu
 static uint8_t ua_off;                          /* what the host is given (ua_cfg_build at usb_start) */
-static uint8_t ua_tracks, ua_tracks_want;       /* 0 stereo master (default), 1 four mono stems */
 static uint8_t ua_off_want;                     /* GLO > SYSTEM (ua_off_set); ua_off_apply makes it ua_off */
 static uint32_t ua_off_ms;                      /* its last change */
 static uint8_t ua_if_play = UA_IF_PLAY, ua_if_cap = UA_IF_CAP, ua_nif = 5;   /* as sent (ua_cfg_build) */
@@ -38,12 +37,12 @@ static void ua_cfg_build(void)
     uint32_t i, k, n = 0, nif = 0, skip = 0;
     uint32_t original_if = UA_NO_IF, cap_width = 2u;
     uint32_t play = !(ua_off & UA_OFF_OUT), cap = !(ua_off & UA_OFF_IN), streams = play + cap;
-    ua_cap_channels = ua_tracks ? 4u : 2u;
+    ua_cap_channels = 2u;
     /* Retire the split-device revisions. Give each duplex layout a distinct BCD revision so
      * the host reads the format and packet stride that ua_audio will produce.
      * Use the applied settings here; pending knob edits keep the old layout. */
     memcpy(ua_dev_desc, DEV_DESC, sizeof ua_dev_desc);
-    ua_dev_desc[12] = (uint8_t)(0x30u + (ua_off & 3u) + (ua_tracks ? 4u : 0u));
+    ua_dev_desc[12] = (uint8_t)(0x30u + (ua_off & 3u));
     ua_if_play = play ? UA_IF_PLAY : UA_NO_IF;
     ua_if_cap = cap ? (play ? UA_IF_CAP : UA_IF_PLAY) : UA_NO_IF;
     for (i = 0; i < sizeof CFG_DESC; i += CFG_DESC[i]) {
@@ -79,7 +78,7 @@ static void ua_cfg_build(void)
             if (streams == 2u) o[9] = ua_if_cap;
             n -= d[0] - o[0];
         }
-        if (!ua_tracks) {
+        {
             if (original_if == 2u && d[1] == 0x24u && d[2] == 2u && d[3] == 3u) {
                 o[7] = 2; o[8] = 3;             /* stereo L/R terminal */
             } else if (original_if == UA_IF_CAP && d[1] == 0x24u && d[2] == 2u) {
@@ -182,7 +181,6 @@ static int ua_set_interface(uint16_t interface, uint16_t alt)
 {
     if (!usb.config || alt > 2u || interface == UA_NO_IF || (interface != ua_if_play && interface != ua_if_cap))
         return 0;
-    if(interface==ua_if_cap && alt && ua_cap_channels==4u && !ua_track_extra)return 0;
     if (interface == ua_if_play) {
         ua_play_reset();
         ua.play_alt = (uint8_t)alt;

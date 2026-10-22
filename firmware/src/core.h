@@ -1,11 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio)
  * Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* MELODEE core types: tracks, voices, engines, parameters.
- * Up to four tracks (all four to start with: song.ntrk), each a synth part: its own engine, preset, parameters, voices and
- * 64-step pattern. The parts share one budget of VBUDGET units of sounding voices (voice.c). Drums are the DRUM
- * engine (synthesized 808 on the General MIDI map) on any part.
- * Sections: sizes, parameters, voices and engines, tracks and the song, system. */
+/* Saadet: one polyphonic synth part, performance controls and stereo effects.
+ * Stored parameter/engine IDs remain compatible with Melodee sound libraries. */
 #include <stdint.h>
 #include "performance_options.h"
 #include "tuning.h"
@@ -15,7 +12,7 @@
 /* ------------------------------------------------------------ sizes --- */
 #define NVOICE 16                /* voice slots per part (FM6 plays Dexed's 16) */
 #define NPOLY 8                  /* the voices of an engine without its own cap (its per-voice state: engines.c eng_state) */
-#define NPART 4                  /* synth parts: tracks 1..4 */
+#define NPART 1                  /* synth parts: tracks 1..4 */
 #ifndef VBUDGET
 #define VBUDGET (MELODEE_RAM_AUDIO ? 18u : 16u) /* shared weighted voices; RAM profile uses 18 with CPU1 online
                                                  * at 360 MHz (voice.c voice_budget: scaled with a kept 320) */
@@ -28,26 +25,6 @@
 #define MELODEE_AUDIO_BENCH 0 /* laboratory fixed-voice admission bypass; never a release default */
 #endif
 #define NTRK NPART               /* tracks (the formats and the protocol count these): every track is a part */
-/* Shared with engine-buffer placement: the queued recorder needs one runtime
- * counter per event, while the reference countdown implementation needs two. */
-#ifndef MELODEE_RECORD_CURSOR
-#define MELODEE_RECORD_CURSOR 1
-#endif
-#ifndef MELODEE_RECORD_QUEUE
-#define MELODEE_RECORD_QUEUE MELODEE_RECORD_CURSOR
-#endif
-#if MELODEE_RECORD_QUEUE && !MELODEE_RECORD_CURSOR
-#error "The release queue requires the ordered onset cursor"
-#endif
-/* Host capacity fixtures can exercise the larger identifier space before a
- * new project schema and the device UI enable it in shipping builds. */
-#ifndef NSTEP
-#define NSTEP 64
-#endif
-#ifndef NPAT
-#define NPAT 8u
-#endif
-_Static_assert(NSTEP <= 128u && NTRK * NPAT <= 64u, "recorded-note identifiers");
 #define HALF_FRAMES 128          /* I2S half buffer: 2.9 ms at 44.1 kHz (a key waits 0..1 half, then plays 1 half later) */
 /* SLICE retired. Keep its stored engine number reserved. */
 #ifdef MELODEE_SLICE
@@ -72,7 +49,7 @@ _Static_assert(NSTEP <= 128u && NTRK * NPAT <= 64u, "recorded-note identifiers")
 #define USER_NONE 65535u
 #define ENGI_ANALOG 0u           /* retired in 1.2: never selectable (eng_ok), its stored sounds play silent */
 #define ENGI_DIGITAL 1u          /* retired: never selectable (eng_ok), its stored sounds play silent */
-#define NENG_SHOWN (NENGINES - 8u - !MELODEE_SLICE - 6u * !MELODEE_LEGACY_EXTRAS)   /* the engines one can pick: PRESETS, the EDIT
+#define NENG_SHOWN (NENGINES - 9u - !MELODEE_SLICE - 6u * !MELODEE_LEGACY_EXTRAS)   /* the engines one can pick: PRESETS, the EDIT
                                                 * layer, the editor, in the display order of engines.c ENGINE_ORDER */
 #define ENGI_SLICE 13u           /* reserved without MELODEE_SLICE: never selectable (eng_ok) */
 #ifdef SMP_USER_SLOTS
@@ -203,9 +180,9 @@ static int param_master_fx(uint32_t id){return id>=G_MFXTYPE && id<=G_MFX3CHAR;}
 #define G_DRREV G_RESERVED26
 
 static int param_reserved(uint32_t id)
-{ return (id>=P_RESERVED33 && id<=P_RESERVED36) || (id>=P_RESERVED45 && id<=P_RESERVED48); }
+{ return id==P_RECQ || (id>=P_SLEN && id<=P_SGATE) || (id>=P_LN0 && id<=P_LN7) || (id>=P_RESERVED33 && id<=P_RESERVED36) || (id>=P_RESERVED45 && id<=P_RESERVED48); }
 static int global_reserved(uint32_t id)
-{ return (id>=G_RESERVED4 && id<=G_RESERVED11) || (id>=G_RESERVED24 && id<=G_RESERVED26); }
+{ return (id>=G_SLOT && id<=G_SAVE) || id==G_CLRSEQ || (id>=G_RESERVED4 && id<=G_RESERVED11) || (id>=G_RESERVED24 && id<=G_RESERVED26); }
 
 /* stored parameters of an older layout -> today's P_* order. A store keeps np = the P_COUNT it was
  * written with; common parameters are only ever added just before P_E0, so the first np - 8 are
@@ -335,78 +312,6 @@ typedef struct {                 /* an engine (engines.c ENGINES[]; the eng_*.c 
  * engine_t.note_on may read it  */
 static uint8_t voice_was;
 
-/* ------------------------------------------------- tracks, the song --- */
-enum { ST_NOTE, ST_TIE, ST_REST };
-#define SF_ACCENT 1u
-#define SF_SLIDE 2u
-#define SF_RECORDED 4u                         /* step is a view of timed notes, played by recording.c */
-#define RECORD_MAX 1024u
-#define RECORD_UNIT 65536u                     /* fractional onset within its swung step; duration uses an exponent */
-#include "recorded_note.h"
-/* Sound offsets: semitones, decay and voice character; zero preserves the factory kit. */
-typedef struct { int8_t c[16][4]; } drum_patch_t;
-static drum_patch_t drum_patch[NTRK];
-static int drum_patch_valid(const drum_patch_t *p)
-{
-    for(uint32_t i=0;i<16;i++)if(p->c[i][0]<-24 || p->c[i][0]>24 || p->c[i][1]<-64 || p->c[i][1]>63 || p->c[i][2]<-64 || p->c[i][2]>63 || p->c[i][3]<0)return 0;
-    return 1;
-}
-#define DRUM_WIRE_BYTES 54u /* 16 voices x (6-bit tune, 7-bit decay/character/attenuation) */
-static void drum_patch_pack(uint8_t *b,const drum_patch_t *p)
-{
-    memset(b,0,DRUM_WIRE_BYTES);uint32_t pos=0;
-    for(uint32_t i=0;i<16;i++){
-        wire_bits_put(b,&pos,(uint32_t)(p->c[i][0]+24),6);
-        wire_bits_put(b,&pos,(uint32_t)(p->c[i][1]+64),7);
-        wire_bits_put(b,&pos,(uint32_t)(p->c[i][2]+64),7);
-        wire_bits_put(b,&pos,(uint32_t)p->c[i][3],7);
-    }
-}
-static int drum_patch_unpack(drum_patch_t *p,const uint8_t *b)
-{
-    uint32_t pos=0;
-    for(uint32_t i=0;i<16;i++){
-        p->c[i][0]=(int8_t)((int32_t)wire_bits_get(b,&pos,6)-24);
-        p->c[i][1]=(int8_t)((int32_t)wire_bits_get(b,&pos,7)-64);
-        p->c[i][2]=(int8_t)((int32_t)wire_bits_get(b,&pos,7)-64);
-        p->c[i][3]=(int8_t)wire_bits_get(b,&pos,7);
-    }
-    return drum_patch_valid(p);
-}
-
-#define NLANE 8                  /* drum lanes of a step (the DRUM engine's: eng_drum.c DRUM_LANE_NOTE) */
-typedef struct {                 /* acid-style step: up to 4 notes (POLY), time, accent, slide; drum hits */
-    uint8_t note[4];
-    uint8_t n;                   /* notes in use, 0 = empty */
-    uint8_t time;                /* ST_NOTE / ST_TIE / ST_REST */
-    uint8_t flags;               /* SF_ACCENT | SF_SLIDE */
-    uint8_t vel;
-    uint8_t hit;                 /* bit l: lane l hits (its GM note, on any engine): the DRUM grid */
-    uint8_t acc;                 /* hit != 0: lane accents; hit == 0: recorded gate, 1..255 of a step (0 legacy) */
-    uint8_t probability;         /* 0 = legacy 100%; 1..100 = percent, 101 = silent */
-} step_t;
-typedef struct {                 /* a step as formats 1..4 (projects to FUN4) stored it: no hits */
-    uint8_t note[4];
-    uint8_t n, time, flags, vel;
-} step8_t;
-
-/* Probability keeps zero-initialized and legacy patterns at 100%. */
-static uint32_t step_chance(const step_t *s) { return !s->probability ? 100u : s->probability <= 100u ? s->probability : 0u; }
-static void step_set_chance(step_t *s, uint32_t chance) { s->probability = (uint8_t)(chance >= 100u ? 0u : chance ? chance : 101u); }
-static uint32_t step_gate(const step_t *s) { return s->hit ? 0u : s->acc; }
-static int step_acc_valid(const step_t *s) { return s->hit ? !(s->acc & ~s->hit) : s->time != ST_REST || !s->acc; }
-#define MOTION_MAX 64u
-/* Four tracks x64 steps fit one byte. Values retain their signed parameter range. */
-typedef struct { uint8_t place, param; int16_t value; } motion_event_t;
-typedef struct { uint8_t count, on, rsv[2]; motion_event_t event[MOTION_MAX]; } motion_store_t;
-_Static_assert(sizeof(motion_store_t) == 260u, "motion disk layout");
-#define CHAIN_ROWS 16u
-typedef struct { uint8_t slot, repeat; } chain_row_t;
-typedef struct {
-    uint8_t count, rsv[3];
-    chain_row_t row[CHAIN_ROWS];
-} chain_config_t;
-
 typedef struct track {
     int16_t p[P_COUNT];
     uint8_t engine, preset;      /* engine: what the audio ISR renders */
@@ -432,27 +337,6 @@ typedef struct track {
     uint32_t arp_idx;
     uint8_t arp_note;            /* sounding arp note, 0 = none */
     uint32_t arp_off;            /* remaining gate in the same clock units */
-    /* sequencer */
-    step_t step[NSTEP];
-    volatile uint8_t pattern, pattern_next;             /* active bank, queued bank (0xff: none) */
-    volatile uint32_t pattern_gen;                      /* invalidates editor history even for identical banks */
-    uint32_t seq_pos;            /* samples (INT), or MIDI musical units, into the step */
-    uint16_t seq_idx;
-    uint8_t seq_notes[4 + NLANE];   /* sounding seq notes (the step's notes, then its hits) */
-    uint8_t seq_n;
-    uint8_t seq_hold;            /* last step slides: keep the notes until the next step */
-    uint8_t slide_glide;         /* next legato note glides (slide) */
-    uint32_t seq_off;
-    uint8_t seq_active;          /* any step programmed */
-    uint8_t rskip_idx;           /* live recording put notes into the step about to play: */
-    uint8_t rskip_n, rskip[NLANE];   /* do not trigger them again there (they sound already) */
-    /* live recording of held notes (seq.c rec_hold): the steps they are held into become TIEs */
-    uint8_t rh_n, rh_note[4];    /* recorded notes still held, 0 = none */
-    uint8_t rh_start;            /* the step they were recorded into */
-    uint8_t rh_ties;             /* TIE steps written after it */
-    uint8_t rh_last;             /* the last of them; rh_bak: what it held (an early release puts it back) */
-    step_t rh_bak;
-    uint32_t rh_elapsed;         /* actual held duration before onset quantization */
     /* mono */
     uint8_t mono_stack[NVOICE];  /* keys held, in press order (as many as Dexed keeps voices for) */
     uint8_t nmono;
@@ -477,14 +361,10 @@ typedef struct track {
 
 typedef struct {
     int16_t g[G_COUNT];
-    uint8_t playing, seq_mode;
+    uint8_t playing;
     uint8_t grid;                /* 1: the keys are the DRUM grid (ui.c grid_on): only the lane keys play (seq.c);
                                   * 2: NAME (ui_name.c): no key plays */
-    uint8_t rec;                 /* live recording armed: bit per track */
-    uint8_t rec_wait, rec_pass;   /* waiting for loop zero, or recording since pattern start */
-    uint8_t rec_latch;           /* explicit REC stays armed across pattern ends: bit per track */
     uint8_t sel;                 /* selected track 0..trk_n()-1: keys, pages, editor */
-    uint8_t ntrk;                /* tracks in use: 1..ntrk play, the rest wait empty and silent (0: all NTRK) */
     int8_t octave;
     uint32_t tick;               /* sub-blocks since play */
     uint32_t cpu_q8;             /* audio ISR load, 1/256 */
@@ -502,7 +382,7 @@ static int32_t input_octave(const track_t *t)
 { return t->p[P_QUANT] == Q_MPC ? t->mpc_octave : song.octave; }
 /* The tracks in use: 1..trk_n(), always from track 1 (it clocks the song). The others keep their structs, sound and
  * play nothing (voice.c trk_note_on), are drawn nowhere and get a fresh sound when added (project.c track_add) */
-static inline uint32_t trk_n(void) { return song.ntrk - 1u < NTRK ? song.ntrk : NTRK; }
+static inline uint32_t trk_n(void) { return 1u; }
 
 #include "microtonal.h"
 
@@ -534,4 +414,3 @@ static inline void reset_intended(void)         /* a reset on purpose (UBOOT, an
 }
 
 /* GLO solo belongs to the mixer, independently of quick-layer effects. */
-static volatile uint8_t track_solo;
