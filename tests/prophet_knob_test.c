@@ -1,10 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
-/* Drive every native tone knob through the real panel/UI path, then render
+/* Drive every native tone field through the native edit path, then render
  * notes and releases. Each probe enables that control's required signal path.
  * Physical encoders, speakers and calibrated Prophet fidelity are separate. */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "synth_harness.c"
 #include <math.h>
 
 #define P5_TEST_N (FS * 2u)
@@ -13,7 +12,7 @@ static int failures;
 
 static void control_setup(uint32_t id)
 {
-    eng_state_reset();ui_power_on();vage=0;
+    eng_state_reset();power_on();vage=0;
     set_engine_of(TSEL,ENGI_PROPHET);apply_preset_to(TSEL,0);
     TSEL->engine=TSEL->eng_req;TSEL->xf=TSEL->xf_on=0;
     panic_req=0;TSEL->p[P_RESERVED33]=TSEL->p[P_RESERVED34]=TSEL->p[P_RESERVED35]=TSEL->p[P_RESERVED36]=0;
@@ -49,25 +48,19 @@ static void control_setup(uint32_t id)
     p5_track_accept(TSEL);
 }
 
-/* Set a raw field using slow detents on its actual tone page. Check exact
- * native bytes: all unrelated and opaque bytes must survive every detent. */
+/* Step a raw field one detent at a time through the native edit (prophet_edit.h p5_edit_value); a keyed tuning's
+ * detent is a semitone, two raw steps. Check exact native bytes: all unrelated and opaque bytes must survive every
+ * detent. */
 static int control_turn(uint32_t id,uint32_t value)
 {
-    uint32_t page=0,col=0;
-    for(;page<NPAGES;page++)if(PAGES[page].scope==SC_P5){
-        for(col=0;col<4;col++)if(PAGES[page].id[col]==id)break;
-        if(col<4)break;
-    }
-    if(page==NPAGES)return 0;
-    go_title(PAGES[page].title);
-    if(p5_keyed_tune(TSEL,id))value=clamp(value,0,96)/2*2;
+    int keyed=p5_keyed_tune(TSEL,id);
+    if(keyed)value=clamp(value,0,96)/2*2;
     int ok=1;
     for(uint32_t n=0;n<256&&p5_patch_of(TSEL)->raw[id]!=value;n++){
         p5_patch_t expected=*p5_patch_of(TSEL);
-        int step=expected.raw[id]<value?1:-1;
-        int16_t *vp;const param_desc_t *d=page_desc(cur_page(),col,&vp);
-        expected.raw[id]=(uint8_t)p5_panel_raw(TSEL,id,clamp(*vp+step,d->min,d->max));
-        turn(EN_K1+col,step);
+        int step=(expected.raw[id]<value?1:-1)*(keyed?2:1);
+        expected.raw[id]=(uint8_t)(expected.raw[id]+step);
+        p5_edit_value(TSEL,id,expected.raw[id]);
         ok &= !memcmp(&expected,p5_patch_of(TSEL),sizeof expected);
     }
     return ok&&p5_patch_of(TSEL)->raw[id]==value;
@@ -132,32 +125,13 @@ static void dependency_tests(void)
 
 static void tuning_tests(void)
 {
-    int exact=1,untouched=1;
-    for(uint32_t id=P5_FREQ_A;id<=P5_FREQ_B;id++)for(uint32_t raw=0;raw<=127;raw++){
-        control_setup(id);p5_patch_of(TSEL)->raw[id]=(uint8_t)raw;
-        p5_patch_t before=*p5_patch_of(TSEL);
-        go_title(id==P5_FREQ_A?"P5 OSC A":"P5 OSC B");
-        int16_t *vp;const param_desc_t *d=page_desc(cur_page(),0,&vp);
-        int32_t value=*vp;
-        untouched &= !memcmp(&before,p5_patch_of(TSEL),sizeof before);
-        exact &= d->fmt==F_SEMI&&value==(int32_t)(raw>96?96:raw)/2-12;
-        int step=value<36?1:-1;
-        turn(EN_K1,step);
-        before.raw[id]=(uint8_t)((value+step+12)*2);
-        exact &= !memcmp(&before,p5_patch_of(TSEL),sizeof before);
-    }
-    failures+=check("all 256 keyed tuning values display and step by one semitone",exact);
-    failures+=check("viewing keyed tuning preserves imported odd and upper raw bytes",untouched);
+    control_setup(P5_FREQ_A);
+    failures+=check("keyed tuning steps a semitone at a time and keeps every other byte",control_turn(P5_FREQ_A,60));
     control_setup(P5_FREQ_B);p5_patch_of(TSEL)->raw[P5_KEY_B]=0;
     failures+=check("keyboard-off B keeps its continuous raw range up to 127",control_turn(P5_FREQ_B,127));
-    /* Native field edits are a raw protocol, independent of the display. */
+    /* Native field edits are a raw protocol, independent of any display. */
     p5_edit_value(TSEL,P5_FREQ_A,113);
     failures+=check("native protocol still accepts exact raw tuning bytes",p5_patch_of(TSEL)->raw[P5_FREQ_A]==113);
-    control_setup(P5_UNISON_COUNT);p5_patch_of(TSEL)->raw[P5_UNISON_COUNT]=0;
-    go_title("P5 UNISON");int16_t *vp;page_desc(cur_page(),1,&vp);
-    failures+=check("native zero voice count displays its actual five-voice default",*vp==5&&p5_patch_of(TSEL)->raw[P5_UNISON_COUNT]==0);
-    turn(EN_K2,-1);
-    failures+=check("turning down the default voice count selects four voices",p5_patch_of(TSEL)->raw[P5_UNISON_COUNT]==4);
 }
 
 static void assignment_tests(void)
@@ -221,7 +195,6 @@ static void held_note_tests(void)
 int main(void)
 {
     uint32_t count=0;int ok;
-    failures+=check("tone navigation matches prefixes without reading beyond short titles",str_prefix("P5 OSC A","P5 OSC")&&!str_prefix("EDIT 1","P5 B WAVES")&&!str_prefix("","P5")&&str_prefix("P5",""));
     control_setup(P5_CUTOFF);control_render(P5_CUTOFF,reference);
     control_setup(P5_CUTOFF);control_render(P5_CUTOFF,result);
     failures+=check("Prophet knob probe renders are deterministic",control_difference()==-999);
@@ -230,7 +203,7 @@ int main(void)
         control_setup(id);ok=control_turn(id,P5_PANEL[id].min);control_render(id,reference);
         control_setup(id);ok &= control_turn(id,P5_PANEL[id].max);control_render(id,result);
         double change=control_difference();char label[128];
-        snprintf(label,sizeof label,"Prophet field %u %s: panel edit changes rendered sound (%.1f dB)",id,P5_PANEL[id].label,change);
+        snprintf(label,sizeof label,"Prophet field %u %s: native edit changes rendered sound (%.1f dB)",id,P5_PANEL[id].label,change);
         failures+=check(label,ok&&change>-60);count++;
     }
     failures+=check("all 57 native Prophet tone controls exercised",count==57u);

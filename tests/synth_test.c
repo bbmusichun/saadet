@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
-/* Actual single-part UI/editor, native synths, power-loss-safe state and archive paths. */
+/* Actual single-part editor, blank panel, native synths, power-loss-safe state and archive paths. */
 #include <assert.h>
 #define MELODEE_FLASH 1
 #define MELODEE_USB_AUDIO 0
-#include "synth_ui_harness.c"
+#include "synth_harness.c"
 #include "../firmware/src/usb_audio_stream.c"
 #define SXQ 1024u
 static uint32_t so_w,so_r,wire_n;
@@ -20,54 +20,53 @@ static void packet(uint32_t st,uint32_t note,uint32_t vel){midi_event(st&0xF0u,s
 static uint32_t held_count(void){uint32_t n=0;for(uint32_t i=0;i<4u;i++)n+=__builtin_popcount(live_held[0][i]);return n;}
 static void save_file(const char *name,const void *p,uint32_t n){FILE *f=fopen(name,"wb");assert(f);assert(fwrite(p,1,n,f)==n);fclose(f);}
 static void playing(void){
-    ui_power_on();assert(NTRK==1 && NENG_SHOWN==4 && !eng_ok(ENGI_DRUM));
+    power_on();assert(NTRK==1 && NENG_SHOWN==4 && !eng_ok(ENGI_DRUM));
     for(uint32_t i=0;i<NENG_SHOWN;i++){
         host_preset(TSEL,ENGINE_ORDER[i],0);trk_note_on(TSEL,60,100);uint64_t energy=0;
         for(uint32_t b=0;b<160;b++){int32_t out[CTL*2];mix_block(out,CTL);for(uint32_t j=0;j<CTL*2;j++)energy+=labs(out[j]);}
         assert(energy);trk_all_off(TSEL);
     }
-    ui_power_on();for(uint32_t ch=0;ch<16;ch++){packet(0x90|ch,60,100);assert(held_count()==1);packet(0x80|ch,60,0);assert(!held_count());}
+    power_on();for(uint32_t ch=0;ch<16;ch++){packet(0x90|ch,60,100);assert(held_count()==1);packet(0x80|ch,60,0);assert(!held_count());}
     song.g[G_ROUTE]=6;packet(0x90,64,100);assert(!held_count());packet(0x95,64,100);assert(held_count()==1);
     song.g[G_ROUTE]=2;packet(0x85,64,0);assert(!held_count());song.g[G_ROUTE]=0;
     packet(0x90,64,100);packet(0xB0,64,127);packet(0x80,64,0);assert(held_count());packet(0xB0,64,0);assert(!held_count());
     TSEL->p[P_CHRD]=3;TSEL->p[P_STRUM]=3;packet(0x90,60,100);assert(held_count()==1 && midi_strum_pending);
     for(uint32_t i=0;i<200;i++)tick();assert(held_count()==3 && !midi_strum_pending);packet(0x80,60,0);assert(!held_count());
     packet(0x90,60,100);packet(0x80,60,0);for(uint32_t i=0;i<200;i++)tick();assert(!held_count() && !midi_strum_pending);
-    ui_power_on();uint32_t pg=ui.page,e=TSEL->eng_req;press(B_REC);turn(EN_ALGO,3);assert(ui.home && ui.page==pg && TSEL->eng_req==e);
-    press(B_SEQ);assert(!ui.home && cur_fam()==FAM_VOICE && str_eq(cur_page()->title,"P5 UNISON"));
-    press(B_SEQ);assert(str_eq(cur_page()->title,"P5 BEND"));press(B_HOME);assert(ui.home);
-    turn(EN_SELECT,2);assert(song.g[G_BPM]==GP[G_BPM].def+2);   /* HOME: SELECT is the panel's BPM */
-    press(B_PLAY);assert(TSEL->p[P_AHOLD]);press(B_PLAY);assert(!TSEL->p[P_AHOLD]);
-    for(uint32_t i=0;i<NPAGES;i++){assert(PAGES[i].fam!=FAM_TRK);assert(PAGES[i].scope!=SC_DRUM && PAGES[i].scope!=SC_DRUMHIT);}
-    TSEL->user=384;designer_sound_t snapshot;designer_snapshot(&snapshot);TSEL->user=0;designer_restore(&snapshot);assert(TSEL->user==384);
-    uint32_t idhash=track_sig(TSEL);TSEL->user=128;assert(track_sig(TSEL)!=idhash);
-    song.batt_raw=520;usb.config=0;ui.force=1;draw_head();uint32_t low=ui.head_sig;ui.force=0;song.batt_raw=600;draw_head();assert(low!=ui.head_sig);
-    puts("SYNTH: four audible engines, MIDI receive-channel ownership, sustain, strum, latch and removed controls passed");
+    power_on();uint32_t e=TSEL->eng_req,pr=TSEL->preset;int16_t bpm=song.g[G_BPM],octave=song.octave;
+    for(uint32_t b=0;b<NB;b++)press(b);
+    for(uint32_t r=0;r<NE;r++)turn(r,3);
+    assert(TSEL->eng_req==e && TSEL->preset==pr && song.g[G_BPM]==bpm && song.octave==octave && !TSEL->p[P_AHOLD]);
+    key_down(0);frame();assert(gates());key_up(0);frame();assert(!gates());   /* the keys still play */
+    uint16_t bg=(uint16_t)((T_BG>>8)|(T_BG<<8));
+    for(uint32_t i=0;i<240u*240u;i++)assert(host_screen[i]==bg);
+    for(uint32_t c=0;c<FM1_NCOL;c++)assert(!fm1_led[c]);
+    puts("SYNTH: four audible engines, MIDI receive-channel ownership, sustain, strum, latch and the blank panel passed");
 }
 static void persistence(void){
-    ui_power_on();memset(nor,255,sizeof nor);persist_boot();settings_init();
+    power_on();memset(nor,255,sizeof nor);persist_boot();settings_init();
     for(uint32_t i=0;i<NENG_SHOWN;i++){
-        ui_power_on();host_preset(TSEL,ENGINE_ORDER[i],1);tick();TSEL->user=384;TSEL->mpc_octave=-2;
+        power_on();host_preset(TSEL,ENGINE_ORDER[i],1);tick();TSEL->user=384;TSEL->mpc_octave=-2;
         TSEL->p[P_FXTYPE]=FX_PHASER;TSEL->p[P_FXMIX]=51;song.g[G_MFXTYPE]=FX_ROOM;song.g[G_MFXMIX]=70;
         song.g[G_BPM]=137;song.g[G_ROUTE]=11;song.g[G_DRUMCH]=7;song.octave=2;
         synth_state_t expected,actual;state_capture(&expected);assert(state_autosave());uint32_t before=erases;assert(state_autosave() && before==erases);
-        ui_power_on();syn_saved=0;state_boot();state_capture(&actual);assert(!memcmp(&expected,&actual,sizeof actual));
+        power_on();syn_saved=0;state_boot();state_capture(&actual);assert(!memcmp(&expected,&actual,sizeof actual));
     }
     TSEL->p[P_FXMIX]=63;erase_error=1;assert(!state_autosave() && syn_retry);erase_error=0;assert(state_autosave() && !syn_retry);
     uint32_t saved=syn_saved;TSEL->p[P_FXMIX]=71;fail_after=1;assert(!state_autosave());fail_after=-1;
-    ui_power_on();state_boot();assert(TSEL->p[P_FXMIX]==63 && syn_saved==saved);
+    power_on();state_boot();assert(TSEL->p[P_FXMIX]==63 && syn_saved==saved);
     synth_state_t bad;state_capture(&bad);bad.engine=ENGI_DRUM;bad.sum=syn_hash(&bad,sizeof bad-4u);assert(!state_valid(&bad));
-    bootguard.failed=1;ui_power_on();state_boot();assert(TSEL->p[P_FXMIX]!=63);bootguard.failed=0;
+    bootguard.failed=1;power_on();state_boot();assert(TSEL->p[P_FXMIX]!=63);bootguard.failed=0;
     for(uint32_t b=0;b<UP_BANKS;b++)for(uint32_t c=0;c<2;c++)assert(st_sector(up_obj(b),c)!=st_sector(OBJ_SYNTH,0) && st_sector(up_obj(b),c)!=st_sector(OBJ_SYNTH,1));
     puts("STATE: four engines, slot 384, FX/MIDI settings, unchanged saves, failed writes and boot-loop recovery passed");
 }
 static void editor(void){
-    ui_power_on();memset(nor,255,sizeof nor);persist_boot();settings_init();request(ED_INFO,0,0);assert(wire_n>12);
+    power_on();memset(nor,255,sizeof nor);persist_boot();settings_init();request(ED_INFO,0,0);assert(wire_n>12);
     save_file("build/host/synth-info.bin",wire+5,wire_n-6);
     uint32_t removed[]={ED_STEP_GET,ED_STEP_SET,ED_PROJECT,ED_TRACK_STEP,ED_SONG,ED_MOTION,ED_PATTERN,ED_BANK_SONG};uint8_t args[16]={0};
     for(uint32_t i=0;i<sizeof removed/sizeof *removed;i++){request(removed[i],args,sizeof args);assert(!wire_n);}
     uint8_t library[]={3,127,2,0,'L','A','S','T'};request(ED_LIBRARY,library,sizeof library);assert(wire_n && wire[8]==0 && up_used(383));assert(!up_used(127));
-    name_open(NK_USER_RENAME,383);assert(nm.slot==383);user_ui_named(3,nm.slot,"LAST384");char label[20];up_name(383,label);assert(str_eq(label,"LAST384"));name_close();
+    up_ui_named(3,383,"LAST384");char label[20];up_name(383,label);assert(str_eq(label,"LAST384"));
     TSEL->p[P_FXMIX]=51;assert(state_autosave());assert(!ed_bk_capture());assert(ED_BK_N==24 && ed_bk_supported(32) && ed_bk_supported(28));assert(!ed_bk_supported(0) && !ed_bk_supported(2));
     uint32_t len;const uint8_t *bytes=ed_bk_object(32,&len);assert(len==sizeof(synth_state_t) && state_valid((const synth_state_t *)bytes));
     save_file("build/host/synth-state.bin",bytes,len);save_file("build/host/synth-settings.bin",&set_rec,ed_bk_set_len);

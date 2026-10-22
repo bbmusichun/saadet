@@ -7,8 +7,6 @@ fm1-recovery-backups/
 .nightly-deps/
 .nightly-pages/
 
-# Manual figures are rendered from the host UI (tools/manual_shots.py).
-web/manual/*.png
 !/AGENTS.md
 
 web/node_modules/

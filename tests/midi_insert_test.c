@@ -1,8 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* Exercise note inserts through real engines, UI and persistence. */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "synth_harness.c"
 #include <assert.h>
 
 static int note_sounding(uint32_t tr, uint32_t note)
@@ -21,7 +20,7 @@ static void advance(uint32_t n)
 }
 static void reset(void)
 {
-    ui_power_on();
+    power_on();
     for (uint32_t tr = 0; tr < NTRK; tr++) {
         set_engine_of(&trk[tr], ENGI_FM6); engine_block(&trk[tr]);
         trk[tr].p[P_VOICE] = V_POLY; trk[tr].p[P_CHRD] = 0;
@@ -110,7 +109,7 @@ static void verb(void)
     }
     reset(); TSEL->p[P_FXTYPE] = FX_MIDIVERB; TSEL->p[P_FXMIX] = 100;
     uint8_t native[FM6_PACKED]; fm6_pack(fm6_ed(TSEL), native);
-    midi_insert_tick(0, FS / 2u); assert(midi_verb[0] == 100 && !midi_verb[1]);
+    midi_insert_tick(0, FS / 2u); assert(midi_verb[0] == 100);
     uint8_t after[FM6_PACKED]; fm6_pack(fm6_ed(TSEL), after); assert(!memcmp(native, after, sizeof native));
     TSEL->p[P_FXMIX] = 0; midi_insert_tick(0, FS / 2u); assert(!midi_verb[0]);
     puts("MIDIVerb: audible native-engine release, bypass and unchanged instrument patch passed");

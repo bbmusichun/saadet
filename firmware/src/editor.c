@@ -259,7 +259,6 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     const param_desc_t *d;
     if (!ed_args_ok(cmd, a, na))
         return;
-    if(cmd==ED_SET || (cmd==ED_TRACK_PARAM && na==4u) || cmd==ED_FM6_PUT || cmd==ED_CZ_PUT || (cmd==95u && na && a[0]>=1u && a[0]<=3u))momentary_restore();
     ed_begin(cmd);
     if(ed_prophet_handle(cmd,a,na)){ed_send();return;}
 
@@ -472,11 +471,8 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
                 *vp = (int16_t)enum_orig(d, clamp(ed_rv(a + 2), d->min, d->max));
                 if (a[0] == 1 && a[1] == G_A4)
                     settings_save();
-                if (a[0] == 0) {
-                    load_extend(TSEL);                      /* (ui.c undo: an audition's values after G_ENGSEL) */
-                    if (scale_shared(a[1]))
-                        scale_share(TSEL);
-                }
+                if (a[0] == 0 && scale_shared(a[1]))
+                    scale_share(TSEL);
             }
             ui.force = 1;
             ed_w.v[a[0] ? P_COUNT + a[1] : a[1]] = *vp;   /* the editor's own change: no push */

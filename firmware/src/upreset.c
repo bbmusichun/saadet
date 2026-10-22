@@ -28,6 +28,9 @@
 #define UP_VER_FM 11u
 #define UP_VER_P5 12u
 #define UP_VER_NATIVE_CZ 13u
+static int native_used(uint32_t e, uint32_t k);          /* native slots: shared_presets.c */
+static const uint8_t *native_raw(uint32_t e, uint32_t k);
+static int shared_preferences_save(void);                /* persist.c */
 static const uint8_t UP_NATIVE_PARAMS[] = {
     P_ATK,P_DEC,P_SUS,P_REL,P_ED_FLT,P_ED_PIT,P_ED_SHP,
     P_LRATE,P_LWAVE,P_LPHASE,P_LFADE,P_LD_PIT,P_LD_FLT,P_LD_SHP,P_LD_AMP,
@@ -518,7 +521,6 @@ static void up_native_name(up_rec_t *r,const char *name)
 }
 static int up_store_to(uint32_t k,uint32_t tr,const char *name)
 {
-    momentary_restore();
     if(k>=UP_SLOTS || tr>=NTRK)return 1;
     track_t *t=&trk[tr];up_rec_t r;
     memset(&r,0,sizeof r);r.used=UP_USED;r.ver=UP_VER;r.engine=t->eng_req;r.np=P_COUNT;
@@ -567,7 +569,6 @@ static int up_load_to(uint32_t k,uint32_t tr)
     rec = *up_rec(k);
     if(!eng_ok(rec.engine))return 1;
     up_values(r, v);
-    load_begin(t, UNDO_SOUND);                          /* (ui.c: the copy for EDIT held = undo) */
     panic_req |= (uint8_t)(1u << tr);
     {
         fm1_irq_off();                                  /* the audio ISR must not see half a sound */
@@ -588,7 +589,6 @@ static int up_load_to(uint32_t k,uint32_t tr)
     }
     t->user = (uint16_t)(k + 1u);
     t->user_native=0;
-    load_end(t);
     sync_reload = 1;
     ui.force = 1;
     return 0;

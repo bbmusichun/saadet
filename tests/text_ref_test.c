@@ -21,7 +21,7 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 { (void)x; (void)y; (void)w; (void)h; (void)p; }
 #include "../firmware/src/gfx.c"
-static uint32_t ty_pixel(void) { return 0; }            /* (ui.c: Settings > FONT; the Rubik faces here) */
+static uint32_t ty_pixel(void) { return 0; }            /* (ui.c: the FONT preference; the Rubik faces here) */
 
 static const char *const STR[] = {
     "CUTOFF", "RESO", "ATK", "DEC", "LEVEL", "PAN", "REV", "MUTE", "STEP", "LANE", "HIT", "ACC", "No.",

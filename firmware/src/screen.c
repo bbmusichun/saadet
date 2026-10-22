@@ -24,7 +24,7 @@ static struct {
     uint32_t t;                  /* fm1_ms of the last panel command (SLPIN, SLPOUT) */
     uint32_t eat_t;              /* fm1_ms of the last swallowed knob detent */
 } scrn;
-static uint32_t scr_get(void)                          /* the MENU's value: 0 NEVER .. 4 60 MIN */
+static uint32_t scr_get(void)                          /* the editor's value: 0 NEVER .. 4 60 MIN */
 {
     return settings_screen < NELEM(SCR_DEC) ? SCR_DEC[settings_screen] : SCR_DEF;
 }
@@ -73,7 +73,7 @@ static int scr_input(uint32_t pressed, uint32_t notes)
 static int scr_frame(void)
 {
     uint32_t lim = SCR_MIN[scr_get()] * 60000u;
-    if (ui.confirm || ui.uboot) {    /* (never dark under these) */
+    if (ui.uboot) {                  /* (never dark under the countdown) */
         scrn.idle = fm1_ms;
         if (scrn.st == SCR_OFF)
             scr_wake();
@@ -106,9 +106,6 @@ static int scr_frame(void)
     case SCR_SHOW:
         return 1;
     }
-    ui.msg_t = 0;                                      /* (dark: what would have shown is over; a clean page back) */
-    ui.msg2[0] = 0;
-    ui.hot_t = ui.bpm_t = 0;
     return 0;
 }
 static void scr_shown(void)                            /* after the frame: the redrawn page on */

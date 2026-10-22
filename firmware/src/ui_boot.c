@@ -9,6 +9,37 @@ static struct {
     uint8_t state;                             /* 0 idle, 1 working, 2 failed, 3 wipe confirmation */
     uint8_t presets;                           /* 0 other maintenance, 1 migration, 2 wiping */
 } boot_work;
+static int shared_wipe(void);                  /* confirmed recovery from preset migration failure: shared_presets.c */
+
+#define TL_MAX 4u
+static uint32_t text_lines(const char *s, char (*l)[32], uint32_t m, int32_t w, const aafont_t *f)
+{
+    uint32_t k = 0;
+    while (*s && k < m) {
+        uint32_t i, cut = 0;
+        while (*s == ' ' || *s == '\n')
+            s++;
+        for (i = 1; s[i - 1] && i < 32u; i++) {
+            str_cpy(l[k], s, i + 1u);
+            if (text_w(f, l[k]) > w)
+                break;
+            if (!s[i] || s[i] == ' ' || s[i] == '\n')
+                cut = i;
+            if (s[i] == '\n')
+                break;
+        }
+        if (!cut) {                                     /* (one long word: as much of it as fits) */
+            for (cut = 1; s[cut] && cut < 31u; cut++) {
+                str_cpy(l[k], s, cut + 2u);
+                if (text_w(f, l[k]) > w)
+                    break;
+            }
+        }
+        str_cpy(l[k++], s, cut + 1u);
+        s += cut;
+    }
+    return k;
+}
 
 /* (large type) a text centred, wrapped onto the lines it needs (nothing cut); returns the y under it */
 static int32_t boot_lines(int32_t y, const aafont_t *f, const char *s, uint16_t c, int32_t step)

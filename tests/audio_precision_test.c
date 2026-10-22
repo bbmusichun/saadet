@@ -8,8 +8,7 @@
 #define RESOURCE_HOST_LOW_WORDS 2048u
 #define RESOURCE_HOST_DATA_WORDS 12000u
 #define RESOURCE_HOST_RETAINED_WORDS 3800u
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "synth_harness.c"
 #include <assert.h>
 
 static void transport(void)
@@ -61,7 +60,7 @@ static void master_curve(void)
 static void engines(void)
 {
     for(uint32_t engine=0;engine<NENG_SHOWN;engine++){
-        ui_power_on();host_preset(TSEL,ENGINE_ORDER[engine],0);
+        power_on();host_preset(TSEL,ENGINE_ORDER[engine],0);
         TSEL->p[P_LEVEL]=64;TSEL->p[P_SPRD]=64;
         for(uint32_t k=0;k<6;k++)trk_note_on(TSEL,48+k*3,64+k*8);
         uint64_t energy=0;uint32_t fractional=0,peak=0;
@@ -89,7 +88,7 @@ static void effects(void)
 {
     for(uint32_t type=1;type<FX_COUNT;type++){
         if(fx_is_midi(type)||fx_retired(type))continue;
-        ui_power_on();TSEL->p[P_FXTYPE]=type;TSEL->p[P_FXMIX]=127;
+        power_on();TSEL->p[P_FXTYPE]=type;TSEL->p[P_FXMIX]=127;
         TSEL->p[P_FXRATE]=80;TSEL->p[P_FXCHAR]=96;
         uint64_t quiet=0;
         for(uint32_t block=0;block<1400;block++){
@@ -125,24 +124,21 @@ static void limiter_release(void)
 
 static void insert_controls(void)
 {
-    ui_power_on();frame();btn_down(B_FX);frames(700);
-    key_down(0);frame();assert(gates() && !ui.layer && !ui.lock);
-    key_up(0);frame();assert(!gates());btn_up(B_FX);frame();
-    assert(cur_page()->graph==GR_FXRACK && !(layer_bits()&(1u<<panel.btn[B_FX])));
-    press(B_FX);press(B_FX);assert(!ui.layer && !ui.lock);
-    fx_go(page_titled("FX"));
-    for(uint32_t k=0;k<4;k++)turn(EN_K2,1);
-    assert(fx_rack_row[0]==FX_SLOTS-1u);
-    for(uint32_t i=0;i<NPAGES;i++)if(PAGES[i].fam==FAM_FX)assert(PAGES[i].scope==SC_TRACK);
+    power_on();frame();
+    for(uint32_t b=0;b<NB;b++){                      /* no button has a layer: held, it never claims a key */
+        fm1_in.buttons|=1u<<panel.btn[b];frames(700);
+        key_down(0);frame();assert(gates());key_up(0);frame();assert(!gates());
+        fm1_in.buttons&=~(1u<<panel.btn[b]);frame();
+    }
     _Static_assert(FX_CHAIN_COUNT==1,"Only the synth insert chain exists");
-    puts("FX controls: three inserts, no send pages, held/double-tapped FX never claims musical keys");
+    puts("FX controls: three inserts; no held button claims the musical keys");
 }
 
 static void memory(void)
 {
     /* Match the minimum target main arena. Packed histories and split reverb
      * state must accommodate two Echoverb inserts and a chorus. */
-    ui_power_on();
+    power_on();
     memset(resource,0,sizeof resource);memset(fx_state,0,sizeof fx_state);
     host_preset(TSEL,ENGI_FM6,0);trk_note_on(TSEL,60,100);
     TSEL->p[P_FXTYPE]=FX_REVERB;TSEL->p[P_FXMIX]=100;

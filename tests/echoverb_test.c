@@ -2,8 +2,7 @@
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* Opt-in firmware kernel, UI/arena integration and native PCM history. */
 #define MELODEE_ECHOVERB_TEST 1
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "synth_harness.c"
 #include <assert.h>
 static struct {uint32_t before[16];fx_echoverb_t s;uint32_t after[16];} guarded;
 static fx_state_t state;
@@ -62,7 +61,7 @@ static void tails_and_controls(void)
 }
 static void integration(void)
 {
-    ui_power_on();spread_on=0;
+    power_on();spread_on=0;
     trk[0].p[P_FXTYPE]=FX_REVERB;trk[0].p[P_FXMIX]=80;
     trk[0].p[P_FXRATE]=127;trk[0].p[P_FXCHAR]=66;
     assert(str_eq(N_FX[FX_REVERB],"ECHOVERB"));

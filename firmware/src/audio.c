@@ -29,9 +29,6 @@ static uint32_t audio_irq_max_ticks,audio_timer5_max_ticks;
 #define AUDIO_TARGET_TICKS (AUDIO_DEADLINE_TICKS*80u/100u)
 static volatile uint32_t t5_nested_ticks;              /* TIMER4 ticks TIMER5 spent nested in this ISR (main.c) */
 static uint32_t audio_cpu_rem;                         /* keep the fractional IIR step: no low-load bias */
-#define SCOPE_N 512u
-static int16_t scope_buf[SCOPE_N];
-static uint32_t scope_w;
 
 static void audio_block(int32_t *out, uint32_t n)       /* mix (mix.c), then native PCM -> codec */
 {
@@ -49,8 +46,6 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (mix.c), then nat
 #endif
 
     for (i = 0; i < n; i++) {
-        if (i & 1u)
-            scope_buf[scope_w++ & (SCOPE_N - 1u)] = (int16_t)(out[2u * i] >> AUDIO_FRAC_BITS);
 #if AUDIO_FRAC_BITS
         /* Keep the inherited -6 dBFS analogue ceiling at native precision. */
         out[2u*i] >>= 1;
@@ -61,7 +56,7 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (mix.c), then nat
 #endif
 #if defined(MELODEE_BENCH_SILENT) && MELODEE_BENCH_SILENT
         /* Bench builds silence only the physical output. Full engine/mixer work,
-         * scope and USB capture still run; never use track mutes for timing. */
+         * and USB capture still run; never use track mutes for timing. */
         out[2u * i] = out[2u * i + 1u] = 0;
 #endif
     }

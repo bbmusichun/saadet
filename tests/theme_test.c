@@ -16,7 +16,7 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 { (void)x; (void)y; (void)w; (void)h; (void)p; }
 #define UI_TEST_PALETTE 1
 #include "../firmware/src/gfx.c"
-static uint32_t ty_pixel(void) { return 0; }            /* (ui.c: Settings > FONT; Rubik here) */
+static uint32_t ty_pixel(void) { return 0; }            /* (ui.c: the FONT preference; Rubik here) */
 
 #define SHEET_W 960u
 #define SHEET_H (((UI_PAL_ENTRIES + 3u) / 4u) * 124u)   /* (every palette, GRAY too) */
@@ -138,7 +138,7 @@ int main(int argc, char **argv)
     assert(palette_track(1) && !palette_track(1));             /* (and so does the track: once) */
     cv_begin(3, 1, T_BG); cv_text(0, 0, &probe, "A", T_THEME);
     assert(swap16(cv_px[1]) != night);
-    /* fonts (docs/design README "Large type"): Rubik 500 LB 16, TX 20, VL 28, HR 48 px; Melodee Pixel's faces on the
+    /* fonts: Rubik 500 LB 16, TX 20, VL 28, HR 48 px; Melodee Pixel's faces on the
      * same line heights and baselines; tabular digits; the ellipsis; HR small letters too */
     assert(AF_LB.h == 19 && AF_LB.asc == 15 && AF_TX.h == 24 && AF_TX.asc == 19 && AF_VL.h == 34 && AF_VL.asc == 27 &&
            AF_HR.h == 57 && AF_HR.asc == 45);

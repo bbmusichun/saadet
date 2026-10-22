@@ -8,7 +8,7 @@
  *
  * The last state (OBJ_SYNTH, an A/B pair repurposed from the main firmware's first project): the track's sound (engine,
  * preset, user slot, parameters, its FM6 patch and functions, CZ-1 tone, Prophet program), the globals (BPM, the
- * effects, CLK ..) and the octave. Saved when it changed and the FM-1 rests (ui_input.c autosave_poll: untouched for
+ * effects, CLK ..) and the octave. Saved when it changed and the FM-1 rests (sound.c autosave_poll: untouched for
  * a few seconds, nothing sounding), restored at power-on (state_boot). There is no project: what you hear at
  * power-on is what you left. */
 #include "settings_persist.c"
@@ -150,7 +150,7 @@ static void state_boot(void)
 #endif
 }
 
-/* ui_input.c autosave_poll: the FM-1 rests. The state into flash when it differs from what is there */
+/* sound.c autosave_poll: the FM-1 rests. The state into flash when it differs from what is there */
 static int state_autosave(void)
 {
 #if MELODEE_FLASH
@@ -216,11 +216,8 @@ static void settings_poll(void)
     if (!persist_pending || !flash_ok || transport_busy() ||
         (persist_pending == 2u && (uint32_t)(fm1_ms - persist_retry_ms) < 1000u))
         return;
-    if (template_old()) {
-        if (!ui.confirm && !ui.name_active) {
-            persist_pending = 0;
-            confirm_open(CF_OLD_SETTINGS, 0);
-        }
+    if (template_old()) {                          /* an older firmware's record: never overwritten unasked, and */
+        persist_pending = 0;                       /* nothing asks yet (an editor restore accepts it) */
         return;
     }
     p = persist_saved;

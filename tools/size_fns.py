@@ -15,15 +15,15 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 SRC = _ROOT / "firmware" / "src" if (_ROOT / "firmware" / "src").is_dir() else _ROOT / "src"   # either layout
-# the UI, the stores, the editor and the console: main loop only, never called by sound code
-SIZE_FILES = ['ui.c', 'gfx.c', 'favorites.c', 'icons.c', 'ui_graph.c', 'ui_draw.c', 'ui_menu.c', 'ui_input.c', 'editor_native.c', 'scale_picker.c', 'prophet_patch.c', 'native_presets.c', 'prophet_user.c', 'sysex_library.c', 'fm6_store.c', 'cz_store.c', 'editor_prophet.c', 'ui_browser.c', 'ui_designer.c', 'ui_designer_input.c', 'ui_layer.c', 'ui_list.c', 'ui_name.c', 'ui_pages.c', 'ui_popup.c', 'ui_scales.c', 'ui_sections.c', 'ui_slots.c', 'ui_stage.c', 'storage.c', 'upreset.c', 'settings_persist.c', 'editor.c', 'editor_cz.c', 'cz_bank.c', 'cz_patch.h', 'editor_fm6.c', 'editor_preferences.c', 'editor_backup.c', 'console.c', 'main.c', 'params.c', 'browse.c', 'screen.c', 'panel.c', 'cz_edit.h', 'prophet_edit.h', 'ota.c', 'cz_panel.h', 'persist.c', 'shared_presets.c', 'editor_library.c', 'ui_view.c', 'ui_boot.c']
+# the screen, the sound's loads, the stores, the editor and the console: main loop only, never called by sound code
+SIZE_FILES = ['ui.c', 'sound.c', 'gfx.c', 'favorites.c', 'editor_native.c', 'prophet_patch.c', 'native_presets.c', 'prophet_user.c', 'fm6_store.c', 'cz_store.c', 'editor_prophet.c', 'storage.c', 'upreset.c', 'settings_persist.c', 'editor.c', 'editor_cz.c', 'cz_bank.c', 'cz_patch.h', 'editor_fm6.c', 'editor_preferences.c', 'editor_backup.c', 'console.c', 'main.c', 'params.c', 'screen.c', 'panel.c', 'cz_edit.h', 'prophet_edit.h', 'ota.c', 'cz_panel.h', 'persist.c', 'shared_presets.c', 'editor_library.c', 'ui_boot.c']
 
 DEF = re.compile(r"^(?:static|void|int|uint\w*|int\w*|const)\b[^;=(]*?\b([A-Za-z_]\w*)\s*\(", re.M)
 # Stopped note transforms are infrequent main-loop work.
 # Keep their callers' common input/render paths compact as well as the helpers.
-COLD_NAMES = {"note_convert", "note_transform", "ui_confirm_accept"}
+COLD_NAMES = {"note_convert", "note_transform"}
 # Share event copies and keep confirmed writes out of the input dispatcher.
-NOINLINE_NAMES = {"ui_confirm_accept", "note_assign"}
+NOINLINE_NAMES = {"note_assign"}
 IR_DEF = re.compile(r"^(define [^\n]*?@\"?([\w.]+)\"?\([^\n]*\)(?: unnamed_addr| local_unnamed_addr)?)( #\d+[^\n]*\{)$",
                     re.M)
 

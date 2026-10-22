@@ -20,8 +20,7 @@ dual-core rendering and the upstream worker-failure fallback.
 
 The build checks generated tables, MMIO access, audio RAM placement, resource
 capacity, boot/update layout and package structure. Host test logs are under
-`build/host/log`; UI reports and frames are under `build/ui_new` and
-`build/ui_pixel`. `UI=renders tests/run_tests.sh` runs only layout rendering.
+`build/host/log`.
 
 Serve the editor without publishing:
 

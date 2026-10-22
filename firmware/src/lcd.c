@@ -131,8 +131,8 @@ static void lcd_init(void)
     lcd_cmd(0x29);
 }
 
-/* MENU > SCREEN OFF (ui.c scr_frame): the panel dark while the sound goes on. s 0: DISPOFF, SLPIN; 1: SLPOUT (the
- * panel wants 120 ms after it, and 120 ms after SLPIN before it: ui.c waits, a frame at a time, never here); 2: DISPON
+/* SCREEN OFF (screen.c scr_frame): the panel dark while the sound goes on. s 0: DISPOFF, SLPIN; 1: SLPOUT (the
+ * panel wants 120 ms after it, and 120 ms after SLPIN before it: screen.c waits, a frame at a time, never here); 2: DISPON
  * (after the frame that redrew it all). The panel keeps its RAM asleep, but the UI redraws everything before it shows
  * (ui.force). The backlight stays on: PA2 is also the key matrix 595's /OE, so with it
  * high no button, key or knob reads and nothing could wake the screen (#157 follow-up, found on 1.1.5) */

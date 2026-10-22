@@ -4,11 +4,11 @@
  * F0/F7), 2 field edit (offset,value), 3 printable name, 4 native dump send. */
 static void p5_accept_patch(uint32_t tr,const p5_patch_t *patch)
 {
-    track_t *t=&trk[tr];load_begin(t,UNDO_SOUND);panic_req|=(uint8_t)(1u<<tr);
+    track_t *t=&trk[tr];panic_req|=(uint8_t)(1u<<tr);
     fm1_irq_off();p5_patch[tr]=*patch;p5_ready[tr]=1;t->eng_req=ENGI_PROPHET;
     t->preset=t->user=t->user_native=0;
     for(uint32_t i=0;i<8u;i++)t->p[P_E0+i]=ENGINES[ENGI_PROPHET]->edit[i].def;
-    p5_track_accept(t);fm1_irq_on();load_end(t);sync_reload=1;ui.force=1;
+    p5_track_accept(t);fm1_irq_on();sync_reload=1;ui.force=1;
 }
 static int ed_prophet_handle(uint32_t cmd,const uint8_t *a,uint32_t n)
 {

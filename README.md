@@ -19,21 +19,15 @@ There are no additional tracks, track selection, solo/multitrack mixer, drum eng
 sequencer, patterns, songs, recording, motion automation, send buses, punch effects, projects, project templates,
 MPC bank-to-track routing or USB stems.
 
-The interface is built for one instrument. Every screen shares a shell: the header
-shows the tempo, octave shift, arp HOLD and low battery at the left and the sound
-(HOME: its engine) at the right; a rail at the foot names the page and the pages
-SELECT turns to. HOME shows the four tone knobs, the sound's name and source, a
-scope with the held chord, and chips for scale, chord keys, arp and inserts; tap
-HOME again for the chord wheel. SELECT sets the tempo on HOME. EDIT opens the
-engine's own panel in sections, ENV and LFO its envelopes and modulation, SEQ its
-voice settings (polyphony, unison, glide, bend). FX opens the three-slot insert
-rack; the keys keep playing while FX is held. GLO holds output, tuning, MIDI and
-the voice budget. PLAY toggles arp HOLD. REC and the former track encoder have no action.
-The MIDI page has one receive channel (OMNI or 1–16) and one output channel.
+The on-device interface has been removed ahead of a new design. Until it lands
+the screen stays blank: the keys play the current sound, MASTER sets the volume
+and the other buttons and knobs do nothing. Startup maintenance, the update
+countdown (OCT- and OCT+ held for five seconds), UPDATE and the crash report still
+draw. Sound editing, the library and settings are in the editor.
 
 Build and test instructions are in [BUILDING.md](BUILDING.md). Serve the repository
 locally and open [the editor](web/editor.html) for Sound, FM6, Library and Settings.
-The [manual](web/manual/index.html) describes the reduced controls.
+The [manual](web/manual/index.html) describes the instrument.
 
 ## Storage and compatibility
 
@@ -52,8 +46,8 @@ without exposing project-template functions.
 ## Validation and provenance
 
 The host suite exercises native engines, controls, MIDI ownership and repeats,
-insert FX, native 24-bit transport, power-loss recovery, archive round trips, USB transport and UI layout in
-both fonts. The target build checks RAM placement and firmware packaging.
+insert FX, native 24-bit transport, power-loss recovery, archive round trips, USB transport and the blank
+panel. The target build checks RAM placement and firmware packaging.
 These checks do not establish physical audio quality, control behavior or
 sustained buffer deadlines on an FM-1. No hardware installation is part of this fork's creation.
 

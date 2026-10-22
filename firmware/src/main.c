@@ -147,7 +147,6 @@ static void melodee_init(void)
 
     for (i = 0; i < G_COUNT; i++)
         song.g[i] = GP[i].def;
-    undo_depth++;                             /* (no undo copy of the power-on loads) */
     fm6_init();                               /* every track's FM6 patch: the init voice */
     cz_init();
     for (i = 0; i < NTRK; i++) {
@@ -157,10 +156,8 @@ static void melodee_init(void)
         apply_preset_to(t, TRK_DEF[i][1]);    /* with its sends */
         t->engine = t->eng_req;
     }
-    undo_depth--;
     song.sel = 0;
     song.master_q12 = 2048;
-    ui.home = 1;
     ui.force = 1;
 }
 
@@ -225,10 +222,6 @@ static void fm1_main(void)
     fm1_guard_lock_top();
     fm1_irq_enable_all();
     fm1_delay_ms(30);
-    if ((fm1_in.buttons & 3u) == 3u) {
-        panel_setup();                        /* OCT- + OCT+ held at power-on */
-        settings_save();
-    }
     state_boot();
     fm1_delay_ms(400);
     if (boot_work.state != 2u)
@@ -265,8 +258,7 @@ static void fm1_main(void)
             }
         }
         {   /* OCT- + OCT+ held 5 s: enter UBOOT with RAM intact (debug / update); a countdown
-             * shows from 2 s over the whole screen (the menu and the dialogs too: ui_draw), letting
-             * go cancels it */
+             * shows from 2 s over the whole screen (ui.c draw_uboot), letting go cancels it */
             static uint32_t t0;
             uint32_t both = (1u << panel.btn[B_OCTDN]) | (1u << panel.btn[B_OCTUP]);
             if ((fm1_in.buttons & both) != both) {
@@ -321,8 +313,6 @@ static void fm1_main(void)
         cdc_task();
 #endif
         melodee_dbg.ui_frames++;
-        melodee_dbg.page = ui.page;
-        melodee_dbg.home = ui.home;
         melodee_dbg.stage = 1;
         ui_input();
         settings_poll();                              /* queued settings save: only while stopped */

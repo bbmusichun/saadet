@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
-/* Real UI/mixer/storage integration plus deterministic DSP stress. */
+/* Real mixer/storage integration plus deterministic DSP stress. */
 #include <assert.h>
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "synth_harness.c"
 static void reset_fx(void)
 {
     fx_clear_all();memset(fx_state,0,sizeof fx_state);
@@ -41,7 +40,7 @@ static uint64_t fx_signal(uint32_t type,int rate,int character,int mix,const cha
 
 static void fx_chain_test(void)
 {
-    ui_power_on();track_t *t=&trk[0];
+    power_on();track_t *t=&trk[0];
     int16_t settings[FX_SLOTS*FX_PARAMS]={FX_PHASER,80,30,71,FX_CHORUS,95,55,65,FX_ROOM,105,88,99};
     memcpy(t->p+P_FXTYPE,settings,sizeof settings);
     int32_t b[CTL];uint64_t energy=0;
@@ -54,21 +53,17 @@ static void fx_chain_test(void)
     assert(!resource[RES_FX0].size && resource[RES_FX0+1].size==2048 && resource[RES_FX0+2].size==2048u);
     uint32_t pos=fx_state[2].comb[0];void *tank=resource[RES_FX0+2].ptr;
     apply_preset_to(t,2);assert(!memcmp(t->p+P_FXTYPE,settings,sizeof settings));
-    undo_swap();assert(!memcmp(t->p+P_FXTYPE,settings,sizeof settings));
     set_engine_of(t,ENGI_FM6);apply_preset_to(t,8);assert(!memcmp(t->p+P_FXTYPE,settings,sizeof settings));
     memset(b,0,sizeof b);fx_process(t,b,CTL);
     assert(resource[RES_FX0+2].ptr==tank && fx_state[2].comb[0]!=pos);
     int rc=up_store(0,"CHAIN");assert(rc==0 || rc==3);
     t->p[P_FX2CHAR]=19;assert(!up_load(0));assert(t->p[P_FX2CHAR]==19);t->p[P_FX2CHAR]=65;
-    sound_init_of(t,t->eng_req);assert(!memcmp(t->p+P_FXTYPE,settings,sizeof settings));
+    engine_load_of(t,t->eng_req,0);assert(!memcmp(t->p+P_FXTYPE,settings,sizeof settings));
     assert(!native_store(ENGI_FM6,1,0,"FX FREE") || native_used(ENGI_FM6,1));
     assert(!native_load(ENGI_FM6,1,0));assert(!memcmp(t->p+P_FXTYPE,settings,sizeof settings));
-    press(B_FX);assert(cur_page()->graph==GR_FXRACK && cur_page()->scope==SC_TRACK);
-    turn(EN_SELECT,1);assert(cur_page()->id[0]==P_FXMIX);turn(EN_SELECT,1);assert(cur_page()->id[0]==P_FX2MIX);
-    turn(EN_SELECT,1);assert(cur_page()->id[0]==P_FX3MIX);turn(EN_SELECT,1);assert(cur_page()->graph==GR_FXRACK);
     t->p[P_FX2MIX]=0;for(uint32_t k=0;k<24;k++)fx_process(t,b,CTL);
     assert(!resource[RES_FX0+1].size && resource[RES_FX0+2].size==2048u);
-    puts("Three serial slots: independent bypass, live tails, preset/engine/undo/user independence, page navigation: OK");
+    puts("Three serial slots: independent bypass, live tails, preset/engine/user independence: OK");
 }
 static void rate_and_pan(void)
 {
@@ -160,7 +155,7 @@ static void chorus_test(void)
     }
     for(uint32_t i=0;i<CTL;i++)assert(!fx_left[i] && !fx_right[i]);
     /* All three inserts retain their own settings and bypass lifecycle. */
-    ui_power_on();track_t *t=&trk[0];
+    power_on();track_t *t=&trk[0];
     t->p[P_FXTYPE]=t->p[P_FX2TYPE]=t->p[P_FX3TYPE]=FX_CHORUS;
     t->p[P_FXMIX]=t->p[P_FX2MIX]=t->p[P_FX3MIX]=100;
     int32_t b[CTL]={0};for(uint32_t k=0;k<32;k++)assert(fx_process(t,b,CTL));
@@ -172,7 +167,7 @@ static void chorus_test(void)
 }
 static uint64_t tone_energy(uint32_t type,int tone,uint32_t hz)
 {
-    ui_power_on();reset_fx();track_t *t=&trk[0];
+    power_on();reset_fx();track_t *t=&trk[0];
     t->p[P_FXTYPE]=type;t->p[P_FXMIX]=127;t->p[P_FXRATE]=70;t->p[P_FXCHAR]=60;t->p[P_FXTONE]=tone;
     int32_t b[CTL]={0};assert(fx_process(t,b,CTL));fx_state[0].mix=32768;
     uint32_t phase=0,inc=(uint32_t)((uint64_t)hz*0x100000000ull/FS);uint64_t energy=0;
@@ -217,7 +212,7 @@ static void tone_test(void)
     /* A constant input exposes discontinuities when moving the cutoff, crossing FULL from one side to the other and
      * switching the high cut off; test both processing rates. */
     for(uint32_t rev=0;rev<1;rev++)for(uint32_t sweep=0;sweep<3;sweep++){
-        ui_power_on();reset_fx();int16_t p[4]={FX_ROOM,127,60,64};fx_plan_t plan;
+        power_on();reset_fx();int16_t p[4]={FX_ROOM,127,60,64};fx_plan_t plan;
         int32_t previous=8000;uint32_t rate=FS/4u;
         for(uint32_t block=0;block<600;block++){
             int16_t thin_side=(int16_t)(block<100?0:block<200?thin:block<300?FX_TONE_MAX:block<400?1:0);
@@ -232,7 +227,7 @@ static void tone_test(void)
         assert(!plan.f->q[0][1].b1 && !plan.f->q[0][1].z1 && plan.f->q[0][0].a2==(float)fx_floor_hz(p[0]) && abs(previous)<100);
     }
     /* Each slot's TONE targets its own track/slot and section, for every insert. */
-    ui_power_on();reset_fx();fx_plan_t plan;
+    power_on();reset_fx();fx_plan_t plan;
     for(uint32_t ti=0;ti<NPART;ti++)for(uint32_t slot=0;slot<FX_SLOTS;slot++){
         int16_t *p=trk[ti].p,v=(int16_t)((ti+slot)&1u?1+ti*3+slot:-(int)(1+ti*3+slot));
         uint32_t base=P_FXTYPE+slot*FX_PARAMS,tone=P_FXTONE+slot;

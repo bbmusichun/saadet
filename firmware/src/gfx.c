@@ -4,14 +4,13 @@
 /* Small-canvas renderer (no full framebuffer). Draw text/lines into
  * an off-screen strip, then blit it in one DMA transfer. Pixels are stored
  * byte-swapped (the panel takes RGB565 big-endian).
- * Text and icons are 4-bit alpha bitmaps made at build time (tools/gen_aa_font.py: Rubik;
- * tools/gen_icons.py: Melodee's own drawings). A glyph is trimmed to its ink box, advances are in 1/16 px, and
+ * Text is 4-bit alpha bitmaps made at build time (tools/gen_aa_font.py: Rubik). A glyph is trimmed to its ink box, advances are in 1/16 px, and
  * each glyph is rasterised at 1 << psh horizontal phases (2: drawn at a pen of +0, +1/2 px);
  * cv_text takes the phase that puts it within a phase step of its true place. Blending uses a 16-entry
  * ramp per (ink, background) pair, cached, so a pixel costs a nibble read and a store. Colours come from the theme tokens.
- * The large type (docs/design/README.md "Large type"): text is set in four roles, TY_LB labels, TY_TX text, TY_VL values,
+ * The large type: text is set in four roles, TY_LB labels, TY_TX text, TY_VL values,
  * TY_HR the hero, each Rubik (16 / 20 / 28 / 48 px) or Melodee Pixel (a 5 x 7 1-bit face at 2 / 2 / 3 / 5 times: aafont_t
- * px), as Settings > FONT says (ui.c TY_*); a role's two faces share its line height and baseline. */
+ * px), as the stored FONT preference says (ui.c ty_pixel); a role's two faces share its line height and baseline. */
 typedef struct { uint16_t off, adv; int8_t bx; uint8_t by, bw, bh; } aag_t;
 typedef struct {
     uint8_t h, asc, first, last, nex;   /* line height, baseline; ASCII range; extras */
@@ -34,7 +33,7 @@ typedef struct { const char *label; } kc_t;
 #include "ui_palettes.h"
 #include "ui_keycaps.h"                 /* KC_*: the keycaps' / badges' labels (tools/gen_aa_keycaps.py) */
 #define ELLIPSIS '\x85'                 /* the ellipsis glyph (every face's extras) */
-/* the type's roles (docs/design/README.md "Large type"): Rubik, or Melodee Pixel as Settings > FONT says (ui.c
+/* the type's roles: Rubik, or Melodee Pixel as the stored FONT preference says (ui.c
  * ty_pixel). A role's two faces share its line height and baseline, so a layout holds in both; widths differ (a
  * layout fits the wider) */
 static uint32_t ty_pixel(void);
@@ -53,7 +52,7 @@ static uint32_t ty_pixel(void);
 #endif
 #ifndef GFX_HOOK_WHOLE
 #define GFX_HOOK_WHOLE(x, y, r0, fill) ((void)0)   /* what the screen would hold sent whole: canvas rows r0.. at x, y (or a
-                                                     * fill) (tests/ui_render.c: the diff checked against it) */
+                                                     * fill) */
 #endif
 #ifndef GFX_HOOK_COVER
 #define GFX_HOOK_COVER(x0, y0, x1, y1) ((void)0)   /* a card over the screen (the toast): the texts under it covered on
@@ -112,7 +111,7 @@ static int16_t cv_cy0, cv_cy1;   /* text clip: canvas rows cv_cy0 .. cv_cy1 - 1 
 static struct {
     uint16_t bg, surf, text, theme, accent;
     uint16_t mid, dim, line, sel, tint, ink, rec, raise, key, lane, grid;
-    uint16_t panel, quiet, lift, sec;   /* the redesign's (docs/design): panel, a quiet lane, the selected lane, names */
+    uint16_t panel, quiet, lift, sec;   /* panel, a quiet lane, the selected lane, names */
     uint8_t light, mono;
     uint8_t pal, trk;            /* the palette, the track whose colour is THEME (palette_track) */
     uint32_t gen;                /* bumped by palette_set (the text ramps follow) */
@@ -739,7 +738,7 @@ static void cv_disc(int32_t cx, int32_t cy, int32_t d, uint16_t c, int ring)
 static void cv_circle(int32_t cx, int32_t cy, int32_t d, uint16_t c, uint16_t under) { (void)under; cv_disc(cx, cy, d, c, 0); }
 static void cv_ring(int32_t cx, int32_t cy, int32_t d, uint16_t c) { cv_disc(cx, cy, d, c, 1); }
 /* column x from y a to y b (1/16 px, either order) 2 px thick, its ends anti-aliased, blended over the canvas: a
- * smooth trace drawn a column at a time (Stage's waveform, docs/design) */
+ * smooth trace drawn a column at a time */
 static void cv_vspan_aa(int32_t x, int32_t a, int32_t b, uint16_t c)
 {
     int32_t lo = a < b ? a : b, hi = (a < b ? b : a) + 32, y;

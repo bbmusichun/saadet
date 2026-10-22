@@ -8,7 +8,7 @@ tools/build.py generate() with --preset rubik).
   gen_aa_font.py OUT.h --preset rubik [--tracking EM] [--gamma G] [--kern-min N]
   gen_aa_font.py OUT.h --face NAME=FONT[#index]:PX:FIRST-LAST[+0xNN,...] ...   (explicit faces)
 
-The preset's faces, the large type's roles (docs/design/README.md "Large type"):
+The preset's faces, the large type's roles:
   rubik       assets/fonts/Rubik[wght].ttf (SIL OFL 1.1, Google Fonts), Melodee's face: Rubik 500 at 16 / 20 / 28 / 48
               px (LB labels, TX text, VL values, HR the hero; VL and HR one phase, HR the characters a value or a name
               needs), and the same roles in Melodee Pixel (assets/fonts/melodee_pixel.txt: a 5 x 7 1-bit face drawn at

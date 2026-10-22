@@ -6,8 +6,7 @@
 
 /* ---------------------------------------------------- build options --- */
 /* build.py: MELODEE_<NAME>=0 / 1 in the environment overrides these. Elsewhere: MELODEE_SLICE
- * (core.h: the SLICE engine), MELODEE_ICONS (icons.c, the parameter icons; on by default),
- * MELODEE_OTA_RAMONLY (ota.c). */
+ * (core.h: the SLICE engine), MELODEE_OTA_RAMONLY (ota.c). */
 #include "build_options.h"      /* defaults shared with crt0.S */
 #ifndef MELODEE_CORE1_TEST
 #define MELODEE_CORE1_TEST 0    /* editor command 79 injects CPU1 failures (tools/core1_fault_test.py); never release */
@@ -87,15 +86,10 @@
 #include "seq.c"
 #include "audio.c"
 
-/* -------------------------------------------------------------- UI --- */
+/* ----------------------------------------------------- sound, screen --- */
 #include "panel.c"
-#include "ui.c"
-#include "icons.c"               /* parameter icons (MELODEE_ICONS), used by ui_draw.c */
-#include "ui_graph.c"
-#include "ui_draw.c"
-#include "ui_menu.c"
-#include "ui_input.c"
-#include "ui_layer.c"              /* the quick layers (GLO SCL held) */
+#include "sound.c"               /* the selected sound: loads, the shared scale, autosave */
+#include "ui.c"                  /* no interface yet: a blank screen and the system's own screens */
 
 /* --------------------------------------------- storage, update, editor --- */
 #if MELODEE_FLASH

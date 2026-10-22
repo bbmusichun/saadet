@@ -190,7 +190,7 @@ static int shared_wipe(void)
     up_cache_reset();native_cache_reset();cz_bank_boot();
     for(uint32_t b=0;b<UP_BANKS;b++)(void)up_cache_bank(b);
     for(uint32_t tr=0;tr<NTRK;tr++)trk[tr].user=trk[tr].user_native=0;
-    recent_n=0;up_gen++;sync_reload=1;
+    up_gen++;sync_reload=1;
     BOOT_WORK_END(0);
     return 0;
 failed:
@@ -314,7 +314,7 @@ static int shared_wipe(void)
     BOOT_WIPE_BEGIN("WIPING PRESETS",UP_BANKS);
     up_cache_reset();
     for(uint32_t tr=0;tr<NTRK;tr++)trk[tr].user=trk[tr].user_native=0;
-    recent_n=0;up_gen++;sync_reload=1;
+    up_gen++;sync_reload=1;
     BOOT_WORK_PROGRESS(UP_BANKS);
     BOOT_WORK_END(0);
     return 0;

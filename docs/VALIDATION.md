@@ -57,22 +57,22 @@ Three precision defects were corrected:
 
 ## Interface
 
-The interface was redesigned for one instrument (docs/design/README.md): a
-shared header and page rail, a new HOME, SEQ as VOICE, SELECT as tempo on HOME,
-GLO regrouped, envelope pictures for the Prophet and CZ-1, the engines' macro
-pages hidden where their own panels exist, and every track numeral and multitrack
-remnant removed. MIDI IN showed bytes past its name strings for channels 2–16;
-it now shows OMNI or the channel.
+The on-device interface has been removed ahead of a new design. The screen
+stays blank; the keys play, MASTER sets the volume and the other controls do
+nothing. Startup maintenance, the update countdown, UPDATE and the crash report
+still draw, and the maintenance screen's OCT- / OCT+ answers work again (the
+single-synth fork had dropped their input). SysEx dumps sent to the device are
+refused until an interface can choose their slots.
 
 ## Package
 
 The target build completed RAM, audio placement, MMIO, boot/update and package
 checks. `build/saadet.fwsc` is 610,542 bytes, identity `FM-1_900`;
-the app is 361,748 bytes and loader 7,386 bytes.
-Package SHA-256: `354de3b5498f506dee2c9a32bcb522981aca8e12d0f4aa511eeb0f420bedf3df`.
+the app is 239,244 bytes and loader 7,386 bytes.
+Package SHA-256: `10338c4d34f416c1ae705b98f589e788d9588fc21ecdd17ba32616a72059145d`.
 
-The main audio arena has 181,664 bytes against its enforced 172,032-byte fixture
-minimum; the low DSP tail has 8,916 bytes against 8,192. Guaranteed SRAM banks total 257,996 bytes; the optional cache bank adds
+The main audio arena has 184,064 bytes against its enforced 172,032-byte fixture
+minimum; the low DSP tail has 8,884 bytes against 8,192. Guaranteed SRAM banks total 257,996 bytes; the optional cache bank adds
 28,672 bytes after its boot self-test. Low, data and retained bank minima are
 also enforced by the linker and modeled conservatively by the native fixture.
 
@@ -99,11 +99,9 @@ Native checks were repeated after the final master-curve update. Coverage:
   are excluded because the inherited host fixture strips target alignment
   attributes and the upstream phase code uses signed shifts.
 - MIDI ownership, repeat timing, sustain, channel filtering, strum and arp HOLD;
-  held/double-tapped FX preserves keyboard notes and only insert pages exist.
+  no held button claims the keyboard, and the blank panel changes nothing.
 - State recall, slot 384, flash write failures, previous-copy recovery,
   shared-library/archive boundaries, editor DOM and USB transport/lifecycle.
-- 6,197 screen states in each font, zero layout findings and zero invalid MONO
-  pixels, including HOME, the chord wheel and every engine's pages.
 
 Logs and generated images are local ignored build artifacts. Reproduce with
 BUILDING.md. Host and package checks do not establish physical noise floor,
