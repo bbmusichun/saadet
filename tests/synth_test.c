@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
-/* Actual single-part editor, blank panel, native synths, power-loss-safe state and archive paths. */
+/* Actual single-part editor, the panel, native synths, power-loss-safe state and archive paths. */
 #include <assert.h>
 #define MELODEE_FLASH 1
 #define MELODEE_USB_AUDIO 0
@@ -33,15 +33,15 @@ static void playing(void){
     TSEL->p[P_CHRD]=3;TSEL->p[P_STRUM]=3;packet(0x90,60,100);assert(held_count()==1 && midi_strum_pending);
     for(uint32_t i=0;i<200;i++)tick();assert(held_count()==3 && !midi_strum_pending);packet(0x80,60,0);assert(!held_count());
     packet(0x90,60,100);packet(0x80,60,0);for(uint32_t i=0;i<200;i++)tick();assert(!held_count() && !midi_strum_pending);
-    power_on();uint32_t e=TSEL->eng_req,pr=TSEL->preset;int16_t bpm=song.g[G_BPM],octave=song.octave;
+    power_on();                                       /* every button and knob (the interface: tests/ui_test.c) */
     for(uint32_t b=0;b<NB;b++)press(b);
     for(uint32_t r=0;r<NE;r++)turn(r,3);
-    assert(TSEL->eng_req==e && TSEL->preset==pr && song.g[G_BPM]==bpm && song.octave==octave && !TSEL->p[P_AHOLD]);
+    frames(2000);                                     /* (PRESETS / ALGORITHM: the sound loads at rest) */
+    assert(song.octave==0 && TSEL->p[P_AHOLD]);       /* (OCT- then OCT+; REC latched) */
+    TSEL->p[P_AHOLD]=0;
+    for(uint32_t i=0;i<400;i++)tick();               /* (an engine change completes in the audio blocks) */
     key_down(0);frame();assert(gates());key_up(0);frame();assert(!gates());   /* the keys still play */
-    uint16_t bg=(uint16_t)((T_BG>>8)|(T_BG<<8));
-    for(uint32_t i=0;i<240u*240u;i++)assert(host_screen[i]==bg);
-    for(uint32_t c=0;c<FM1_NCOL;c++)assert(!fm1_led[c]);
-    puts("SYNTH: four audible engines, MIDI receive-channel ownership, sustain, strum, latch and the blank panel passed");
+    puts("SYNTH: four audible engines, MIDI receive-channel ownership, sustain, strum, latch and the panel passed");
 }
 static void persistence(void){
     power_on();memset(nor,255,sizeof nor);persist_boot();settings_init();

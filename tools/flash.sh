@@ -1,9 +1,9 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Kerem Kilic (Ellic Studio)
-# Build Melodee and flash it to the connected FM-1 in one step (the dev identity FM-1_900; others are asked first).
-#   tools/flash.sh                    build, then flash build/melodee.fwsc
-#   tools/flash.sh --no-build         flash build/melodee.fwsc as it is
+# Build Saadet and flash it to the connected FM-1 in one step (the dev identity FM-1_900; others are asked first).
+#   tools/flash.sh                    build, then flash build/saadet.fwsc
+#   tools/flash.sh --no-build         flash build/saadet.fwsc as it is
 #   tools/flash.sh PACKAGE.fwsc       flash that package (no build)
 #   tools/flash.sh --info             the connected FM-1's identity
 #   --port NAME                       MIDI port (part of its name), passed to tools/fm1_install.py
@@ -13,7 +13,7 @@ set -e
 cd "$(dirname "$0")/.."
 VENV="${MELODEE_VENV:-$HOME/.cache/melodee-venv}"
 PY="$VENV/bin/python"
-PKG=build/melodee.fwsc
+PKG=build/saadet.fwsc
 BUILD=1 INFO=0 PORT=
 
 while [ $# -gt 0 ]; do
@@ -55,7 +55,7 @@ IDENT=$("$PY" -c 'import sys; sys.path.insert(0, "tools"); import fm1_install as
 print(f.product_of(open(sys.argv[1], "rb").read()))' "$PKG")
 REV="$(git rev-parse --abbrev-ref HEAD) $(git rev-parse --short HEAD)"
 git diff --quiet HEAD -- firmware || REV="$REV + uncommitted firmware changes"
-if [ $BUILD = 0 ] && [ "$PKG" = build/melodee.fwsc ] && [ -n "$(find firmware -type f -newer "$PKG" | head -1)" ]; then
+if [ $BUILD = 0 ] && [ "$PKG" = build/saadet.fwsc ] && [ -n "$(find firmware -type f -newer "$PKG" | head -1)" ]; then
     echo "flash.sh: note: firmware/ changed since $PKG was built (flash without --no-build to rebuild)"
 fi
 echo "== flash $PKG: identity $IDENT, $REV"

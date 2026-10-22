@@ -94,7 +94,7 @@ static void power_on(void)
 }
 static void frame(void)
 {
-    host_ticks += 16000u; fm1_ms += 16u; ui_input(); ui_draw();
+    host_ticks += 16000u; fm1_ms += 16u; ui_input(); ui_leds(); ui_draw();   /* (as main.c's loop) */
 }
 static void frames(uint32_t ms) { uint32_t i; for (i = 0; i < ms / 16u; i++) frame(); }
 static void press(uint32_t label)
