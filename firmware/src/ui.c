@@ -23,6 +23,7 @@ static void ui_say(const char *a, const char *b);
 #include "ui_view.c"
 #include "ui_pics.c"
 #include "ui_lib.c"
+#include "ui_chord.c"
 
 #define POP_MS 1200u             /* HOME: a macro's value over the screen, after the knob rests */
 #define TOAST_MS 1500u           /* a message in the header */
@@ -327,7 +328,8 @@ static void vm_col_of(vm_col_t *c, const ui_field_t *f)
         c->bar = BAR_FILL; c->b = (int16_t)((v - d->min) * 50 / r);
     }
 }
-static void vm_state(char *b, uint32_t n)        /* what changes the notes now: arp, scale, chords, latch */
+static void vm_state(char *b, uint32_t n)        /* what changes the notes now: arp, chords, latch (the key: the
+                                                  * chord line) */
 {
     const track_t *t = TSEL;
     b[0] = 0;
@@ -337,13 +339,6 @@ static void vm_state(char *b, uint32_t n)        /* what changes the notes now: 
         str_cpy(a + 4, N_AMODE[clamp(t->p[P_AMODE], 0, (int32_t)NELEM(N_AMODE) - 1)], 8);
         str_cpy(a + str_len(a), " ", 2);
         str_cpy(a + str_len(a), N_DIV[clamp(t->p[P_ARATE], 0, (int32_t)NELEM(N_DIV) - 1)], 8);
-        ADD(a);
-    }
-    if (t->p[P_QUANT]) {
-        char a[24];
-        str_cpy(a, N_SCALE[clamp(t->p[P_SCALE], 0, (int32_t)NELEM(N_SCALE) - 1)], 10);
-        str_cpy(a + str_len(a), " ", 2);
-        str_cpy(a + str_len(a), N_NOTE[t->p[P_ROOT] % 12], 4);
         ADD(a);
     }
     if (t->p[P_CHRD]) {
@@ -414,6 +409,52 @@ static void vm_save(ui_vm_t *v)
         str_cpy(v->line[0], up_old(lib.slot) ? "OLD FORMAT SLOT" : "EMPTY SLOT", sizeof v->line[0]);
     }
     str_cpy(v->line[2], "PRESS SAVE TO STORE", sizeof v->line[2]);
+}
+/* HOME's key and chord: the selected part's notes as played (one ISR snapshot), the chord they make (ui_chord.c) */
+static void vm_keys_now(ui_vm_t *v)
+{
+    uint32_t bits[4], held = 0, i, n = 0, pcs = 0, root = 0, k = song.sel % NTRK, micro = micro_active(TSEL) != 0;
+    uint8_t note[8];
+    const char *q = 0;
+    fm1_irq_off();
+    for (i = 0; i < 4u; i++) {
+        bits[i] = live_last[k][i];
+        held |= live_held[k][i];
+    }
+    fm1_irq_on();
+    for (i = 0; i < 128u; i++)
+        if ((bits[i >> 5] >> (i & 31u)) & 1u) {
+            pcs |= 1u << (i % 12u);
+            if (n < sizeof note) note[n] = (uint8_t)i;
+            if (i >= KB_LO && i < KB_LO + 48u) v->kon[(i - KB_LO) >> 5] |= 1u << ((i - KB_LO) & 31u);
+            n++;
+        }
+    v->kscale = micro ? 0u : (uint16_t)scale_mask(TSEL);
+    v->kkey = (uint8_t)(TSEL->p[P_ROOT] % 12);
+    v->kfade = (uint8_t)(n && !held);
+    if (!n) {
+        v->kmode = KM_KEY;
+        key_name(v->kline, sizeof v->kline);
+        return;
+    }
+    if (n == 1u) {
+        v->kmode = KM_NOTE;
+        note_name(v->kline, note[0]);
+        return;
+    }
+    if (!micro)
+        q = chord_of(pcs, note[0] % 12u, &root);
+    if (!q) {
+        v->kmode = KM_NOTES;
+        notes_fit(v->kline, note, n, TY_RW, 220);
+        return;
+    }
+    v->kmode = KM_CHORD;
+    str_cpy(v->kroot, N_NOTE[root], sizeof v->kroot);
+    str_cpy(v->kq, q, sizeof v->kq);
+    if (root != note[0] % 12u)
+        str_cpy(v->kbass, N_NOTE[note[0] % 12u], sizeof v->kbass);
+    notes_fit(v->knotes, note, n, TY_LB, 220);
 }
 static void vm_build(ui_vm_t *v)
 {
@@ -486,6 +527,7 @@ static void vm_build(ui_vm_t *v)
         }
         ui_sound_name(v->name);
         vm_state(v->state, sizeof v->state);
+        vm_keys_now(v);
         for (i = 0; i < 4u; i++) {
             const ui_field_t *f = &HOME_F[e][i];
             const param_desc_t *d = field_desc(f);

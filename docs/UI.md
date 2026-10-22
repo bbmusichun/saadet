@@ -21,7 +21,7 @@ keys, and pressing a key jumps to that entry. While a button is held, the keys d
 
 | Button | Place | Inside |
 | --- | --- | --- |
-| HOME | HOME | The sound's name, engine and slot, plus what is shaping the notes (arp, scale, chord, latch). Turn K1–K4 to change the macros. Hold HOME to list your favourites on the keys; pressing a key plays that favourite. |
+| HOME | HOME | The sound's name, engine and slot. Under the name, the chord you're playing and its notes (a slash chord when the lowest note isn't the root); after you let go it stays, faded, until you play again. Before you play anything it shows the key. A keyboard from C2 to B5 marks the scale, with the sounding notes lit. The status line shows the arp, chord keys and latch. Turn K1–K4 to change the macros. Hold HOME to list your favourites on the keys; pressing a key plays that favourite. |
 | FX | LIBRARY | Lists: FAVOURITES, USER, P5, FM6, CZ-1, SID. K1 picks a sound (it loads at rest), K2 stars it as a favourite. |
 | SEL | SCALE | Scale, root, key mode, shift; the MPC degree. |
 | ENV | ENV | The engine's own envelopes (P5 filter and amp; FM6 pitch EG; the CZ-1's six 8-stage envelopes), then the common MOD ENV. On SID, the common envelope is the amp. |

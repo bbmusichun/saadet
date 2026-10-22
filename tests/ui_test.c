@@ -437,6 +437,42 @@ int main(void)
     for (uint32_t i = 0; i < 50; i++) tick();
     bad |= check(".. REC again lets go", gates() == 0u);
 
+    /* HOME's key and chord: the chord the notes make (a slash for another bass), its notes; let go: faded, still
+     * there; one note: its name; nothing played: the key */
+    {
+        uint32_t r = 99;
+        const char *q;
+        q = chord_of(0x091u, 0, &r);
+        bad |= check("chord: C E G is C", q && !q[0] && r == 0u);
+        q = chord_of((1u << 11) | (1u << 2) | (1u << 5) | (1u << 7), 11, &r);
+        bad |= check("chord: B D F G is G7/B", q && str_eq(q, "7") && r == 7u);
+        q = chord_of((1u << 0) | (1u << 3) | (1u << 7) | (1u << 10), 0, &r);
+        bad |= check("chord: C Eb G Bb is Cm7", q && str_eq(q, "m7") && r == 0u);
+        q = chord_of((1u << 0) | (1u << 4) | (1u << 10), 0, &r);
+        bad |= check("chord: C E Bb (no 5th) is C7", q && str_eq(q, "7"));
+        bad |= check("chord: C C# D is none", !chord_of(0x007u, 0, &r));
+    }
+    power_on();
+    TSEL->p[P_QUANT] = Q_OFF; TSEL->p[P_AMODE] = 0; TSEL->p[P_CHRD] = 0; TSEL->p[P_SCALE] = 3; TSEL->p[P_ROOT] = 2;
+    memset(live_last, 0, sizeof live_last); memset(live_held, 0, sizeof live_held);
+    press(B_HOME);
+    frames(1600);
+    bad |= check("HOME: nothing played, the key", lint_has("D Dorian") && lint_check("home key") == 0u);
+    ui_png("home_key");
+    key_down(6); key_down(9); key_down(12); key_down(14);         /* B3 D4 F4 G4 */
+    frame();
+    bad |= check("HOME: the chord held", lint_has("G") && lint_has("7") && lint_has("/") && lint_has("B") &&
+                 lint_has("B3 D4 F4 G4") && lint_check("home chord") == 0u);
+    ui_png("home_chord");
+    key_up(6); key_up(9); key_up(12); key_up(14);
+    frame();
+    bad |= check(".. let go: still there", lint_has("B3 D4 F4 G4"));
+    ui_png("home_letgo");
+    key_down(16); key_up(16);                                       /* A4 */
+    frame();
+    bad |= check("HOME: one note, its name", lint_has("A4") && !lint_has("B3 D4 F4 G4") && lint_check("home note") == 0u);
+    frames(500);
+
     /* the system's own screens: the update countdown, startup maintenance */
     frames(1600);
     ui.uboot = 3; ui.force = 1;

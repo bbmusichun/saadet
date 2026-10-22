@@ -6,6 +6,10 @@
  * of rows at a time (gfx.c cv_begin_band); the panel gets only the blocks that changed (gfx.c df_diff). */
 enum { VM_PAGE, VM_HOME, VM_POP, VM_REVEAL, VM_BROWSE, VM_SAVE, VM_IMPORT };
 enum { BAR_NONE, BAR_FILL, BAR_BIPOLAR, BAR_TICK, BAR_STEPS };
+enum { KM_KEY, KM_CHORD, KM_NOTE, KM_NOTES };      /* HOME's chord line: the key, a chord, one note, notes */
+#define KB_LO 36u                                   /* HOME's keyboard: C2 .. B5 */
+#define KB_Y 180
+#define KB_H 32
 #define VM_ROWS 7u                                  /* the held button's list: rows on the screen */
 #define UI_COL_X(i) (7 + 59 * (int32_t)(i))         /* the four columns (K1..K4): each value fits 54 px */
 typedef struct {
@@ -21,6 +25,11 @@ typedef struct {
     vm_col_t col[4];
     char name[24], oct[8], state[48];               /* HOME (name: also POP, SAVE; an empty list's word) */
     uint8_t macro[4];
+    uint8_t kmode, kfade;                           /* HOME's chord line (KM_*), the voicing let go (ui_chord.c) */
+    char kroot[4], kq[8], kbass[4], kline[40], knotes[48];
+    uint32_t kon[2];                                /* the keyboard C2..B5 (MIDI 36..83): the notes sounding */
+    uint16_t kscale;                                /* .. the scale's pitch classes from its root (0: a tuning) */
+    uint8_t kkey;                                   /* .. its root */
     uint16_t sweep;                                 /* POP: the ring, degrees of 270 */
     uint8_t nrows, first, cur;                      /* REVEAL (cur 255: none) */
     uint32_t keys;
@@ -139,33 +148,68 @@ static void vm_draw_page(const ui_vm_t *v)
     else pic_draw(v);
     vm_cols(v);
 }
+/* HOME's keyboard C2..B5 at KB_Y: the scale's keys lighter, its root lighter still, the notes sounding in the engine's
+ * colour (let go: faded); 28 white keys 7 px wide, 8 px apart, the black ones 5 px over them */
+static void vm_keyboard(const ui_vm_t *v)
+{
+    uint16_t lit = v->kfade ? ux_mix(T_BG, T_THEME, 45) : T_THEME;
+    uint32_t pass, n, w;
+    for (pass = 0; pass < 2u; pass++)
+        for (n = KB_LO, w = 0; n < KB_LO + 48u; n++) {
+            uint32_t pc = n % 12u, black = (0x54Au >> pc) & 1u, rel = (pc + 12u - v->kkey) % 12u;
+            uint16_t c = (v->kon[(n - KB_LO) >> 5] >> ((n - KB_LO) & 31u)) & 1u ? lit :
+                         v->kscale && !rel ? T_FILL : (v->kscale >> rel) & 1u ? (black ? T_OFF : T_LIT) :
+                         black ? T_BG : T_WELL;
+            if (!black) {
+                if (!pass) cv_rect(8 + 8 * (int32_t)w, KB_Y, 7, KB_H, c);
+                w++;
+            } else if (pass) {
+                int32_t x = 8 + 8 * (int32_t)w - 3;
+                cv_rect(x - 1, KB_Y, 7, 20, T_BG);
+                cv_rect(x, KB_Y, 5, 19, c == T_BG ? ux_mix(T_BG, T_WELL, 50) : c);   /* (off the scale: darkest) */
+            }
+        }
+}
+/* the chord line (y 92) and its notes (y 132): the chord's root large, its quality smaller on the same baseline, a
+ * bass not its root after a slash; one note large; notes without a chord in the row face; nothing played: the key */
+static void vm_chord(const ui_vm_t *v)
+{
+    uint16_t ink = v->kfade ? ux_mix(T_BG, T_TEXT, 45) : T_TEXT;
+    int32_t x = 10, base = 92 + TY_NM->asc;
+    switch (v->kmode) {
+    case KM_KEY: cv_text_fit(10, 96, TY_VL, v->kline, T_MID, T_BG, 220); break;
+    case KM_NOTE: cv_text(10, 92, TY_NM, v->kline, ink); break;
+    case KM_NOTES: cv_text_fit(10, 98, TY_RW, v->kline, ink, T_BG, 220); break;
+    default: {
+        const aafont_t *rf = TY_NM, *qf = TY_VL;
+        int32_t w = text_w(rf, v->kroot) + 1 + text_w(qf, v->kq) + (v->kbass[0] ? 2 + text_w(rf, "/") + text_w(rf, v->kbass) : 0);
+        if (w > 220) {                                /* (too wide: a size smaller) */
+            rf = TY_VL; qf = TY_TX; base = 96 + TY_VL->asc;
+        }
+        x = cv_text(x, base - rf->asc, rf, v->kroot, ink);
+        if (v->kq[0]) x = cv_text(x + 1, base - qf->asc, qf, v->kq, ink);
+        if (v->kbass[0]) {
+            x = cv_text(x + 2, base - rf->asc, rf, "/", ink);
+            cv_text(x, base - rf->asc, rf, v->kbass, ink);
+        }
+        break;
+    }
+    }
+    if (v->knotes[0])
+        cv_text_fit(10, 132, TY_LB, v->knotes, v->kfade ? ux_mix(T_BG, T_THEME, 55) : T_THEME, T_BG, 220);
+}
 static void vm_draw_home(const ui_vm_t *v)
 {
-    char l1[24];
-    const aafont_t *f = text_has(TY_HR, v->name) ? TY_HR : TY_NM;
-    int32_t w = text_w(f, v->name), i;
+    const aafont_t *f = text_has(TY_HR, v->name) && text_w(TY_HR, v->name) <= 220 ? TY_HR : TY_NM;
+    int32_t i;
     vm_header(v);
     if (!v->toast[0]) {
         cv_text_r(230, 8, TY_TX, v->oct, T_MID, T_BG);
     }
-    if (w <= 220) {
-        cv_text(10, 58, f, v->name, T_TEXT);
-    } else {                                        /* two lines, broken at the last space that fits */
-        int32_t cut = -1;
-        for (i = 0; v->name[i]; i++)
-            if (v->name[i] == ' ') {
-                str_cpy(l1, v->name, (unsigned)i + 1u);
-                if (text_w(f, l1) <= 220) cut = i;
-            }
-        if (cut > 0) {
-            str_cpy(l1, v->name, (unsigned)cut + 1u);
-            cv_text(10, 46, f, l1, T_TEXT);
-            cv_text_fit(10, 46 + f->h - 4, f, v->name + cut + 1, T_TEXT, T_BG, 220);
-        } else {
-            cv_text_fit(10, 58, f, v->name, T_TEXT, T_BG, 220);
-        }
-    }
-    cv_text_fit(10, 152, TY_TX, v->state, T_MID, T_BG, 220);
+    cv_text_fit(10, f == TY_HR ? 34 : 42, f, v->name, T_TEXT, T_BG, 220);   /* (long: the smaller face, cut) */
+    vm_chord(v);
+    cv_text_fit(10, 154, TY_TX, v->state, T_MID, T_BG, 220);
+    vm_keyboard(v);
     for (i = 0; i < 4; i++) {
         cv_rect(UI_COL_X(i), 222, 50, 4, T_LINE);
         cv_rect(UI_COL_X(i), 222, v->macro[i], 4, T_THEME);
