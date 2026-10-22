@@ -35,13 +35,13 @@ static int led_get(const uint8_t *nl, uint32_t id)
 static const uint8_t FAM_BTN[FAM_COUNT] = {
     [FAM_HOME]=B_HOME, [FAM_ENV]=B_ENV, [FAM_LFO]=B_LFO, [FAM_FX]=B_FX,
     [FAM_SCL]=B_SCL, [FAM_EDIT]=B_EDIT, [FAM_GLO]=B_GLO, [FAM_SAVE]=B_SAVE,
-    [FAM_ARP]=B_ARP, [FAM_SEQ]=B_SEQ, [FAM_TRK]=B_GLO
-};   /* (SEQ and TRK: no pages in the synth build) */
+    [FAM_ARP]=B_ARP, [FAM_VOICE]=B_SEQ, [FAM_TRK]=B_GLO
+};   /* (SEQ: VOICE; TRK: no pages in the synth build) */
 
 static uint32_t cur_fam(void)                       /* (an engine's own envelope / LFO page: ENV / LFO, ui.c native_page) */
 {
     return ui.home ? FAM_HOME : native_page(ui.page, FAM_ENV) ? FAM_ENV : native_page(ui.page, FAM_LFO) ? FAM_LFO :
-           cur_page()->fam;
+           native_page(ui.page, FAM_VOICE) ? FAM_VOICE : cur_page()->fam;
 }
 
 static int layer_set_open(void);                       /* (ui_layer.c) */
@@ -300,7 +300,7 @@ static void edit_param(uint32_t slot, int32_t steps)
         mod_ui_slot = (uint8_t)clamp((int32_t)mod_ui_slot + (steps > 0 ? 1 : -1), 0, 3);
         return;
     }
-    if(pg->graph==GR_FXRACK && slot==1u){uint32_t sh=pg->scope==SC_GLOBAL;fx_rack_row[sh]=(uint8_t)clamp((int32_t)fx_rack_row[sh]+(steps>0?1:-1),0,FX_SLOTS);ui.force=1;return;}
+    if(pg->graph==GR_FXRACK && slot==1u){fx_rack_row[0]=(uint8_t)clamp((int32_t)fx_rack_row[0]+(steps>0?1:-1),0,FX_SLOTS-1u);ui.force=1;return;}
     d = page_desc(pg, slot, &vp);
     if (!d || !vp || d->max == d->min)
         return;
@@ -507,8 +507,6 @@ static void page_tap(uint32_t b)
         open_global();                                  /* GLOBAL -> SYSTEM -> GLOBAL */
         return;
     }
-    if (b == B_SEQ)
-        return;                                         /* (no sequencer in the synth build) */
     if (b == B_EDIT && !ui.home && cur_page()->graph == GR_USER) {
         name_rename();                                  /* SAVE > USER: EDIT renames the slot */
         return;
@@ -522,11 +520,11 @@ static void page_tap(uint32_t b)
 
 
 /* KNOB k turned s on the page shown (the sound designer's pages too): what it edits there, its card hot */
-static uint32_t fx_slot_page(uint32_t shared, uint32_t r)
+static uint32_t fx_slot_page(uint32_t r)
 {
-    uint32_t i, id = (shared ? G_MFXMIX : P_FXMIX) + r * FX_PARAMS;
+    uint32_t i,id=P_FXMIX+r*FX_PARAMS;
     for (i = 0; i < NPAGES; i++)
-        if (PAGES[i].fam == FAM_FX && PAGES[i].graph == GR_NONE && (PAGES[i].scope == SC_GLOBAL) == (shared != 0u) &&
+        if (PAGES[i].fam == FAM_FX && PAGES[i].graph == GR_NONE && PAGES[i].scope==SC_TRACK &&
             PAGES[i].id[0] == id)
             return i;
     return NPAGES;
@@ -542,33 +540,23 @@ static void fx_go(uint32_t page)
 static int fx_rack_enter(void)
 {
     const page_t *pg = cur_page();
-    uint32_t sh = pg->scope == SC_GLOBAL, r = fx_rack_row[sh] & 3u;
+    uint32_t r=fx_rack_row[0];
     int16_t *vp;
-    if (ui.home || pg->graph != GR_FXRACK || (sh && r == FX_SLOTS))
+    if (ui.home || pg->graph != GR_FXRACK || r>=FX_SLOTS)
         return 0;
-    if (r == FX_SLOTS) {
-        fx_go(page_titled("SHARED"));
-    } else if (page_desc(pg, 0, &vp) && vp && *vp == FX_OFF) {
+    if (page_desc(pg, 0, &vp) && vp && *vp == FX_OFF) {
         vlist_open(ui.page, 0);
     } else {
-        fx_go(fx_slot_page(sh, r));
+        fx_go(fx_slot_page(r));
     }
     return 1;
 }
 static int fx_rack_back(void)
 {
     const page_t *pg = cur_page();
-    uint32_t sh = pg->scope == SC_GLOBAL;
-    if (ui.home || pg->fam != FAM_FX || (pg->graph == GR_FXRACK && !sh))
-        return 0;
-    if (pg->graph == GR_FXRACK) {
-        fx_rack_row[0] = FX_SLOTS;
-        fx_go(page_titled("FX"));
-    } else {
-        fx_rack_row[sh] = (uint8_t)((pg->id[0] - (sh ? G_MFXMIX : P_FXMIX)) / FX_PARAMS);
-        fx_go(page_titled(sh ? "SHARED" : "FX"));
-    }
-    return 1;
+    if(ui.home || pg->fam!=FAM_FX || pg->graph==GR_FXRACK)return 0;
+    fx_rack_row[0]=(uint8_t)((pg->id[0]-P_FXMIX)/FX_PARAMS);
+    fx_go(page_titled("FX"));return 1;
 }
 
 static void page_knob(uint32_t k, int32_t s)
@@ -687,7 +675,6 @@ static void ui_input(void)
     if (knob_layer)
         for (k = 0; k < 4u; k++)
             ks[k] = panel_enc(EN_K1 + k);
-    if (!layer_allowed()) { punch.req=-1; punch.keybit=0; }
 
     {   /* a key pressed with the button: a combo (its edge, or the ISR already took it); then not the grid's or a step's */
         static uint32_t kb_seen;
@@ -805,10 +792,8 @@ static void ui_input(void)
             ui.force = 1;
             break;
         }
-        case B_SEQ:                                     /* SEQ, REC: nothing in the synth build */
-        case B_REC:
+        case B_REC:                                     /* REC: nothing in the synth build */
         case B_SAVE:
-        case B_FX:                                      /* the layers' buttons: ui_layer.c */
         case B_GLO:
         case B_SCL:
         case B_EDIT:
@@ -914,10 +899,14 @@ static void ui_input(void)
         ui.force = 1;
     }
     panel_enc(EN_ALGO);                                 /* ALGORITHM: nothing (one track) */
-    if ((s = panel_enc(EN_SELECT)) != 0) {          /* SELECT: pages */
+    if ((s = panel_enc(EN_SELECT)) != 0) {          /* SELECT: pages; HOME the tempo (the panel's BPM) */
         if (bulk_jog(s)) {
         } else if (!ui.home) {
             page_scroll(s);
+        } else {
+            const param_desc_t *d = &GP[G_BPM];
+            song.g[G_BPM] = (int16_t)clamp(song.g[G_BPM] + accel_by(EN_SELECT, s, 16u, 0), d->min, d->max);
+            ui.bpm_t = 40;                              /* (the header's tempo in the accent while it turns) */
         }
     }
     for (k = 0; !knob_layer && k < 4u; k++) {

@@ -71,21 +71,8 @@ static void user_ui_named(uint32_t op,uint32_t k,const char *name) { up_ui_named
 #define PREF_PIXEL 64u                         /* Settings > FONT: PIXEL (else RUBIK) */
 #define TY_PIXEL ty_pixel()
 static uint32_t ty_pixel(void) { return (PREF_BITS & PREF_PIXEL) != 0u; }   /* (gfx.c TY_*: the type's roles) */
-/* HOME SELECT (the menu): what SELECT turns on HOME, kept in favorites.factory[15][25] (0, any other: BPM) */
-enum { HS_BPM, HS_MOD, HS_LEVEL, HS_SWING, HS_TRANS, HS_CHORD, HS_ARATE, HS_PATTERN, HS_OFF, HS_N };
-static const char *const HS_NAME[HS_N] = {"BPM", "MOD WHEEL", "LEVEL", "SWING", "TRANSPOSE", "CHORD", "ARP RATE", "PATTERN",
-                                          "OFF"};
-#define HOME_SELECT (favorites.factory[15][25])
-static uint32_t home_select(void) { return HOME_SELECT < HS_N ? HOME_SELECT : HS_BPM; }
-/* GLO SELECT (the menu): what SELECT turns with GLO held, on any page (the same choices), kept in bits 1..4 of
- * favorites.factory[15][24] (bit 0: a CZ-1 star; 0, any other: BPM) */
-#define GLO_SELECT (favorites.factory[15][24])
-static uint32_t glo_select(void) { return ((GLO_SELECT >> 1) & 15u) < HS_N ? (GLO_SELECT >> 1) & 15u : HS_BPM; }
-static void glo_select_set(uint32_t v) { GLO_SELECT = (uint8_t)((GLO_SELECT & ~0x1Eu) | (v & 15u) << 1); }
-/* UNUSED TRACKS (the menu): HIDE in bit 5 of the same byte. SHOW (0): Stage and MIXER keep a greyed row for each
- * place not in use, saying "Add track"; HIDE: the tracks in use share the rows (one track: the wide card) */
-#define TRACKS_HIDE 32u
-static uint32_t stage_rows(void) { return GLO_SELECT & TRACKS_HIDE ? trk_n() : NTRK; }
+/* favorites.factory[15][24] bits 1..5 and [15][25] held Melodee's HOME / GLO SELECT and UNUSED TRACKS choices:
+ * left as saved, never read (one instrument: SELECT turns the pages) */
 
 static uint8_t sync_reload;                  /* engine / preset / project / user preset loaded: editor RELOAD push */
 
@@ -111,7 +98,7 @@ static uint8_t sync_reload;                  /* engine / preset / project / user
 
 static struct {
     uint8_t designer_mode;       /* the sound designer: START, the stages (ui_designer.c) */
-    uint8_t home, home_pg, punch_view;
+    uint8_t home, home_pg;
     uint8_t page;                /* index into PAGES */
     uint8_t fam_last[FAM_COUNT]; /* last page used per family */
     uint8_t scale_picker_seen;
@@ -178,7 +165,7 @@ static const page_t *page_over;   /* a quick layer's own four knobs (ui_layer.c)
 static const page_t *cur_page(void) { return page_over ? page_over : &PAGES[ui.page]; }
 
 /* the quick layers (ui_layer.c): a button held, the keys and KNOB 1..4 are its shortcuts, its map over the page */
-enum { LAYER_NONE, LAYER_FX, LAYER_GLO, LAYER_SCL, LAYER_N };
+enum { LAYER_NONE, LAYER_GLO, LAYER_SCL, LAYER_N };
 static void draw_layer(void);
 static const char *layer_head(void);
 static uint32_t layer_leds(void);
@@ -199,7 +186,11 @@ static const char *const *native_titles(uint32_t fam)
     static const char *const P5_LFO[] = {"P5 LFO", "P5 WHEEL", 0};
     static const char *const FM_LFO[] = {"FM LFO", 0};
     static const char *const CZ_LFO[] = {"CZ VIBRATO", 0};
+    static const char *const P5_VOICE[] = {"P5 UNISON", "P5 BEND", 0};
+    static const char *const FM_VOICE[] = {"FM BEND", 0};
     uint32_t e = TSEL->eng_req;
+    if (fam == FAM_VOICE)                                /* SEQ: the engine's own, then the track's VOICE */
+        return e == ENGI_PROPHET ? P5_VOICE : e == ENGI_FM6 ? FM_VOICE : 0;
     if (fam == FAM_ENV)
         return e == ENGI_PROPHET ? P5_ENV : e == ENGI_FM6 ? FM_ENV : e == ENGI_CZ ? CZ_ENV : 0;
     if (fam == FAM_LFO)
@@ -221,7 +212,10 @@ static int page_visible(uint32_t i)
         return 0;
     if (PAGES[i].fam == FAM_ENV && native_titles(FAM_ENV))   /* (the track's ADSR, ENV DEST: nothing there) */
         return 0;
-    if(TSEL->eng_req==ENGI_CZ && PAGES[i].fam==FAM_EDIT && (PAGES[i].id[0]==P_E0 || PAGES[i].id[0]==P_E4))return 0;
+    if (PAGES[i].fam == FAM_VOICE && TSEL->eng_req == ENGI_PROPHET)   /* (the Prophet's UNISON plays its voices) */
+        return 0;
+    /* The Prophet and CZ-1 edit their own panels: the engine's macro pages (EDIT 1 / 2) would repeat them */
+    if((TSEL->eng_req==ENGI_CZ || TSEL->eng_req==ENGI_PROPHET) && PAGES[i].fam==FAM_EDIT && PAGES[i].scope==SC_ENGINE)return 0;
     if (PAGES[i].scope == SC_CZ)                       /* (PHASE's CZ mode; PHASE retired without MELODEE_LEGACY_EXTRAS) */
         return TSEL->eng_req == 2u && eng_ok(2u) && TSEL->p[P_E7] == 1;
     if(PAGES[i].scope==SC_P5 || PAGES[i].scope==SC_P5STORE)return TSEL->eng_req==ENGI_PROPHET;
@@ -335,7 +329,8 @@ static int fam_has(uint32_t fam, uint32_t page)         /* page: one the family'
 
 static void open_family(uint32_t fam)
 {
-    if ((fam == FAM_ENV || fam == FAM_LFO) && native_titles(fam)) {   /* ENV / LFO of the Prophet, FM6, CZ-1 */
+    if ((fam == FAM_ENV || fam == FAM_LFO || fam == FAM_VOICE) && native_titles(fam)) {   /* ENV / LFO / VOICE of the
+                                                                                             * Prophet, FM6, CZ-1 */
         uint8_t pg[NPAGES];
         uint32_t n = fam_pages(fam, pg), k;
         for (k = 0; k < n && pg[k] != ui.page; k++) {}

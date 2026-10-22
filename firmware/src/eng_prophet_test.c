@@ -37,7 +37,7 @@ typedef struct {
     uint32_t ia,ib;
     const float *wheel,*wheel_pitch;
 } p5_render_params_t;
-typedef struct { p5_voice_t voice[P5_POLY]; uint32_t lfo; int32_t lfo_value, last_pitch, mod_noise, dc_x1, dc_y1; float wheel[CTL * P5_OVERSAMPLE], wheel_pitch[CTL * P5_OVERSAMPLE]; uint8_t value[56],input_key[56],base_valid; int16_t base_e[8]; int32_t coarse_a,coarse_b,fixed_b,fine_b; p5_render_params_t base; } p5_part_t;
+typedef struct { p5_voice_t voice[P5_POLY]; uint32_t lfo; int32_t lfo_value, last_pitch, mod_noise, dc_x1; audio_dc_t dc_y1; float wheel[CTL * P5_OVERSAMPLE], wheel_pitch[CTL * P5_OVERSAMPLE]; uint8_t value[56],input_key[56],base_valid; int16_t base_e[8]; int32_t coarse_a,coarse_b,fixed_b,fine_b; p5_render_params_t base; } p5_part_t;
 static p5_part_t *p5_part(uint32_t part);
 static p5_patch_t p5_patch[NPART] __attribute__((section(".pool")));
 static uint8_t p5_ready[NPART];
@@ -389,7 +389,7 @@ static __attribute__((section(".dsp_text"))) void p5_samples(p5_voice_t *restric
         sum*=1.0f/P5_OVERSAMPLE;
         float gain=ae*c->amp_velocity*(1.0f+(float)s->amp_drift/32768.0f);
         float amp=((float)m->amp0+(float)(m->amp1-m->amp0)*time)*(1.0f/32768.0f);
-        last=(int32_t)(sum*gain*amp*(2.0f*VOICE_FS));out[i]+=last;
+        last=(int32_t)(sum*gain*amp*(2.0f*VOICE_FS*AUDIO_ONE));out[i]+=last;
     }
     s->last_pcm=last;
 }
@@ -442,10 +442,10 @@ static void p5_join(void)
 _Static_assert(FS == 44100, "P5_DC_K: the sample rate");
 static __attribute__((noinline,section(".dsp_text"))) void p5_dc_samples(p5_part_t *P,int32_t *out,uint32_t n)
 {
-    int32_t x1=P->dc_x1,y=P->dc_y1;
+    int32_t x1=P->dc_x1;audio_dc_t y=P->dc_y1;
     for(uint32_t i=0;i<n;i++){
         int32_t x=out[i];
-        y=(int32_t)((int64_t)(x-x1)*256+(((int64_t)y*P5_DC_K)>>30));
+        y=(audio_dc_t)((int64_t)(x-x1)*256+audio_dc_decay(y,P5_DC_K));
         x1=x;
         out[i]=(y+128)>>8;
     }

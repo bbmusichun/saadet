@@ -65,7 +65,7 @@ static void fx_chain_test(void)
     assert(!native_load(ENGI_FM6,1,0));assert(!memcmp(t->p+P_FXTYPE,settings,sizeof settings));
     press(B_FX);assert(cur_page()->graph==GR_FXRACK && cur_page()->scope==SC_TRACK);
     turn(EN_SELECT,1);assert(cur_page()->id[0]==P_FXMIX);turn(EN_SELECT,1);assert(cur_page()->id[0]==P_FX2MIX);
-    turn(EN_SELECT,1);assert(cur_page()->id[0]==P_FX3MIX);turn(EN_SELECT,1);assert(str_eq(cur_page()->title,"SHARED"));
+    turn(EN_SELECT,1);assert(cur_page()->id[0]==P_FX3MIX);turn(EN_SELECT,1);assert(cur_page()->graph==GR_FXRACK);
     t->p[P_FX2MIX]=0;for(uint32_t k=0;k<24;k++)fx_process(t,b,CTL);
     assert(!resource[RES_FX0+1].size && resource[RES_FX0+2].size==2048u);
     puts("Three serial slots: independent bypass, live tails, preset/engine/undo/user independence, page navigation: OK");
@@ -159,23 +159,16 @@ static void chorus_test(void)
         memset(fx_left,0,sizeof fx_left);memset(fx_right,0,sizeof fx_right);fx_chorus(&f,mem,CTL,step,32768);
     }
     for(uint32_t i=0;i<CTL;i++)assert(!fx_left[i] && !fx_right[i]);
-    ui_power_on();
-    for(uint32_t slot=0;slot<FX_SLOTS;slot++){
-        uint32_t b=P_FXTYPE+slot*FX_PARAMS,g=G_MFXTYPE+slot*FX_PARAMS;
-        trk[0].p[b]=song.g[g]=FX_CHORUS;trk[0].p[b+1]=100;
-        assert(str_eq(track_desc(&trk[0],b+2)->label,"RATE") && track_desc(&trk[0],b+2)->fmt==F_LFOHZ);
-        assert(str_eq(track_desc(&trk[0],b+3)->label,"DEPTH"));
-        assert(str_eq(global_desc(g+2)->label,"RATE") && global_desc(g+2)->fmt==F_LFOHZ);
-        assert(str_eq(global_desc(g+3)->label,"DEPTH"));
-    }
-    int32_t b[CTL]={0};for(uint32_t k=0;k<32;k++){assert(fx_process(&trk[0],b,CTL));fx_bus_start(CTL);fx_bus_join();}assert(fx_bus_result);
-    for(uint32_t slot=0;slot<FX_SLOTS;slot++){
-        assert(resource[RES_FX0+slot].size==FX_CHORUS_BYTES && resource[RES_FX0+NPART*FX_SLOTS+slot].size==FX_CHORUS_BYTES);
-        trk[0].p[P_FXTYPE+slot*FX_PARAMS]=song.g[G_MFXTYPE+slot*FX_PARAMS]=FX_OFF;
-    }
-    for(uint32_t k=0;k<24;k++){fx_process(&trk[0],b,CTL);fx_bus_start(CTL);fx_bus_join();}
-    for(uint32_t slot=0;slot<FX_SLOTS;slot++)assert(!resource[RES_FX0+slot].size && !resource[RES_FX0+NPART*FX_SLOTS+slot].size);
-    puts("Chorus: full-band independent stereo, bounded hot inputs, exact silent tail, 2 KiB/slot, RATE/DEPTH, insert/send persistence and bypass release: OK");
+    /* All three inserts retain their own settings and bypass lifecycle. */
+    ui_power_on();track_t *t=&trk[0];
+    t->p[P_FXTYPE]=t->p[P_FX2TYPE]=t->p[P_FX3TYPE]=FX_CHORUS;
+    t->p[P_FXMIX]=t->p[P_FX2MIX]=t->p[P_FX3MIX]=100;
+    int32_t b[CTL]={0};for(uint32_t k=0;k<32;k++)assert(fx_process(t,b,CTL));
+    for(uint32_t k=0;k<FX_STATE_COUNT;k++)assert(resource[RES_FX0+k].size==FX_CHORUS_BYTES);
+    t->p[P_FXMIX]=t->p[P_FX2MIX]=t->p[P_FX3MIX]=0;
+    for(uint32_t k=0;k<24;k++)fx_process(t,b,CTL);
+    for(uint32_t k=0;k<FX_STATE_COUNT;k++)assert(!resource[RES_FX0+k].size);
+    puts("Chorus: three serial slots retain independent stereo, silent tails and bypass release");
 }
 static uint64_t tone_energy(uint32_t type,int tone,uint32_t hz)
 {
@@ -238,16 +231,16 @@ static void tone_test(void)
         /* the high cut gone exactly; the low cut stays at the floor, so the constant input has died away */
         assert(!plan.f->q[0][1].b1 && !plan.f->q[0][1].z1 && plan.f->q[0][0].a2==(float)fx_floor_hz(p[0]) && abs(previous)<100);
     }
-    /* Each slot's TONE targets its own track/slot and section, shared slots too. */
+    /* Each slot's TONE targets its own track/slot and section, for every insert. */
     ui_power_on();reset_fx();fx_plan_t plan;
-    for(uint32_t ti=0;ti<=NPART;ti++)for(uint32_t slot=0;slot<FX_SLOTS;slot++){
-        int16_t *p=ti==NPART?song.g:trk[ti].p,v=(int16_t)((ti+slot)&1u?1+ti*3+slot:-(int)(1+ti*3+slot));
-        uint32_t base=(ti==NPART?G_MFXTYPE:P_FXTYPE)+slot*FX_PARAMS,tone=(ti==NPART?G_MFXTONE:P_FXTONE)+slot;
+    for(uint32_t ti=0;ti<NPART;ti++)for(uint32_t slot=0;slot<FX_SLOTS;slot++){
+        int16_t *p=trk[ti].p,v=(int16_t)((ti+slot)&1u?1+ti*3+slot:-(int)(1+ti*3+slot));
+        uint32_t base=P_FXTYPE+slot*FX_PARAMS,tone=P_FXTONE+slot;
         p[base]=FX_ROOM;p[base+1]=127;p[tone]=v;
         fx_slot_prepare(&plan,ti*FX_SLOTS+slot,p+base);
         assert(plan.active && plan.f->q[0][0].a2==(float)fx_low_cut_hz(FX_ROOM,v) && plan.f->q[0][1].a2==(v<0?(float)fx_tone_hz(v):0.0f));
     }
-    puts("FX TONE: every serial/send slot uses its own verified filter coefficients");
+    puts("FX TONE: every insert slot uses its own verified filter coefficients");
 }
 
 int main(int argc,char **argv)

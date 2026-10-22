@@ -4,6 +4,7 @@
 /* Saadet: one polyphonic synth part, performance controls and stereo effects.
  * Stored parameter/engine IDs remain compatible with Melodee sound libraries. */
 #include <stdint.h>
+#include "audio_pcm.h"
 #include "performance_options.h"
 #include "tuning.h"
 #include "audio_profile.h"
@@ -118,7 +119,7 @@ enum { FX_OFF, FX_PHASER, FX_WIDTH, FX_FORMANT, FX_TAPE, FX_SPIT, FX_ECHO, FX_RO
 /* Slot 6 stays retired. Slot 8 restores our native Echoverb audition. */
 static int fx_retired(int32_t type) { return type == FX_ECHO; }
 static int fx_is_midi(int32_t type) { return type == FX_MIDIVERB || type == FX_MIDIDELAY; }
-#define FX_CHAIN_COUNT (NPART+1u)
+#define FX_CHAIN_COUNT NPART
 #define FX_STATE_COUNT (FX_CHAIN_COUNT*FX_SLOTS)
 #define FX_TONE_MAX 63
 static int param_fx_tone(uint32_t id) { return id>=P_FXTONE && id<=P_FX3TONE; }

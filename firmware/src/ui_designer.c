@@ -69,7 +69,7 @@ static void designer_open(void)
     ds.current=1;ds.old_home=ui.home;ds.old_page=ui.page;
     designer_quit=designer_close;ui.designer_mode=DS_SETUP;ui.home=0;ui.menu=0;ui.layer=ui.lock=ui.ly=0;ui.ly_t0=0;
     ui.pg_down=0;ui.force=1;ui.msg_t=0;ui.act=0;
-    kb_mask=kb_lock=0; punch_panel_mask=0; punch_panel_lock=0;
+    kb_mask=kb_lock=0;
 }
 static void designer_close(int discard)
 {
@@ -360,7 +360,7 @@ static int designer_category(uint32_t i)
 static int designer_page_ok(uint32_t i)
 {
     const page_t *p=&PAGES[i];
-    if(!page_visible(i) || (p->fam!=FAM_EDIT && p->fam!=FAM_ENV && p->fam!=FAM_LFO && p->fam!=FAM_FX))return 0;
+    if(!page_visible(i) || (p->fam!=FAM_EDIT && p->fam!=FAM_ENV && p->fam!=FAM_LFO && p->fam!=FAM_VOICE && p->fam!=FAM_FX))return 0;
     if(p->graph==GR_FMSTORE || p->graph==GR_CZTOOLS || p->scope==SC_P5STORE)return 0;
     /* Shared FX and track mixer/performance parameters are outside a tone. */
     if(p->scope==SC_GLOBAL)return 0;
@@ -372,7 +372,7 @@ static int designer_page_ok(uint32_t i)
  * matrix: ALL); FM6's macros (EDIT 1 / 2) repeat its own pages */
 static int designer_guided(uint32_t i)
 {
-    static const char *const skip[]={"P5 BEND","FM BEND","FM PORTA","FM WH/FT","FM BR/AT","SCALE","CURVE","VOICE 3","CZ WINDOW",
+    static const char *const skip[]={"P5 BEND","FM BEND","FM PORTA","FM WH/FT","FM BR/AT","SCALE","CURVE","CZ WINDOW",
                                      "PITCH EG","PITCH LV","LFO 2","MOD"};
     const page_t *p=&PAGES[i];const char *s=p->title;uint32_t e=TSEL->eng_req;
     for(uint32_t j=0;j<NELEM(skip);j++)if(str_eq(s,skip[j]))return 0;
@@ -493,7 +493,7 @@ static void designer_enable(int32_t s)
     else if(n)ui_message(b);
 }
 /* the header: its chip (START, FEATURES, the original compared: their own; a page: its own), the stage's pages as
- * its dots (ui_draw.c head_chip_text, head_pages) */
+ * its dots (ui_draw.c draw_head) */
 static int designer_head_chip(char *b)
 {
     const char *c=ds.compare?"ORIGINAL":ui.designer_mode==DS_SETUP?"DESIGN":designer_feat_on()?"FEATURES":0;

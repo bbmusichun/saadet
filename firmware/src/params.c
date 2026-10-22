@@ -434,10 +434,9 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
         *unit = "st";
         break;
     case F_ENUM:
-        if (d->names == N_ROUTE) {
+        if (d->names == N_ROUTE) {                       /* OMNI or the channel, as the names say */
             v = clamp(v, d->min, d->max);
-            /* The panel's compact card fits "13-16"; editor/picker names retain the CH prefix. */
-            str_cpy(val, d->names[v] + (v == 1 ? 0 : 2), 6);
+            str_cpy(val, d->names[v], 6);
         } else
             str_cpy(val, d->names==N_ENGNAME && v==ENGI_PROPHET ? "P5" : d->names[v < d->min ? d->min : v > d->max ? d->max : v], 6);
         if (d->unit)
@@ -492,7 +491,8 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
 }
 
 /* ------------------------------------------------------------ pages --- */
-enum { FAM_HOME, FAM_ENV, FAM_LFO, FAM_SCL, FAM_EDIT, FAM_GLO, FAM_SAVE, FAM_ARP, FAM_SEQ, FAM_TRK,
+/* The buttons' families. VOICE is SEQ's (one instrument has no sequencer): polyphony, unison, glide, bend */
+enum { FAM_HOME, FAM_ENV, FAM_LFO, FAM_SCL, FAM_EDIT, FAM_GLO, FAM_SAVE, FAM_ARP, FAM_VOICE, FAM_TRK,
        FAM_FX, FAM_COUNT };
 enum { SC_TRACK, SC_GLOBAL, SC_ENGINE, SC_STEP, SC_TRK,   /* SC_TRK: the TRACKS page (ui_input.c tracks_edit) */
        SC_FM6, SC_FMOP, SC_CZ, SC_CZ1, SC_P5, SC_P5STORE, SC_DRUM, SC_DRUMHIT, SC_OUTPUT };                         /* FM6: its patch, functions; operator fm6_opsel;
@@ -519,17 +519,11 @@ typedef struct {
 
 #define G_TRK_RECQ 0xFEu                                 /* a global page's column that is the selected track's P_RECQ */
 static const page_t PAGES[] = {
-    /* FX (docs/design README "FX rack"): the track's rack, its three slots (shown while they hold an effect), the
-     * shared rack, its three slots. A rack: KNOB 2 the row (fx_rack_row), 1 its effect, 4 its amount, SHARED's 3 ROUTE
-     * (page_desc) */
+    /* One synth insert rack: KNOB 2 selects its three serial slots. */
     {"FX", FAM_FX, SC_TRACK, GR_FXRACK, {P_FXTYPE, 0xFF, 0xFF, P_FXMIX}},
     {"FX 1", FAM_FX, SC_TRACK, GR_NONE, {P_FXMIX, P_FXRATE, P_FXCHAR, P_FXTONE}},
     {"FX 2", FAM_FX, SC_TRACK, GR_NONE, {P_FX2MIX, P_FX2RATE, P_FX2CHAR, P_FX2TONE}},
     {"FX 3", FAM_FX, SC_TRACK, GR_NONE, {P_FX3MIX, P_FX3RATE, P_FX3CHAR, P_FX3TONE}},
-    {"SHARED", FAM_FX, SC_GLOBAL, GR_FXRACK, {G_MFXTYPE, 0xFF, 0xFF, G_MFXMIX}},
-    {"SEND FX 1", FAM_FX, SC_GLOBAL, GR_NONE, {G_MFXMIX, G_MFXRATE, G_MFXCHAR, G_MFXTONE}},
-    {"SEND FX 2", FAM_FX, SC_GLOBAL, GR_NONE, {G_MFX2MIX, G_MFX2RATE, G_MFX2CHAR, G_MFX2TONE}},
-    {"SEND FX 3", FAM_FX, SC_GLOBAL, GR_NONE, {G_MFX3MIX, G_MFX3RATE, G_MFX3CHAR, G_MFX3TONE}},
     {"ENV", FAM_ENV, SC_TRACK, GR_ADSR, {P_ATK, P_DEC, P_SUS, P_REL}},
     {"ENV DEST", FAM_ENV, SC_TRACK, GR_NONE, {P_ED_FLT, P_ED_PIT, P_ED_SHP, 0xFF}},   /* the former fourth slot: SEQ > TEMPO's QNT */
     {"LFO", FAM_LFO, SC_TRACK, GR_LFO, {P_LRATE, P_LWAVE, P_LPHASE, P_LFADE}},
@@ -544,7 +538,6 @@ static const page_t PAGES[] = {
     {"EDIT 1", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E0, P_E1, P_E2, P_E3}},
     {"EDIT 2", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E4, P_E5, P_E6, P_E7}},
     /* FM6 only (page_visible): the patch as the DX7 has it, its operators (PRESETS picks one), the functions */
-    {"P5 STORE",FAM_EDIT,SC_P5STORE,GR_NONE,{0,1,2,3}},
     {"P5 OSC A",FAM_EDIT,SC_P5,GR_NONE,{0,3,4,8}},
     {"P5 OSC B",FAM_EDIT,SC_P5,GR_NONE,{1,2,9,12}},
     {"P5 B WAVES",FAM_EDIT,SC_P5,GR_NONE,{5,6,7,11}},
@@ -560,7 +553,7 @@ static const page_t PAGES[] = {
     {"P5 WHEEL 2",FAM_EDIT,SC_P5,GR_NONE,{29,30,31,13}},
     {"P5 UNISON",FAM_EDIT,SC_P5,GR_NONE,{52,53,54,87}},
     {"P5 BEND",FAM_EDIT,SC_P5,GR_NONE,{86,255,255,255}},
-    {"STORE", FAM_EDIT, SC_FM6, GR_FMSTORE, {0, 1, 2, 3}},   /* SLOT STORE SEND INIT (ui_input.c act_do) */
+    {"P5 STORE",FAM_EDIT,SC_P5STORE,GR_NONE,{0,1,2,3}},
     {"ALGO", FAM_EDIT, SC_FM6, GR_NONE, {FP_ALG, FP_FB, FP_OKS, FP_TRNSP}},
     {"FREQ", FAM_EDIT, SC_FMOP, GR_NONE, {FP_FC, FP_FF, FP_DET, FP_MODE}},
     {"OUT", FAM_EDIT, SC_FMOP, GR_NONE, {FP_OL, FP_KVS, FP_AMS, FP_OP}},
@@ -577,8 +570,8 @@ static const page_t PAGES[] = {
     {"FM PORTA", FAM_EDIT, SC_FM6, GR_NONE, {FP_SIZE + FN_PMODE, FP_SIZE + FN_PTIME, FP_SIZE + FN_GLISS, FP_SIZE + FN_ENGINE}},
     {"FM WH/FT", FAM_EDIT, SC_FM6, GR_NONE, {FP_SIZE + FN_MWR, FP_SIZE + FN_MWA, FP_SIZE + FN_FCR, FP_SIZE + FN_FCA}},
     {"FM BR/AT", FAM_EDIT, SC_FM6, GR_NONE, {FP_SIZE + FN_BCR, FP_SIZE + FN_BCA, FP_SIZE + FN_ATR, FP_SIZE + FN_ATA}},
+    {"STORE", FAM_EDIT, SC_FM6, GR_FMSTORE, {0, 1, 2, 3}},   /* SLOT STORE SEND INIT (ui_input.c act_do) */
     /* CZ-1 only (page_visible): the native tone, every panel value (cz_edit.h) */
-    {"CZ TOOLS", FAM_EDIT, SC_CZ1, GR_CZTOOLS, {0, 1, 2, 3}},   /* NAME 1>2 2>1 COMP (ui_input.c act_do) */
     {"CZ LINE", FAM_EDIT, SC_CZ1, GR_NONE, {LCZ_LINE, LCZ_MOD, LCZ_OCT, 0xFF}},
     {"CZ DETUNE", FAM_EDIT, SC_CZ1, GR_NONE, {LCZ_SIGN, LCZ_DOCT, LCZ_NOTE, LCZ_FINE}},
     {"CZ VIBRATO", FAM_EDIT, SC_CZ1, GR_NONE, {LCZ_VWAVE, LCZ_VRATE, LCZ_VDEP, LCZ_VDELAY}},
@@ -589,6 +582,7 @@ static const page_t PAGES[] = {
     {"CZ2 WAVE", FAM_EDIT, SC_CZ1, GR_NONE, {LCZ_LBASE(1) + LCZ_W1, LCZ_LBASE(1) + LCZ_W2, LCZ_LBASE(1) + LCZ_KW, LCZ_LBASE(1) + LCZ_KA}},
     {"CZ2 TOUCH", FAM_EDIT, SC_CZ1, GR_NONE, {LCZ_LBASE(1) + LCZ_LEVEL, LCZ_LBASE(1) + LCZ_VP, LCZ_LBASE(1) + LCZ_VW, LCZ_LBASE(1) + LCZ_VA}},
     CZ_ENV_PAGES("C2 PIT", 1, 0), CZ_ENV_PAGES("C2 WAV", 1, 1), CZ_ENV_PAGES("C2 AMP", 1, 2),
+    {"CZ TOOLS", FAM_EDIT, SC_CZ1, GR_CZTOOLS, {0, 1, 2, 3}},   /* NAME 1>2 2>1 COMP (ui_input.c act_do) */
     /* PHASE: the retired FM4 storage fields hold split CZ envelopes. */
     {"DCW1 ENV", FAM_EDIT, SC_CZ, GR_NONE, {P_FM1_ATK, P_FM1_DEC, P_FM1_SUS, P_FM1_REL}},
     {"DCW2 ENV", FAM_EDIT, SC_CZ, GR_NONE, {P_FM2_ATK, P_FM2_DEC, P_FM2_SUS, P_FM2_REL}},
@@ -600,24 +594,24 @@ static const page_t PAGES[] = {
     {"OP3 ENV", FAM_EDIT, SC_TRACK, GR_ADSR, {P_FM3_ATK, P_FM3_DEC, P_FM3_SUS, P_FM3_REL}},
     {"OP4 ENV", FAM_EDIT, SC_TRACK, GR_ADSR, {P_FM4_ATK, P_FM4_DEC, P_FM4_SUS, P_FM4_REL}},
     {"OP LEVEL", FAM_EDIT, SC_TRACK, GR_NONE, {P_FM1_LEVEL, P_FM2_LEVEL, P_FM3_LEVEL, P_FM4_LEVEL}},
-    {"VOICE", FAM_EDIT, SC_TRACK, GR_NONE, {P_VOICE, P_GLIDE, P_GLMODE, P_PRIO}},
-    {"VOICE 2", FAM_EDIT, SC_TRACK, GR_NONE, {P_ALLOC, P_DETUNE, P_PAN, P_MUTE}},
-    {"VOICE 3", FAM_EDIT, SC_TRACK, GR_NONE, {P_SPRD, 0xFF, 0xFF, 0xFF}},
+    /* SEQ (FAM_VOICE): the instrument's playing; level, pan and spread are GLO > OUTPUT's */
+    {"VOICE", FAM_VOICE, SC_TRACK, GR_NONE, {P_VOICE, P_GLIDE, P_GLMODE, P_PRIO}},
+    {"VOICE 2", FAM_VOICE, SC_TRACK, GR_NONE, {P_ALLOC, P_DETUNE, 0xFF, 0xFF}},
+    /* GLO: the output, then the device: tuning, MIDI, the voice budget and its weights */
     {"OUTPUT", FAM_GLO, SC_OUTPUT, GR_NONE, {P_LEVEL,P_PAN,P_SPRD,0xFF}},
-    {"GLOBAL", FAM_GLO, SC_GLOBAL, GR_NONE, {G_A4, G_BUDGET, G_CLOCK, G_TUNE}}, /* device reference/budget; CLK/TUNE kept */
-    {"SYSTEM", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_DRUMCH, G_ROUTE, G_INFO}},
+    {"TUNING", FAM_GLO, SC_GLOBAL, GR_NONE, {G_A4, G_TUNE, 0xFF, 0xFF}},
+    {"MIDI", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_ROUTE, G_DRUMCH, G_CLOCK}},       /* the input shown, IN, OUT, CLK */
+    {"VOICES", FAM_GLO, SC_GLOBAL, GR_NONE, {G_BUDGET, G_SAFETY, G_INFO, 0xFF}},    /* the budget, overload cuts, the load */
     {"WEIGHTS", FAM_GLO, SC_GLOBAL, GR_NONE, {G_WP5, G_WCZ, G_WFM6, G_WSID}},        /* budget points per voice */
-    {"SAFETY", FAM_GLO, SC_GLOBAL, GR_NONE, {G_BUDGET, G_SAFETY, 0xFF, 0xFF}},  /* SAFETY: overload voice cuts */
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: KNOB 1 LIST, 2 / PRESETS the sounds */
     {"USER", FAM_SAVE, SC_GLOBAL, GR_USER, {0xFF, 0xFF, 0xFF, 0xFF}},       /* user presets: SLOT LOAD ERASE SAVE */
     {"ARP", FAM_ARP, SC_TRACK, GR_ARP, {P_AMODE, P_ARATE, P_AOCT, P_AGATE}},
     {"ARP 2", FAM_ARP, SC_TRACK, GR_NONE, {P_ASWING, P_APROB, P_AHOLD, P_AORDER}},
-    {"TEMPO", FAM_ARP, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_CLOCK, 0xFF}},
+    {"TEMPO", FAM_ARP, SC_GLOBAL, GR_NONE, {G_BPM, G_CLOCK, 0xFF, 0xFF}},   /* (the arp's own swing: ARP 2) */
 };
 #define NPAGES (sizeof(PAGES) / sizeof(PAGES[0]))
 static uint8_t mod_ui_slot;      /* the MOD page: the matrix slot (0..3) KNOB 2..4 edit */
-static uint8_t fx_rack_row[2];   /* the racks' rows KNOB 2 picks: FX's (0..2 its slots, 3 the shared FX), SHARED's
-                                  * (0..2 its slots, 3 RETURN) */
+static uint8_t fx_rack_row[1]; /* selected insert slot */
 
 /* FM6's pages: the value in column slot (a copy in fm6_cell) and its descriptor; 0 = none (not an FM6 track) */
 static const param_desc_t *fm6_page_desc(const page_t *pg, uint32_t slot, int16_t **valp)
@@ -675,52 +669,13 @@ static void fm6_page_put(const page_t *pg, uint32_t slot, int32_t val)
     fm6_put_patch(tr, v, 0);
 }
 
-/* a rack's KNOB 1 (its row's effect) and KNOB 4 (the row's amount): FX's slots their MIX, its shared row the track's
- * SEND (CHAIN; in SPLIT the track's three sends are SHARED's rows); SHARED's slots their MIX (SPLIT: the track's send to
- * each), its last row RETURN. SHARED's KNOB 3: ROUTE (G_FXMODE) */
-static const param_desc_t *fx_rack_desc(const page_t *pg, uint32_t slot, int16_t **valp)
+/* The insert rack exposes each slot's type and wet/dry mix. */
+static const param_desc_t *fx_rack_desc(const page_t *pg,uint32_t slot,int16_t **valp)
 {
-    uint32_t shared = pg->scope == SC_GLOBAL, r = fx_rack_row[shared] & 3u, id;
-    *valp = 0;
-    if (slot == 0u && r < FX_SLOTS && !shared) {
-        id = P_FXTYPE + r * FX_PARAMS;
-        *valp = &TSEL->p[id];
-        return track_desc(TSEL, id);
-    }
-    if (slot == 0u && r < FX_SLOTS) {                   /* (SHARED's effect: "FX" as the track's, not TYPE) */
-        static param_desc_t type;
-        id = G_MFXTYPE + r * FX_PARAMS;
-        *valp = &song.g[id];
-        type = *global_desc(id);
-        type.label = "FX";
-        return &type;
-    }
-    if (slot == 2u && shared) {                         /* SHARED's KNOB 3: the routing, CHAIN or SPLIT (its sheet too) */
-        static param_desc_t route;
-        *valp = &song.g[G_FXMODE];
-        route = *global_desc(G_FXMODE);
-        route.label = "ROUTE";
-        return &route;
-    }
-    if (slot != 3u || (!shared && r == FX_SLOTS && song.g[G_FXMODE]))
-        return 0;
-    if (shared && r == FX_SLOTS) {
-        *valp = &song.g[G_FXRETURN];
-        return global_desc(G_FXRETURN);
-    }
-    if (shared && !song.g[G_FXMODE]) {
-        *valp = &song.g[G_MFXMIX + r * FX_PARAMS];
-        return global_desc(G_MFXMIX + r * FX_PARAMS);
-    }
-    id = shared ? P_FXSEND + r : r < FX_SLOTS ? P_FXMIX + r * FX_PARAMS : P_FXSEND;
-    *valp = &TSEL->p[id];
-    if (shared) {                                       /* (SPLIT: "SEND", the row says to which) */
-        static param_desc_t send;
-        send = *track_desc(TSEL, id);
-        send.label = "SEND";
-        return &send;
-    }
-    return track_desc(TSEL, id);
+    (void)pg;uint32_t r=fx_rack_row[0],id;*valp=0;
+    if(r>=FX_SLOTS || (slot!=0u && slot!=3u))return 0;
+    id=(slot==0u?P_FXTYPE:P_FXMIX)+r*FX_PARAMS;
+    *valp=&TSEL->p[id];return track_desc(TSEL,id);
 }
 static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **valp)
 {

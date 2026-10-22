@@ -1,21 +1,30 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
-/* Native mono echo/diffusion: the mono PCM16 echo/diffusion prototype. No ADPCM or
- * effect-rate conversion. One arena allocation per active slot contains every
- * delay, diffusion history and control state. No pointers survive relocation.
+/* Native mono echo/diffusion. No ADPCM or effect-rate conversion. Q23 delay
+ * history has its own fixed arena handle so the smaller float diffusion state
+ * can use the SRAM tails. Both handles stay fixed until the slot is released.
  * Nested allpass concept; independently written, not a Greyhole/Rings port. */
 #define FX_ECHOVERB_SAMPLES 22050u
 #define FX_ECHOVERB_FADE 2205u
 typedef struct {
-    int16_t history[FX_ECHOVERB_SAMPLES];
+#if AUDIO_FRAC_BITS
+    audio_history_t *history; /* separate arena handle: small DSP state fits SRAM tails */
+#else
+    audio_history_t history[FX_ECHOVERB_SAMPLES];
+#endif
     float diffusion[4032];
     uint32_t positions[12], phase[3], cursor, tick;
     uint32_t delay, previous_delay, delay_fade, initialized;
     float low, dc, modulation[3], diffusion_amount, feedback;
 } fx_echoverb_t;
 _Static_assert(FS==44100u,"Echoverb audition requires native 44.1 kHz");
-_Static_assert(sizeof(fx_echoverb_t)+sizeof(fx_state_t)<=65536u,
-               "Echoverb allocation and slot state must fit 64 KiB");
+#if AUDIO_FRAC_BITS
+#define FX_ECHOVERB_HISTORY_BYTES (FX_ECHOVERB_SAMPLES*sizeof(audio_history_t))
+#else
+#define FX_ECHOVERB_HISTORY_BYTES 0u
+#endif
+_Static_assert(sizeof(fx_echoverb_t)+FX_ECHOVERB_HISTORY_BYTES<=84u*1024u,
+               "Echoverb exceeds its native-precision resource contract");
 static const uint16_t EV_LENGTH[12] __attribute__((section(".data.fx_echoverb")))=
     {113,211,337,487,139,251,373,557,173,293,419,631};
 static const uint16_t EV_OFFSET[12] __attribute__((section(".data.fx_echoverb")))=
@@ -45,11 +54,11 @@ static inline __attribute__((always_inline)) float fx_echoverb_read(const fx_ech
 {
     uint32_t at=s->cursor+FX_ECHOVERB_SAMPLES-delay;
     if(at>=FX_ECHOVERB_SAMPLES)at-=FX_ECHOVERB_SAMPLES;
-    return (float)s->history[at]*(1.0f/32768.0f);
+    return (float)audio_history_read(&s->history[at])*(1.0f/(32768.0f*AUDIO_ONE));
 }
-static __attribute__((noinline,section(".audio_text"))) void fx_echoverb_run_mode(
+static __attribute__((noinline,section(".audio_text"))) void fx_echoverb_run(
     fx_state_t *restrict f,fx_echoverb_t *restrict s,uint32_t n,int32_t target,
-    int32_t *restrict left,int32_t *restrict right,uint32_t capture)
+    int32_t *restrict left,int32_t *restrict right)
 {
     /* TIME 0..127 = 10..500 ms. Crossfade taps over 50 ms on a time change;
      * finish an in-flight change before accepting the latest knob position. */
@@ -67,7 +76,7 @@ static __attribute__((noinline,section(".audio_text"))) void fx_echoverb_run_mod
         if(!s->delay_fade && s->delay!=requested){
             s->previous_delay=s->delay;s->delay=requested;s->delay_fade=FX_ECHOVERB_FADE;
         }
-        if(!capture && !(s->tick++&63u)){
+        if(!(s->tick++&63u)){
             for(uint32_t g=0;g<3u;g++){
                 s->phase[g]+=(uint32_t)((.13f+.041f*(float)g)*(4294967296.0f*64.0f/FS));
                 s->modulation[g]=(float)fx_sine(s->phase[g])*(1.1f/32768.0f);
@@ -82,29 +91,19 @@ static __attribute__((noinline,section(".audio_text"))) void fx_echoverb_run_mod
         }
         int32_t mono=fx_div_pow2(left[i]+right[i],1);
         /* Two-times internal headroom, restored at the wet output. */
-        float x=(float)fx_tone_input(f,mono,1.0f/(.010f*FS))*(1.0f/65536.0f);
+        float x=(float)fx_tone_input(f,mono,1.0f/(.010f*FS))*(1.0f/(65536.0f*AUDIO_ONE));
         s->low+=.56f*(delayed-s->low);s->dc+=.003f*(s->low-s->dc);
         float filtered=s->low-s->dc,diffuse=.52f*x+.86f*filtered;
-        if(!capture)for(uint32_t g=0;g<3u;g++)diffuse=fx_echoverb_diffuse(s,diffuse,g);
-        if(capture){
-            /* Held reverb: unmodulated, undamped unity feedback through the
-             * same nested allpasses. Feed only the first capture samples. */
-            diffuse=delayed;
-            for(uint32_t g=0;g<3u;g++)diffuse=fx_echoverb_diffuse(s,diffuse,g);
-        }
-        float fed=capture ? (capture==1u?x*.25f:0.0f)+diffuse :
-            x+s->feedback*((1.0f-s->diffusion_amount)*filtered+s->diffusion_amount*diffuse);
+        for(uint32_t g=0;g<3u;g++)diffuse=fx_echoverb_diffuse(s,diffuse,g);
+        float fed=x+s->feedback*((1.0f-s->diffusion_amount)*filtered+s->diffusion_amount*diffuse);
         /* Round symmetrically to avoid adding truncation DC in quiet tails. */
-        float pcm=fx_bound(fed*32768.0f,32767.0f);
-        s->history[s->cursor]=(int16_t)(pcm+(pcm<0?-.5f:.5f));
+        float pcm=fx_bound(fed*(32768.0f*AUDIO_ONE),32767.0f);
+        audio_history_write(&s->history[s->cursor],audio_clamp((int32_t)(pcm+(pcm<0?-.5f:.5f)),-32767,32767));
         if(++s->cursor==FX_ECHOVERB_SAMPLES)s->cursor=0;
-        float wet=capture ? diffuse : (1.0f-.72f*s->diffusion_amount)*delayed+(.3f+.72f*s->diffusion_amount)*diffuse;
-        int32_t w=(int32_t)fx_bound(wet*65536.0f,262143.0f);
+        float wet=(1.0f-.72f*s->diffusion_amount)*delayed+(.3f+.72f*s->diffusion_amount)*diffuse;
+        int32_t w=(int32_t)fx_bound(wet*(65536.0f*AUDIO_ONE),262143.0f);
         int32_t l=left[i],r=right[i];if(mix!=target)mix+=clamp(target-mix,-128,128);
         left[i]=l+fx_scale(w-l,(uint32_t)mix*2u);right[i]=r+fx_scale(w-r,(uint32_t)mix*2u);
     }
     f->mix=mix;
 }
-
-static void fx_echoverb_run(fx_state_t *f,fx_echoverb_t *s,uint32_t n,int32_t target,int32_t *l,int32_t *r)
-{ fx_echoverb_run_mode(f,s,n,target,l,r,0); }

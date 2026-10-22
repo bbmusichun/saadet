@@ -33,9 +33,12 @@ static void playing(void){
     TSEL->p[P_CHRD]=3;TSEL->p[P_STRUM]=3;packet(0x90,60,100);assert(held_count()==1 && midi_strum_pending);
     for(uint32_t i=0;i<200;i++)tick();assert(held_count()==3 && !midi_strum_pending);packet(0x80,60,0);assert(!held_count());
     packet(0x90,60,100);packet(0x80,60,0);for(uint32_t i=0;i<200;i++)tick();assert(!held_count() && !midi_strum_pending);
-    ui_power_on();uint32_t pg=ui.page,e=TSEL->eng_req;press(B_REC);press(B_SEQ);turn(EN_ALGO,3);assert(ui.home && ui.page==pg && TSEL->eng_req==e);
+    ui_power_on();uint32_t pg=ui.page,e=TSEL->eng_req;press(B_REC);turn(EN_ALGO,3);assert(ui.home && ui.page==pg && TSEL->eng_req==e);
+    press(B_SEQ);assert(!ui.home && cur_fam()==FAM_VOICE && str_eq(cur_page()->title,"P5 UNISON"));
+    press(B_SEQ);assert(str_eq(cur_page()->title,"P5 BEND"));press(B_HOME);assert(ui.home);
+    turn(EN_SELECT,2);assert(song.g[G_BPM]==GP[G_BPM].def+2);   /* HOME: SELECT is the panel's BPM */
     press(B_PLAY);assert(TSEL->p[P_AHOLD]);press(B_PLAY);assert(!TSEL->p[P_AHOLD]);
-    for(uint32_t i=0;i<NPAGES;i++){assert(PAGES[i].fam!=FAM_SEQ && PAGES[i].fam!=FAM_TRK);assert(PAGES[i].scope!=SC_DRUM && PAGES[i].scope!=SC_DRUMHIT);}
+    for(uint32_t i=0;i<NPAGES;i++){assert(PAGES[i].fam!=FAM_TRK);assert(PAGES[i].scope!=SC_DRUM && PAGES[i].scope!=SC_DRUMHIT);}
     TSEL->user=384;designer_sound_t snapshot;designer_snapshot(&snapshot);TSEL->user=0;designer_restore(&snapshot);assert(TSEL->user==384);
     uint32_t idhash=track_sig(TSEL);TSEL->user=128;assert(track_sig(TSEL)!=idhash);
     song.batt_raw=520;usb.config=0;ui.force=1;draw_head();uint32_t low=ui.head_sig;ui.force=0;song.batt_raw=600;draw_head();assert(low!=ui.head_sig);

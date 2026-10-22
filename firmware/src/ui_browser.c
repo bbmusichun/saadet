@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* SAVE > PRESETS, the sound browser, a screen of its own in the large type (docs/design/README.md "Large type": C,
- * rows). At the top the track's numeral and the list (KNOB 1: ALL, the favourites, RECENT, the categories) in its
+ * rows). At the top the list (KNOB 1: ALL, the favourites, RECENT, the categories) in its
  * colour, the sound's place in it at the right (a message in its place while there is one; a fast turn's acceleration
  * beside it, "x4"). Under it the sounds (KNOB 2, PRESETS): the one shown a card tinted in the track's colour (its
  * name, its engine, its star: KNOB 3), two before and two after it, fading; the place as a bar at the right edge.
@@ -22,6 +22,7 @@ static const char *browser_list_name(uint32_t m)
     return m == LM_ALL ? "All" : m == LM_FAV ? "Faves" : m == LM_RECENT ? "Recent" :
            BR_CAT[m - LM_CAT < NELEM(CAT_ORDER) ? CAT_ORDER[m - LM_CAT] : CAT_OTHER];
 }
+static const char *browser_cat_name(uint32_t c) { return c < CAT_N ? BR_CAT[c] : BR_CAT[CAT_OTHER]; }
 static int browser_shown_fav(void)                      /* the sound shown is a favourite */
 {
     uint32_t k, src;
@@ -32,11 +33,11 @@ static int browser_shown_fav(void)                      /* the sound shown is a 
 }
 static int browser_can_back(void) { return browse_loads != browse_mark || browse_pending(); }
 
-/* the top: the track's numeral (filled in its colour), the list in its colour, the place at the right (or the message) */
+/* the top: the list in the theme colour, the place at the right (or the message) */
 static void browser_top(uint32_t cur, uint32_t total)
 {
     if (head_waiting()) { draw_head(); return; }
-    char d[2] = {(char)('1' + song.sel % NTRK), 0}, r[20];
+    char r[20];
     const aafont_t *tf = TY_TX, *lf = TY_LB;
     int pending = browse_pending(), badge = pending && brw.x > 1u;
     int32_t x, cy = BR_TOP_H / 2;
@@ -46,9 +47,7 @@ static void browser_top(uint32_t cur, uint32_t total)
         return;
     brv.top = sig;
     cv_begin(240, BR_TOP_H, T_BG);
-    cv_rrect(4, cy - 11, 22, 22, 6, T_THEME, T_BG);
-    cv_text_c(15, ty_y(cy, lf), lf, d, T_INK, T_THEME);
-    x = cv_text_on(34, ty_y(cy, tf), tf, browser_list_name(list_mode()), T_THEME, T_BG) + 10;
+    x = cv_text_on(8, ty_y(cy, tf), tf, browser_list_name(list_mode()), T_THEME, T_BG) + 10;
     if (ui.msg_t) {
         cv_free_text(x, ty_y(cy, lf), lf, ui.msg, T_ACCENT, T_BG, 236 - x);
     } else if (total) {

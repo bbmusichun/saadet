@@ -107,7 +107,7 @@ static void ui_power_on(void)
     memset(host_enc, 0, sizeof host_enc);
     oct_eat = oct_deferred = 0; smap.on = sec.ok = 0;
     midi_sync_active=0;midi_beat_samples=beat_pos=beat_n=0;
-    midi_insert_init();punch_reset();kb_strum_pending=midi_strum_pending=0;
+    midi_insert_init();kb_strum_pending=midi_strum_pending=0;
     panic_req = 0; mi_r = mi_w = midi_in_overflow = 0;
 }
 static void frame(void)

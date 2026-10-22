@@ -449,6 +449,7 @@ static void ref_scene(const char *name)
             input_off(TSEL, 57); input_off(TSEL, 60); input_off(TSEL, 64); input_off(TSEL, 67);
         }
         if (str_eq(name, "stage_cutoff")) { ui.hot_col = 0; ui.hot_t = 30; stage_knob_touch(); }
+        if (str_eq(name, "stage_wheel")) ui.home_pg = 1;
     } else if (str_eq(name, "browser")) {
         uint32_t i, total;
         for (i = 0; i < NELEM(CAT_ORDER) && CAT_ORDER[i] != CAT_BASS; i++) {}
@@ -496,7 +497,7 @@ static void ref_scene(const char *name)
 }
 static uint32_t draw_references(const char *dir)
 {
-    static const char *const names[] = {"stage_held", "stage_released", "stage_cutoff", "stage_p5_knobs", "browser", "env", "lfo",
+    static const char *const names[] = {"stage_held", "stage_released", "stage_cutoff", "stage_p5_knobs", "stage_wheel", "browser", "env", "lfo",
         "edit_osc", "fx", "sections_p5", "map_p5", "map_fm6", "scl_list", "sheet_sound", "mod",
         "picker_mod", "arp", "fmeg", "scales", "picker_wave", "settings"};
     char name[96];

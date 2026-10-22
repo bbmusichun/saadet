@@ -30,7 +30,7 @@ static int designer_input(uint32_t pressed,uint32_t notes)
         if(song.sel==ds.track)ui_message("SOUND CHANGED");
         return 0;
     }
-    song.grid=0;kb_mask=kb_lock=0;punch_panel_mask=0;punch_panel_lock=0;            /* (the keys play) */
+    song.grid=0;kb_mask=kb_lock=0;            /* (the keys play) */
     if(pressed&(1u<<panel.btn[B_PLAY])){TSEL->p[P_AHOLD]=(int16_t)!TSEL->p[P_AHOLD];ui.force=1;}   /* (PLAY: the ARP's HOLD) */
     panel_enc(EN_ALGO);                                 /* (the track stays the designer's) */
     if(pop.on==POP_SHEET || pop.on==POP_LIST){          /* its sheet (ui_popup.c) */

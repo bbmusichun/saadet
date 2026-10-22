@@ -4,11 +4,10 @@
  * twelve notes in fifths (C at the top), the song's key on it (its notes marked, its root larger): the notes sounding
  * on the tracks in use lit in their track's colour, joined into the chord's shape, the chord's root ringed; in the
  * wheel's middle the chord (its root 48 px, its quality 28 px; too wide: 28 and 20) and its notes, one note alone large;
- * let go, the last ones stay, faded; nothing played yet: the key's name there. In the corners each track in use as a
- * pulse swelling with its level; at the foot four octaves of keys (C2 .. B5), those sounding lit in their track's
- * colour. A DRUM track's notes are hits, not pitches: it pulses only. The wheel and the keys redraw when what they show
- * changes, the pulses as they move (every other frame, as Stage's band). Stage's knobs drop in over the top as on Stage
- * (ui_stage.c stage_knobs). Included by ui_draw.c */
+ * let go, the last ones stay, faded; nothing played yet: the key's name there. At the foot four octaves of keys
+ * (C2 .. B5), those sounding lit in the theme colour. The wheel and the keys redraw when what they show changes
+ * (every other frame, as HOME's scope). HOME's knobs drop in over the top as on HOME (ui_stage.c stage_knobs).
+ * Included by ui_draw.c */
 #define VW_WHEEL_X 40                                   /* the wheel: a canvas of 160 x 172 at (40, 32) */
 #define VW_WHEEL_Y 32
 #define VW_WHEEL_W 160
@@ -21,17 +20,15 @@
 #define VW_KEYS_H 30
 #define VW_LO 36u
 #define VW_OCT 4u
-#define VW_PULSE 32                                     /* a pulse: 32 x 32 in a corner of the wheel's rows */
 
 static struct {
-    uint32_t wheel, keys, pulse[NTRK];                  /* what each part drew */
-    uint8_t lvl[NTRK];                                  /* the pulses' levels (they fall ~2 dB a frame) */
+    uint32_t wheel, keys;                               /* what each part drew */
     uint32_t sounding[4];                               /* the previous snapshot (additions start a new voicing) */
     uint32_t last[4];                                   /* the last voicing before releases (let go: shown faded) */
     uint8_t of[128];                                    /* .. each one's track */
 } view;
 
-static void view_reset(void) { memset(&view.wheel, 0, sizeof view.wheel + sizeof view.keys + sizeof view.pulse); }
+static void view_reset(void) { view.wheel = view.keys = 0; }
 
 /* x, y (1/1000) of place k on the wheel, 12 o'clock first, clockwise */
 static const int16_t VW_SIN[12] = {0, 500, 866, 1000, 866, 500, 0, -500, -866, -1000, -866, -500};
@@ -102,7 +99,7 @@ static void view_wheel(const uint32_t *on, const uint8_t *of, int faded)
             n++;
         }
     for (i = 0; i < 12u; i++)
-        tc[i] = pc_of[i] == 0xFFu ? T_LINE : faded ? ux_mix(T_BG, T_TRK(pc_of[i]), 45) : T_TRK(pc_of[i]);
+        tc[i] = pc_of[i] == 0xFFu ? T_LINE : faded ? ux_mix(T_BG, T_THEME, 45) : T_THEME;
     if (n) {
         bass = note[0] % 12u;
         q = micro_active(TSEL) ? 0 : chord_of(pcs, bass, &root);
@@ -213,7 +210,7 @@ static void view_keys(const uint32_t *on, const uint8_t *of, int faded)
         if (vw_black(n))
             continue;
         cv_rrect(8 + (int32_t)w * 8, 0, 7, VW_KEYS_H - 1, 2,
-                 lit ? (faded ? ux_mix(T_BG, T_TRK(of[n]), 45) : T_TRK(of[n])) : T_SURF, T_BG);
+                 lit ? (faded ? ux_mix(T_BG, T_THEME, 45) : T_THEME) : T_SURF, T_BG);
         w++;
     }
     for (n = VW_LO, w = 0; n < VW_LO + 12u * VW_OCT; n++) {
@@ -224,44 +221,25 @@ static void view_keys(const uint32_t *on, const uint8_t *of, int faded)
         }
         cv_rect(8 + (int32_t)w * 8 - 4, 0, 7, 18, T_BG);
         cv_rrect(8 + (int32_t)w * 8 - 3, 0, 5, 17, 2,
-                 lit ? (faded ? ux_mix(T_BG, T_TRK(of[n]), 45) : T_TRK(of[n])) : T_PANEL, T_BG);
+                 lit ? (faded ? ux_mix(T_BG, T_THEME, 45) : T_THEME) : T_PANEL, T_BG);
     }
     cv_blit(0, VW_KEYS_Y);
 }
 
-/* track k's pulse: a ring in its colour, a disc in it as large as its level now */
-static void view_pulse(uint32_t k)
-{
-    static const uint8_t PX[NTRK] = {6, 202, 6, 202}, PY[NTRK] = {36, 36, 170, 170};
-    track_t *t = &trk[k];
-    int32_t m = t->p[P_MUTE] ? 0 : meter_px(t->peak);
-    uint32_t sig;
-    uint16_t c = t->p[P_MUTE] ? T_DIM : T_TRK(k);
-    t->peak = 0;
-    if (m < view.lvl[k] - 1)
-        m = view.lvl[k] - 1;                            /* (falls ~2 dB a frame) */
-    view.lvl[k] = (uint8_t)(m < 0 ? 0 : m);
-    sig = 1u + view.lvl[k] * 7u + (uint32_t)(t->p[P_MUTE] != 0) * 3u + ux.gen * 977u + ux.pal * 31u;
-    if ((stage.out && PY[k] < Y_LABEL + CARD_H) || (!ui.force && sig == view.pulse[k]))
-        return;                                         /* (under the knobs: not drawn) */
-    view.pulse[k] = sig;
-    cv_begin(VW_PULSE, VW_PULSE, T_BG);
-    cv_ring(VW_PULSE / 2, VW_PULSE / 2, VW_PULSE - 3, ux_mix(T_BG, c, 40));
-    cv_disc(VW_PULSE / 2, VW_PULSE / 2, 7 + view.lvl[k] * (VW_PULSE - 11) / (TS_MH - 2), c, 0);
-    cv_blit(PX[k], PY[k]);
-}
-
-/* every frame the knobs; every other frame (the scope's) the pulses, the wheel and the keys when they changed */
+/* every frame the knobs; every other frame (the scope's) the wheel and the keys when they changed */
 static void view_draw(void)
 {
     uint32_t on[4], k, sig;
     uint8_t of[128];
     int faded;
     stage_knobs();
+    if (ui.force) {                                     /* (beside the wheel and above the keys: nothing drawn) */
+        lcd_fill(0, VW_WHEEL_Y, VW_WHEEL_X, VW_KEYS_Y - VW_WHEEL_Y, T_BG);
+        lcd_fill(VW_WHEEL_X + VW_WHEEL_W, VW_WHEEL_Y, 240 - VW_WHEEL_X - VW_WHEEL_W, VW_KEYS_Y - VW_WHEEL_Y, T_BG);
+        lcd_fill(VW_WHEEL_X, VW_WHEEL_Y + VW_WHEEL_H, VW_WHEEL_W, VW_KEYS_Y - VW_WHEEL_Y - VW_WHEEL_H, T_BG);
+    }
     if (!ui.force && (ui.frame & 1u))
         return;
-    for (k = 0; k < trk_n(); k++)
-        view_pulse(k);
     view_notes(on, of, &faded);
     sig = 2166136261u;
     for (k = 0; k < 128u; k++)

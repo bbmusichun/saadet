@@ -2185,7 +2185,6 @@ const LAYOUT = (pe0) => [
     ["OP LVL", 0, [65, 70, 75, 80]]] }] : []),
   ...(pe0>=92 && engName()==="DRUM"?[{t:"DRUM LEVELS",pages:[["LANES",0,[84,85,86,87]],["LANES 2",0,[88,89,90,91]]]}]:[]),
   ...(pe0>=100 ? [{t:"FX",pages:Array.from({length:pe0>=108?3:1},(_,k)=>[[`FX ${k+1}`,0,[96+k*4,97+k*4,98+k*4,99+k*4]], ...(pe0>=114&&[6,7,8].includes(dev.dump.p[96+k*4])?[[`FX ${k+1} TONE`,0,[111+k]]]:[])]).flat()}] : []),
-  ...(pe0>=109 ? [{t:"FX SEND",pages:[["TRACK SEND",0,[108]], ["RETURN",1,[39]], ...(pe0>=111?[["SEND MODE",1,[40]],["SEPARATE SENDS",0,[108,109,110]]]:[]), ...Array.from({length:3},(_,k)=>[[`SEND FX ${k+1}`,1,[27+k*4,28+k*4,29+k*4,30+k*4]], ...(pe0>=114&&[6,7,8].includes(dev.dump.g[27+k*4])?[[`SEND FX ${k+1} TONE`,1,[42+k]]]:[])]).flat()]}] : []),
   { t: "VOICE", pages: [["LEVEL", 0, [0]], ["VOICE", 0, [37, 38, 41, 42]], ["VOICE 2", 0, [43, 44, 39, 40]], ...(pe0>=96 ? [["VOICE 3",0,[95]]] : [])] },
   { t: "SCL", pages: [["SCL", 0, [25, 26, 27, 28]], ...(pe0 >= 83 ? [["CHORD", 0, [...P_CHORD, ...(pe0 >= 116 ? [114,115] : [])]]] : []),   /* CHRD VOIC 81, 82 */
     ...(pe0 >= 84 ? [["MPC", 0, [P_MPCDEG]]] : [])] },                                                 /* DEG 83 */

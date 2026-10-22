@@ -8,7 +8,7 @@ OUT=build/host
 LOG=$OUT/log
 mkdir -p "$LOG" build/fm6_demo build/ui_new/ppm build/ui_pixel/ppm
 CC=${CC:-cc}
-compile() { "$CC" -O2 -w -Ibuild/gen -Ifirmware/src "tests/$1.c" -lm -pthread -o "$OUT/$1" >"$LOG/$1.compile.log" 2>&1 || { cat "$LOG/$1.compile.log"; exit 1; }; }
+compile() { "$CC" -O2 -DAUDIO_FRAC_BITS=0 -w -Ibuild/gen -Ifirmware/src "tests/$1.c" -lm -pthread -o "$OUT/$1" >"$LOG/$1.compile.log" 2>&1 || { cat "$LOG/$1.compile.log"; exit 1; }; }
 run() { name=$1; shift; echo "Checking $name"; "$@" >"$LOG/$name.log" 2>&1 || { cat "$LOG/$name.log"; exit 1; }; }
 renders() {
  compile synth_ui_render
@@ -18,7 +18,9 @@ renders() {
  tail -1 "$LOG/ui-pixel.log"
 }
 if [ "${UI:-}" = renders ]; then renders; exit 0; fi
-for name in synth_test fx_test punch_master_test midi_insert_test prophet_knob_test designer_test echoverb_test prophet_test prophet_fast_test fm6_test fm6_ams_test fm6_prepare_test cz_window_test sid_test sid_filter_test synth_fpu_test mod_route_test mod_spread_test control_prepare_test dual_core_test midi_uart_test input_test boot_stub_test storage_test power_test audio_boot_test usb_audio_test usb_audio_driver_test theme_test text_ref_test settings_test core1_stop_test core1_fallback_test libc_word_test; do
+# These inherited fixtures express audio magnitudes in Q15. Exercise their
+# original numeric contracts separately from the shipping Q23 path below.
+for name in synth_test fx_test midi_insert_test prophet_knob_test designer_test echoverb_test prophet_test prophet_fast_test fm6_test fm6_ams_test fm6_prepare_test cz_window_test sid_test sid_filter_test synth_fpu_test mod_route_test mod_spread_test control_prepare_test dual_core_test midi_uart_test input_test boot_stub_test storage_test power_test audio_boot_test usb_audio_test usb_audio_driver_test theme_test text_ref_test settings_test core1_stop_test core1_fallback_test libc_word_test; do
  compile "$name"
  if [ "$name" = fm6_test ]; then run "$name" "$OUT/$name" build/fm6_demo; else run "$name" "$OUT/$name"; fi
 done
@@ -33,8 +35,18 @@ run editor-protocol node web/test_synth.mjs
 run editor-dom node web/test_dom.mjs
 renders
 # Bounds checks are separate from sample/cost tests so instrumentation cannot skew their timings.
-"$CC" -O1 -g -w -fsanitize=address -fno-omit-frame-pointer -Ibuild/gen -Ifirmware/src tests/synth_test.c -lm -o "$OUT/synth_asan"
+"$CC" -O1 -g -DAUDIO_FRAC_BITS=0 -w -fsanitize=address -fno-omit-frame-pointer -Ibuild/gen -Ifirmware/src tests/synth_test.c -lm -o "$OUT/synth_asan"
 run synth-address "$OUT/synth_asan"
-"$CC" -O1 -g -w -fsanitize=address -fno-omit-frame-pointer -Ibuild/gen -Ifirmware/src tests/synth_ui_render.c -lm -o "$OUT/ui_asan"
+"$CC" -O1 -g -DAUDIO_FRAC_BITS=0 -w -fsanitize=address -fno-omit-frame-pointer -Ibuild/gen -Ifirmware/src tests/synth_ui_render.c -lm -o "$OUT/ui_asan"
 run ui-address "$OUT/ui_asan" build/ui_new
+# Shipping precision: complete synth/persistence integration, numerical
+# contracts, concurrent worker parity, low-level audio, hot FX and RAM layout.
+for name in synth_test synth_fpu_test dual_core_test audio_precision_test; do
+ "$CC" -O2 -w -Ibuild/gen -Ifirmware/src "tests/$name.c" -lm -pthread -o "$OUT/native-$name"
+ run "native-$name" "$OUT/native-$name"
+done
+# The host fixture strips target attributes (including 8-byte alignment), and
+# upstream phase code uses signed shifts. Keep bounds and overflow checking on.
+"$CC" -O1 -g -w -fsanitize=address,undefined -fno-sanitize=shift,alignment -fno-sanitize-recover=undefined -fno-omit-frame-pointer -Ibuild/gen -Ifirmware/src tests/audio_precision_test.c -lm -pthread -o "$OUT/precision_asan"
+run precision-address-overflow "$OUT/precision_asan"
 printf '%s\n' 'ALL HOST TESTS PASSED'

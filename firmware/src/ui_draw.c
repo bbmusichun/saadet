@@ -127,11 +127,6 @@ static int32_t roll_text(uint32_t k, int32_t x, int32_t y, const char *s, uint16
     return x + text_w(f, s);
 }
 
-/* the header (large type, 30 px): the transport (16 px; a song playing: its disc) at x 5, the BPM (the text face,
- * rolling) at x 26, the REC mark (filled: the selected track armed; a ring: another one), the octave shift as an
- * outlined pill ("+2") and the song's row, then the page's dots; at the right a chip in the track's colour (24 px, the
- * label face) naming where you are (Stage: the engine; a page: its title), or a message in its place (a layer: its
- * name); a battery glyph only while it runs low. Which track: Stage's rows, the pages' sound bar (its numeral) */
 static uint32_t page_sheet(void);                       /* ui_popup.c */
 static void list_words(char *d, const char *label, uint32_t n);   /* ui_list.c */
 static int sec_on(void);                                /* ui_sections.c */
@@ -139,71 +134,12 @@ static uint32_t sec_of(uint32_t i);
 static void sec_chip(uint32_t i, char *b, uint32_t n);
 static int sec_map_on(void);
 static void sound_name(const track_t *t, char *b);
-static void head_chip_text(char *b)
-{
-    const page_t *pg = cur_page();
-    uint32_t e = TSEL->eng_req % NENGINES;
-    if (designer_on() && !name_on() && designer_head_chip(b)) {   /* the designer's START, FEATURES, original */
-    } else if (ui.home) {                               /* Stage: the engine */
-        if (browse_pending()) { uint32_t kk, s = browse_shown(&kk); e = src_engine(s, kk); }
-        str_cpy(b, ENGINES[eng_idx(e)]->name, 16);
-    } else if (sec_map_on()) {                          /* the map: the engine */
-        str_cpy(b, ENGINES[e]->name, 16);
-    } else if (pg->graph == GR_FMEG) {                  /* FM6's EG RATE / LVL: "OP3 EG" */
-        str_cpy(b, "OP1 EG", 16);
-        b[2] = (char)('1' + fm6_opsel % 6u);
-    } else if (pg->scope != SC_ENGINE && sec_on()) {   /* an engine in sections: the page's name in its section */
-        sec_chip(ui.page, b, 16);
-    } else {
-        const char *t = pg->scope == SC_ENGINE ? ENGINES[e]->page_title[pg->id[0] != P_E0] : pg->title;
-        str_cpy(b, t, 16);
-    }
-}
-/* the page's place in its family: a dot a page, the page's a pill in the track's colour (no room: "3/12") */
-static void head_pages(int32_t x, int32_t x1)          /* (x: after the transport's marks; x1: where the chip, or the
-                                                         * battery, starts) */
-{
-    const page_t *pg = cur_page();
-    uint32_t i, n = 0, k = 0, sc = sec_on() ? sec_of(ui.page) + 1u : 0u;
-    if (designer_on() && !name_on())                    /* the designer: its stage's pages */
-        designer_pages(&n, &k);
-    else for (i = 0; i < NPAGES; i++)                   /* (an engine in sections: the section's pages) */
-        if (PAGES[i].fam == pg->fam && page_visible(i) &&
-            (!sc || (PAGES[i].scope == SC_FMOP ? PAGES[ui.page].scope == SC_FMOP : sec_of(i) + 1u == sc))) {
-            if (i == ui.page)
-                k = n;
-            n++;
-        }
-    if (n < 2u)
-        return;
-    if (x + (int32_t)n * 9 + 8 > x1 - 6) {              /* (no room for the dots; none for that either: nothing) */
-        char b[8];
-        fmt_int(b, (int32_t)k + 1);
-        str_cpy(b + str_len(b), "/", 2);
-        fmt_int(b + str_len(b), (int32_t)n);
-        if (x + text_w(TY_HR, b) <= x1 - 4)
-            cv_text_on(x, 4, TY_HR, b, T_MID, T_BG);
-        return;
-    }
-    for (i = 0; i < n; i++) {
-        int32_t w = i == k ? 12 : 4;
-        cv_rrect(x, 7, w, 4, 2, i == k ? T_THEME : T_LINE, T_BG);
-        x += w + 5;
-    }
-}
 /* the message (or the layer's name) does not fit the header from x: it goes under it as a toast (draw_toast) */
 static uint8_t toast_shown;                             /* the toast drawn (its place to give back when it goes) */
 /* Ongoing transport states belong in the header, never in timed messages.
  * Placement and priority: docs/design/README.md "Status indicators". */
 static int head_waiting(void) { return 0; }
-static const char *head_msg(void) { return ui.msg_t ? ui.msg : ui.layer && ui.layer!=LAYER_FX ? layer_head() : ""; }
-static const char *head_punch(void)
-{
-    if(punch_memory_failed && punch.req>=0 && punch_needs_ring(punch.req))return "FX MEMORY";
-    int32_t fx=punch.cur;
-    if(fx>=0 && fx<(int32_t)PUNCH_NFX)return PUNCH_NAME[fx];
-    return ui.layer==LAYER_FX ? (ui.lock==LAYER_FX?"FX LOCK":"FX HOLD") : "";
-}
+static const char *head_msg(void) { return ui.msg_t ? ui.msg : ui.layer ? layer_head() : ""; }
 static int head_toast(int32_t x)
 {
     const char *m = head_msg();
@@ -211,33 +147,71 @@ static int head_toast(int32_t x)
     int32_t w = text_w(TY_TX, m);
     if (kc_tag(m, &n) >= 0 || (m[0] && str_len(m) > 6u && m[str_len(m) - 1u] == ']'))
         w += 40;                                        /* (a keycap: its pill wider than its word) */
-    return !head_punch()[0] && m[0] && w > 236 - x;
+    return m[0] && w > 236 - x;
+}
+/* The header is the instrument's state (docs/design/README.md "Shell"): at the left the clock (stopped / running), the
+ * tempo, then only what is on now: the octave shift and the arp's HOLD as outlined pills, BAT! while the battery runs
+ * low. At the right what is being played: HOME the engine, a page the sound (the page itself is named by the rail at
+ * the foot), the map its engine; a message, or a held layer's name, takes the right side while it lasts. */
+static int32_t head_pill(int32_t x, const char *s, uint16_t c)
+{
+    int32_t w = text_w(TY_LB, s) + 10;
+    cv_rrect(x, H_HEAD / 2 - 10, w, 20, 6, c, T_BG);
+    cv_rrect(x + 1, H_HEAD / 2 - 9, w - 2, 18, 5, T_BG, c);
+    cv_text_on(x + 5, ty_y(H_HEAD / 2, TY_LB), TY_LB, s, c, T_BG);
+    return x + w + 5;
+}
+static void head_right_text(char *b, uint32_t n)
+{
+    if (designer_on() && !name_on() && designer_head_chip(b))
+        return;
+    if (ui.home || sec_map_on() || cur_page()->graph == GR_BROWSE) {
+        uint32_t e = TSEL->eng_req % NENGINES;
+        if (browse_pending()) { uint32_t kk, s = browse_shown(&kk); e = src_engine(s, kk); }
+        str_cpy(b, ENGINES[eng_idx(e)]->name, n);
+        return;
+    }
+    char nm[24];
+    sound_name(TSEL, nm);
+    str_cpy(b, nm[0] ? nm : ENGINES[eng_idx(TSEL->eng_req)]->name, n);
 }
 static void draw_head(void)
 {
     char bpm[8], title[32];
-    fmt_int(bpm,song.g[G_BPM]);
-    head_chip_text(title);
-    const char *status=head_punch();
-    if(status[0])str_cpy(title,status,sizeof title);
-    else if(ui.msg_t)str_cpy(title,ui.msg,sizeof title);
-    else if(ui.layer)str_cpy(title,layer_head(),sizeof title);
-    uint32_t sig=str_hash(song.g[G_BPM]+song.playing*997u+ux.gen*977u,title);
-    sig^=(uint32_t)(input_octave(TSEL)+8)*7919u;
-    int low=batt_shown()==0;sig^=(uint32_t)low*104729u;
-    if(!ui.force && sig==ui.head_sig)return;
-    ui.head_sig=sig;
-    cv_begin(240,H_HEAD,T_BG);
-    cv_icon_mid(5,H_HEAD/2,16,song.playing?ICON_X_PLAY:ICON_X_STOP,T_MID,T_BG);
-    int32_t x=cv_text_on(26,ty_y(H_HEAD/2,TY_TX),TY_TX,bpm,ui.bpm_t?T_ACCENT:T_TEXT,T_BG)+6;
-    if(input_octave(TSEL) && !status[0] && !ui.msg_t){
-        char oct[6];fmt_int(oct,input_octave(TSEL));
-        x=cv_text_on(x,ty_y(H_HEAD/2,TY_LB),TY_LB,oct,T_MID,T_BG)+6;
+    int msg = ui.msg_t || ui.layer, hold = TSEL->p[P_AHOLD] != 0, low = batt_shown() == 0;
+    int32_t oct = input_octave(TSEL);
+    fmt_int(bpm, song.g[G_BPM]);
+    if (ui.msg_t) str_cpy(title, ui.msg, sizeof title);
+    else if (ui.layer) str_cpy(title, layer_head(), sizeof title);
+    else head_right_text(title, sizeof title);
+    uint32_t sig = str_hash(song.g[G_BPM] + song.playing * 997u + ux.gen * 977u + (uint32_t)msg * 31u, title);
+    sig ^= (uint32_t)(oct + 8) * 7919u ^ (uint32_t)hold * 15485863u ^ (uint32_t)ui.bpm_t * 3u;
+    sig ^= (uint32_t)low * 104729u;
+    if (!ui.force && sig == ui.head_sig)
+        return;
+    ui.head_sig = sig;
+    cv_begin(240, H_HEAD, T_BG);
+    cv_icon_mid(5, H_HEAD / 2, 16, song.playing ? ICON_X_PLAY : ICON_X_STOP, song.playing ? T_THEME : T_MID, T_BG);
+    int32_t x = cv_text_on(BPM_X, ty_y(H_HEAD / 2, TY_TX), TY_TX, bpm, ui.bpm_t ? T_ACCENT : T_TEXT, T_BG) + 6;
+    if (!msg) {                                         /* (a message needs the room: the pills wait) */
+        if (oct) {
+            char o[6];
+            if (oct > 0) { o[0] = '+'; fmt_int(o + 1, oct); }
+            else fmt_int(o, oct);
+            x = head_pill(x, o, T_MID);
+        }
+        if (hold)
+            x = head_pill(x, "HOLD", T_THEME);
     }
-    if(low){cv_text_on(x,ty_y(H_HEAD/2,TY_LB),TY_LB,"BAT!",T_ACCENT,T_BG);x+=36;}
-    const aafont_t *font=ty_fit(TY_TX,title,236-x);
-    cv_free_text(236-text_w(font,title),ty_y(H_HEAD/2,font),font,title,status[0]?T_THEME:T_TEXT,T_BG,236-x);
-    cv_blit(0,0);
+    if (low) {
+        cv_text_on(x, ty_y(H_HEAD / 2, TY_LB), TY_LB, "BAT!", T_ACCENT, T_BG);
+        x += text_w(TY_LB, "BAT!") + 6;
+    }
+    const aafont_t *font = msg ? ty_fit(TY_TX, title, 236 - x) : TY_TX;
+    if (text_w(font, title) > 236 - x) font = TY_LB;
+    cv_free_text(236 - (text_w(font, title) < 236 - x ? text_w(font, title) : 236 - x), ty_y(H_HEAD / 2, font), font,
+                 title, msg ? T_TEXT : ui.home ? T_THEME : T_SEC, T_BG, 236 - x);
+    cv_blit(0, 0);
 }
 /* full redraw: the strips (header, cards, panel, footer; Stage: its panel and lanes) cover the rest; only the BG
  * between them is filled */

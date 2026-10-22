@@ -1,24 +1,42 @@
 # Saadet interface
 
-HOME uses the four permanent tone knobs, waveform/chord overlay and sound lane.
-A second HOME tap opens the chord wheel. There are no track, pattern, song, drum,
-recording or motion views. FX provides three inserts, three send slots and punch
-controls. GLO has one output strip: level, pan, spread and tempo.
+One instrument, one sound. Every screen uses the same shell on the 240 × 240 LCD:
 
-The shared header occupies rows 0–29. The tone controls occupy rows 32–79;
-waveforms and native graphs use banded drawing to stay within the LCD canvas.
-The layout suite checks both fonts and all palettes.
+- **Header**, rows 0–29: the instrument's state. Left: clock (stopped/running),
+  tempo, then only what is on now — octave shift and arp HOLD as outlined pills,
+  BAT! while the battery runs low. Right: what is played — HOME the engine, a page
+  the sound, the section map its engine. Messages and held layers take the right
+  side while they last.
+- **Knob strip**, rows 32–79: four cells for KNOB 1–4, label over value; the knob
+  just turned is drawn in its colour with a bar under it.
+- **Panel**, rows 84–207: the page's picture — what the page shapes. Envelopes
+  (track ADSR, Prophet filter/amp, CZ-1 eight-step, FM6 EG), LFO shapes, filter
+  responses, FM6 algorithms, arp notes, FX descriptions; otherwise the live scope.
+- **Rail**, rows 212–239: the page's name in a theme pill, the pages SELECT turns
+  to at either side (sentence case, each only when it fits whole). Lists, slots,
+  the MOD routes and the FX rack end above it. There is no track numeral anywhere.
+
+HOME replaces the panel with the sound (name, source, favourite), a scope with the
+held chord and notes (or the shape of the knob turning), and chips at the foot for
+the scale, chord keys, arp and active inserts — lit while they act. A second HOME
+tap opens the chord wheel and keys.
+
+Buttons open families; ENV, LFO and SEQ go first to the engine's own pages.
+EDIT is the engine's panel in sections (PRESETS jumps a section, EDIT again opens
+the map); Store and Tools pages come last. SEQ is VOICE (polyphony, unison, glide,
+bend). GLO is OUTPUT, TUNING, MIDI, VOICES and WEIGHTS. SELECT turns pages, and on
+HOME the tempo. There are no track, pattern, song, drum, recording or motion views.
+
+The layout suite (`tests/synth_ui_render.c`) checks every page of every engine
+in both fonts and all palettes.
 
 ## Status indicators
 
 Ongoing state belongs in the shared header, rows 0–29. Keep it visible for its
 actual lifetime and remove it when the state ends. The left side shows clock
-transport, BPM and octave; the right side shows the context or active punch FX.
-
-Punch status takes priority over brief action feedback and the normal context.
-Show the compact SLOOP name through its final wet fade; use FX HOLD / FX LOCK
-when the layer is open, or FX MEMORY after buffered-effect allocation fails.
-Clear on release, cancellation or layer close. These states are never toasts.
+transport, BPM, octave and HOLD; the right side shows the sound or engine, or the
+active quick layer.
+There is no punch layer, send rack or send-routing status.
 
 BAT! indicates the lowest battery range while external power is absent. It
 appears beside tempo/octave and disappears immediately on recovery or power

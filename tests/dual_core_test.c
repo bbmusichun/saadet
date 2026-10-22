@@ -76,6 +76,7 @@ static void setup_case(uint32_t alg, uint32_t eng, uint32_t voices)
     memset(midi_bend_target, 0, sizeof midi_bend_target);
     memset(&mod, 0, sizeof mod);
     memset(resource, 0, sizeof resource);
+    memset(fx_state,0,sizeof fx_state);
     memset(mix_cache, 0, sizeof mix_cache);
 
     for (uint32_t i=0;i<NPART;i++) solo_gain[i]=32768;
@@ -146,7 +147,7 @@ static void fm6_control_jobs(int parallel, uint32_t eng)
     }
     for(uint32_t block=0;block<256;block++) {
         int32_t pcm[NTRK][CTL];uint32_t rendered[NTRK];
-        midi_verb[1]=(uint8_t)((block/31)%3==0?0:(block/31)%3==1?86:100);
+        midi_verb[0]=(uint8_t)((block/31)%3==0?0:(block/31)%3==1?86:100);
         if(block%7==0)for(uint32_t p=0;p<NTRK;p++) {
             trk_all_off(&trk[p]);
             for(uint32_t n=0;n<3;n++)trk_note_on(&trk[p],48+(block/7+p)%12+n*4,100);
@@ -312,30 +313,20 @@ static void prophet_case(int parallel,uint32_t preset,uint32_t mode,uint32_t voi
     }
     serial_render=0;
 }
-static void *release_stalled_job(void *unused)
-{(void)unused;struct timespec t={0,5000000};nanosleep(&t,0);atomic_store(&held_job_release,1);return 0;}
-static void shared_bus_retire(void)
+static void insert_chain_case(int parallel,uint32_t type)
 {
-    setup_case(7,0,4);fx_bus_mix=fx_bus_target=0;memset(fx_state,0,sizeof fx_state);for(uint32_t i=G_MFXTYPE;i<G_COUNT;i++)song.g[i]=GP[i].def;
-    song.g[G_MFXTYPE]=FX_ROOM;audio_worker_online=1;serial_render=0;memset(fx_send_l,0,sizeof fx_send_l);memset(fx_send_r,0,sizeof fx_send_r);
-    fx_bus_start(CTL);fx_bus_join();uint32_t base=NPART*FX_SLOTS;assert(resource[RES_FX0+base].size==2048);void *ptr=resource[RES_FX0+base].ptr;
-    atomic_store(&held_job_entered,0);atomic_store(&held_job_release,0);assert(audio_worker_submit(held_job,&held_job_release));while(!atomic_load(&held_job_entered))sched_yield();
-    fx_bus_pending=fx_bus_result=1;injected_faults=1;pthread_t release;assert(!pthread_create(&release,0,release_stalled_job,0));fx_bus_join();assert(!pthread_join(release,0));
-    assert(!fx_bus_result && !fx_bus_pending && !audio_worker_online && resource[RES_FX0+base].ptr==ptr && fx_state[base].epoch!=fx_epoch);
-    injected_faults=0;fx_bus_start(CTL);fx_bus_join();assert(fx_bus_result && fx_state[base].epoch==fx_epoch && !fx_state[base].failed);
-    for(uint32_t i=G_MFXTYPE;i<G_COUNT;i++)song.g[i]=GP[i].def;memset(fx_state,0,sizeof fx_state);
-    puts("Shared FX bus: worker fault discards result, keeps allocation owned, resets history and continues serially: OK");
-}
-static void shared_bus_case(int parallel,uint32_t type)
-{
-    setup_case(7,0,4);fx_bus_mix=fx_bus_target=0;memset(fx_state,0,sizeof fx_state);for(uint32_t i=G_MFXTYPE;i<G_COUNT;i++)song.g[i]=GP[i].def;
-    song.g[G_MFXTYPE]=type;song.g[G_MFX2TYPE]=FX_TAPE;song.g[G_MFX3TYPE]=FX_ROOM;
-    for(uint32_t k=0;k<NPART;k++)trk[k].p[P_FXSEND]=40+k*20;
+    setup_case(7,0,4);memset(fx_state,0,sizeof fx_state);
+    trk[0].p[P_FXTYPE]=type;trk[0].p[P_FXMIX]=90;
+    trk[0].p[P_FX2TYPE]=FX_TAPE;trk[0].p[P_FX2MIX]=80;
+    trk[0].p[P_FX3TYPE]=FX_ROOM;trk[0].p[P_FX3MIX]=80;
     audio_worker_online=1;serial_render=!parallel;
-    for(uint32_t frame=0;frame<FRAMES;frame+=CTL){int32_t out[2*CTL];mix_block(out,CTL);assert(!fx_bus_pending && AW_LOAD(&audio_worker.complete)==AW_LOAD(&audio_worker.request));
-        if(parallel)assert(!memcmp(out,reference+frame*2,sizeof out));else memcpy(reference+frame*2,out,sizeof out);
+    for(uint32_t frame=0;frame<FRAMES;frame+=CTL){
+        int32_t out[2*CTL];mix_block(out,CTL);
+        assert(AW_LOAD(&audio_worker.complete)==AW_LOAD(&audio_worker.request));
+        if(parallel)assert(!memcmp(out,reference+frame*2,sizeof out));
+        else memcpy(reference+frame*2,out,sizeof out);
     }
-    for(uint32_t i=G_MFXTYPE;i<G_COUNT;i++)song.g[i]=GP[i].def;memset(fx_state,0,sizeof fx_state);serial_render=0;
+    serial_render=0;
 }
 static _Atomic uint32_t batch_advances;
 static void batch_count_kernel(const void *context,int32_t *pcm)
@@ -382,9 +373,8 @@ static int dual_core_suite(void)
             }
     for(uint32_t eng=0;eng<3;eng++){fm6_control_jobs(0,eng);fm6_control_jobs(1,eng);}
     puts("FM6 control jobs: immediate/deferred PCM and complete native state exact under stealing, modulation and MIDI release edits");
-    for(uint32_t type=1;type<FX_AUDIO_COUNT;type++){if(fx_retired(type))continue;shared_bus_case(0,type);shared_bus_case(1,type);}
-    puts("Shared FX bus: 8 three-effect chains, one live synth part, serial/concurrent bit equality and joins: OK");
-    shared_bus_retire();
+    for(uint32_t type=1;type<FX_AUDIO_COUNT;type++){if(fx_retired(type))continue;insert_chain_case(0,type);insert_chain_case(1,type);}
+    puts("Insert FX: 8 three-effect chains, serial/concurrent bit equality and joins: OK");
     prophet_allocation();
     uint32_t prophet_cases=0;
     for(uint32_t mode=0;mode<8;mode++)for(uint32_t voices=1;voices<=8;voices++)for(int mixed=0;mixed<2;mixed++){

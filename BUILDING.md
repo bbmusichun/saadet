@@ -38,3 +38,12 @@ installer is `tools/fm1_install.py`; recovery is `tools/fm1_recover.py`.
 Use the actual Saadet package and detected FM-1 port. Read the storage note in
 README before switching between Saadet and Melodee. Host and target checks are
 not physical audio/control/deadline validation.
+
+The shipping audio path is Q23 (24-bit signed samples in 32-bit buffers).
+The inherited DSP fixtures run with `AUDIO_FRAC_BITS=0` to preserve their Q15
+numeric contracts. The suite also runs native Q23 integration, numerical,
+concurrent-worker and precision/overflow checks. `tests/audio_precision_test.c`
+checks signed PCM24, low-level synthesis/effects, dithered PCM16 export, insert
+controls and two full-length Echoverbs plus chorus in conservative target SRAM
+banks. The linker enforces those bank minima. These checks do not measure
+physical noise floor or on-device render deadlines.

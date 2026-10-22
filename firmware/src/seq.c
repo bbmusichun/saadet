@@ -190,10 +190,6 @@ static void arp_off(track_t *t)                  /* the sounding arp note ends *
 /* n and gate_n: sample time (INT), musical units (MIDI); a stopped external
  * transport uses real time converted to musical units for a tapped note's gate. */
 static volatile uint32_t beat_pos, beat_n;      /* clock units into the beat, beat of the bar (0..3) */
-static uint32_t punch_clock_samples(void)
-{
-    return midi_sync_active ? (uint32_t)((uint64_t)beat_pos * beat_samples() / MIDI_BEAT_UNITS) : beat_pos;
-}
 static void arp_step(track_t *t, uint32_t n, uint32_t gate_n)
 {
     uint32_t period, cnt, list[64], len = 0, i, j, o;
@@ -357,14 +353,6 @@ static void keyboard_block(void)
         if ((cur >> k) & 1u) {                    /* the selected track; the key-up goes to the same one */
             kb_trk[k] = song.sel;
             if (kb_asleep) { kb_note[k]=KB_SILENT; continue; }
-            if ((fm1_in.buttons & punch_panel_mask) || punch_panel_lock) {
-                kb_note[k] = KB_SILENT;
-                kb_layer |= 1u << k;
-                punch_claimed |= 1u << k;
-                punch.req = (int8_t)punch_fx_of_key(k);
-                punch.keybit = 1u << k;
-                continue;
-            }
             if ((fm1_in.buttons & kb_mask) || kb_lock) {       /* a layer's button held: the key is the layer's (ui_layer.c), */
                 kb_note[k] = KB_SILENT;           /* a quick-layer key */
                 kb_layer |= 1u << k;
@@ -378,10 +366,6 @@ static void keyboard_block(void)
             kb_lat(k);
 #endif
         } else {
-            if (punch_claimed & (1u << k)) {
-                punch_claimed &= ~(1u << k);
-                if (punch.keybit == (1u << k)) { punch.req = -1; punch.keybit = 0; }
-            }
             if ((kb_layer >> k) & 1u) {
                 kb_layer &= ~(1u << k);
                 continue;
@@ -413,7 +397,6 @@ static void transport_start(void)
 static void transport_stop(void)
 {
     uint32_t i;
-    punch.req=-1;punch.keybit=0;
     midi_insert_cancel(0);
     song.playing = 0;
     if (midi_sync_active)                           /* external clock: the arp stops with the transport, */

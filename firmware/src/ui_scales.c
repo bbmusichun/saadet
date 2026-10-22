@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* SCL > SCALES as a screen of its own, in the large type (docs/design/README.md "Large type": C, rows): at the top the
- * track's numeral and the family (KNOB 1) in its colour, the scale's place in it at the right; under it the family's
- * scales (KNOB 2): the one picked a card tinted in the track's colour (its name, its notes and period, its star), two
+ * family (KNOB 1) in the theme colour, the scale's place in it at the right; under it the family's
+ * scales (KNOB 2): the one picked a card tinted in the theme colour (its name, its notes and period, its star), two
  * before and two after it, fading; the place as a bar at the right edge. OCT- back, OCT+ done (both: SCL's list). The
  * scale turned is the track's at once, as before (scale_picker.c). Included by ui_draw.c */
 #define SC_BODY_Y 32                                    /* the scales: rows 32 .. 237 (as the browser's) */
@@ -48,14 +48,11 @@ static void scales_draw(void)
           (message ? str_hash(3u, ui.msg) : 0u);
     if (head_waiting()) {
         draw_head();
-    } else if (sig != scv.top) {                        /* the numeral, the family, the place */
-        char d[2] = {(char)('1' + song.sel % NTRK), 0};
+    } else if (sig != scv.top) {                        /* the family, the place */
         int32_t cy = H_HEAD / 2;
         scv.top = sig;
         cv_begin(240, H_HEAD, T_BG);
-        cv_rrect(4, cy - 11, 22, 22, 6, T_THEME, T_BG);
-        cv_text_c(15, ty_y(cy, lf), lf, d, T_INK, T_THEME);
-        cv_text_on(34, ty_y(cy, tf), tf, message ? ui.msg : SC_FAMILY_WORD[ui.scale_family % (SCALE_FAMILIES + 2u)],
+        cv_text_on(8, ty_y(cy, tf), tf, message ? ui.msg : SC_FAMILY_WORD[ui.scale_family % (SCALE_FAMILIES + 2u)],
                    message ? T_ACCENT : T_THEME, T_BG);
         if (!message && total && rank < total) {
             fmt_int(b, (int32_t)rank + 1);

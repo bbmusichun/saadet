@@ -83,15 +83,7 @@ static void integration(void)
     for(uint32_t i=0;i<CTL;i++)assert(samples[i]==5000);
     for(uint32_t id=0;id<RES_COUNT;id++)resource_release(id);
     fx_clear_all();assert(fx_process(&trk[0],samples,CTL) && !fx_state[0].failed);
-    /* The send bus uses the same bounded native-rate kernel. */
-    song.g[G_MFXTYPE]=FX_REVERB;song.g[G_MFXMIX]=127;song.g[G_FXRETURN]=127;
-    song.g[G_MFXRATE]=127;song.g[G_MFXCHAR]=117;
-    assert(str_eq(global_desc(G_MFXRATE)->label,"TIME"));
-    assert(str_eq(global_desc(G_MFXCHAR)->label,"DIFFUSE"));
-    for(uint32_t i=0;i<CTL;i++)fx_send_l[i]=fx_send_r[i]=5000;
-    fx_bus_start(CTL);fx_bus_join();
-    assert(resource[RES_FX0+NPART*FX_SLOTS].size==sizeof(fx_echoverb_t));
-    puts("Echoverb: UI labels, insert/send paths, rate-independent state, release, memory rejection and retry OK");
+    puts("Echoverb: insert path, release, memory rejection and retry OK");
 }
 int main(void)
 {

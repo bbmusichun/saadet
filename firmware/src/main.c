@@ -144,7 +144,6 @@ static void melodee_init(void)
 {
     uint32_t i;
     midi_insert_init();
-    punch_reset();
 
     for (i = 0; i < G_COUNT; i++)
         song.g[i] = GP[i].def;

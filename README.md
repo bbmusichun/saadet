@@ -8,22 +8,28 @@ checkout and its uncommitted work are separate. `upstream` is read-only locally;
 this repository has no publishing remote.
 
 - One polyphonic synth part: Prophet, FM6, CZ-1 or SID.
-- Three insert FX, three send FX, serial or separate send routing, and 27 keyboard punch effects.
+- Three serial insert FX with independent wet/dry mix and tone controls.
 - Arpeggiator, HOLD, chords, strum, scales, microtonal tuning, modulation and MIDI performance.
 - Native sound editing, factory libraries, SysEx import/export and 384 shared user sound slots.
 - Stereo USB playback and stereo post-FX capture at 44.1 kHz, with 16/24-bit USB formats.
-  The internal/output precision is inherited from nightly; selecting PCM24 does not add synthesis precision.
+  Native rendering and the common audio path use 24-bit precision; USB format selection is independent.
 - Automatic last-sound recall, device settings, complete Saadet backups, USB update and recovery.
 
 There are no additional tracks, track selection, solo/multitrack mixer, drum engine,
-sequencer, patterns, songs, recording, motion automation, projects, project templates,
-MPC bank-to-track routing or USB stems. PLAY toggles arp HOLD; REC, SEQ and the
-former track-selection encoder have no musical action.
+sequencer, patterns, songs, recording, motion automation, send buses, punch effects, projects, project templates,
+MPC bank-to-track routing or USB stems.
 
-HOME retains the four synth knobs, waveform/chord overlay and sound lane.
-Tap HOME again for the chord wheel. FX opens the insert/send pages; hold or
-lock FX for keyboard punch effects. GLO provides level, pan, spread and tempo.
-The MIDI SYSTEM page has one receive channel (OMNI or 1–16) and one output channel.
+The interface is built for one instrument. Every screen shares a shell: the header
+shows the tempo, octave shift, arp HOLD and low battery at the left and the sound
+(HOME: its engine) at the right; a rail at the foot names the page and the pages
+SELECT turns to. HOME shows the four tone knobs, the sound's name and source, a
+scope with the held chord, and chips for scale, chord keys, arp and inserts; tap
+HOME again for the chord wheel. SELECT sets the tempo on HOME. EDIT opens the
+engine's own panel in sections, ENV and LFO its envelopes and modulation, SEQ its
+voice settings (polyphony, unison, glide, bend). FX opens the three-slot insert
+rack; the keys keep playing while FX is held. GLO holds output, tuning, MIDI and
+the voice budget. PLAY toggles arp HOLD. REC and the former track encoder have no action.
+The MIDI page has one receive channel (OMNI or 1–16) and one output channel.
 
 Build and test instructions are in [BUILDING.md](BUILDING.md). Serve the repository
 locally and open [the editor](web/editor.html) for Sound, FM6, Library and Settings.
@@ -46,7 +52,7 @@ without exposing project-template functions.
 ## Validation and provenance
 
 The host suite exercises native engines, controls, MIDI ownership and repeats,
-FX, power-loss recovery, archive round trips, USB transport and UI layout in
+insert FX, native 24-bit transport, power-loss recovery, archive round trips, USB transport and UI layout in
 both fonts. The target build checks RAM placement and firmware packaging.
 These checks do not establish physical audio quality, control behavior or
 sustained buffer deadlines on an FM-1. No hardware installation is part of this fork's creation.
