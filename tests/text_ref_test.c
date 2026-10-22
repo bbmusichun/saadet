@@ -8,7 +8,8 @@
  * (the glyph at the rounded pen) to horizontal phases (tools/aa_raster.py): of the two phase positions around
  * the pen, the one whose offset is nearer the previous glyph's, plus that phase's ink offset; a glyph with one
  * phase (figures, .) at the rounded pen as before; restated here too.
- * How close that lands to the font's own spacing is tests/text_spacing_test.py's question. Every string below, in LB TX VL (the large type's Rubik roles), THEME on SURF and TEXT on BG, in every palette: the end pen and every
+ * How close that lands to the font's own spacing is tests/text_spacing_test.py's question. Every string below, in LB TX HD RW VL NM (the
+ * type's Archivo roles up to 32 px), THEME on WELL and TEXT on BG, in every palette: the end pen and every
  * pixel must be identical (MONO expands its gray with G = 2 R, the gray rule; the prototype's G = 2 R + R / 16
  * differed by one green LSB there, and that is the only difference to the mock renders). */
 #include <math.h>
@@ -21,7 +22,6 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 { (void)x; (void)y; (void)w; (void)h; (void)p; }
 #include "../firmware/src/gfx.c"
-static uint32_t ty_pixel(void) { return 0; }            /* (ui.c: the FONT preference; the Rubik faces here) */
 
 static const char *const STR[] = {
     "CUTOFF", "RESO", "ATK", "DEC", "LEVEL", "PAN", "REV", "MUTE", "STEP", "LANE", "HIT", "ACC", "No.",
@@ -30,6 +30,7 @@ static const char *const STR[] = {
     "AV AW LT TA YO To Vo", "KEYS = STEPS", "PAGE 1/2", "HARDWARE CALIBRATION", "Multi-engine synthesizer",
     "H\xFCgelton Instruments", "MELODEE", "MENU", "HOME", "ENV DEST 2/2", "ANLG", "SUPER SAW", "WIRE",
     "oeo coco eco nono", "minimum hello level", "decay release sound", "Pitch Cutoff", "bdpq doob", "-1 +2.5",
+    "MODW \x9b CUTOFF", "U097\x96U128", "Poly McFat \xb7 edited", "Tangerine Chrch Thm",
 };
 #define NSTR (sizeof STR / sizeof STR[0])
 #define W 240
@@ -139,14 +140,14 @@ static int32_t ref_text(int32_t x, int32_t y, const aafont_t *f, const char *s, 
 
 int main(void)
 {
-    const aafont_t *F[3] = {&AF_LB, &AF_TX, &AF_VL};
+    const aafont_t *F[6] = {&AF_LB, &AF_TX, &AF_HD, &AF_RW, &AF_VL, &AF_NM};
     uint32_t n = 0, bad_px = 0, bad_pen = 0;
     for (uint32_t p = 0; p < NPALETTES; p++) {
         palette_set(p);
         for (uint32_t k = 0; k < 2u; k++)
-            for (uint32_t f = 0; f < 3u; f++)
+            for (uint32_t f = 0; f < 6u; f++)
                 for (uint32_t s = 0; s < NSTR; s++) {
-                    uint16_t fg = k ? T_TEXT : T_THEME, bg = k ? T_BG : T_SURF;
+                    uint16_t fg = k ? T_TEXT : T_THEME, bg = k ? T_BG : T_WELL;
                     int32_t e0, e1;
                     for (uint32_t i = 0; i < W * H; i++) ref[i] = bg;
                     e0 = ref_text(3, 2, F[f], STR[s], fg, bg);

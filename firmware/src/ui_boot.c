@@ -50,12 +50,25 @@ static int32_t boot_lines(int32_t y, const aafont_t *f, const char *s, uint16_t 
         draw_text_box(6, (uint32_t)y, 228, f, l[i], c, 1);
     return y;
 }
-static void boot_keys(const char *dn, const char *up)   /* OCT- / OCT+ and what they do, at the foot */
+/* the left (right: 1) button beside the keys as a small keycap at (x, y) with its arrow; returns its right edge */
+static int32_t boot_cap(int32_t x, int32_t y, int right)
 {
-    khint_t kh[2] = {{KC_OCTDN, dn}, {KC_OCTUP, up}};
-    cv_begin(240, KC_PH + 4, T_BG);
-    cv_key_row(8, 232, 2, dn ? kh : kh + 1, dn ? 2u : 1u, 3u, T_BG);
-    cv_blit(0, 240 - KC_PH - 8);
+    int32_t i;
+    cv_rrect(x, y, 22, 18, 4, T_LIT, T_BG);
+    for (i = 0; i < 5; i++)                             /* the arrow: 5 columns, 1 to 9 px tall, pointing out */
+        cv_rect(right ? x + 13 - i : x + 8 + i, y + 9 - i, 1, 1 + 2 * i, T_TEXT);
+    return x + 22;
+}
+static void boot_keys(const char *dn, const char *up)   /* the two buttons beside the keys and what they do, at the foot */
+{
+    cv_begin(240, 26, T_BG);
+    if (dn)
+        cv_text(boot_cap(8, 4, 0) + 6, ty_y(13, TY_HD), TY_HD, dn, T_TEXT);
+    if (up) {
+        cv_text(232 - 22 - 6 - text_w(TY_HD, up), ty_y(13, TY_HD), TY_HD, up, T_TEXT);
+        boot_cap(232 - 22, 4, 1);
+    }
+    cv_blit(0, 240 - 30);
 }
 static void boot_work_draw(void)
 {

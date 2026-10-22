@@ -110,14 +110,13 @@ def tc_all(*cmds):
 
 
 def generate():
-    """generated headers (UI fonts, keycaps, palettes, tables)"""
+    """generated headers (UI fonts, palettes, tables)"""
     GEN.mkdir(parents=True, exist_ok=True)
     for old in ("melodee_font.h", "melodee_icons.h"):     # headers of the bitmap font and icon atlas
         (GEN / old).unlink(missing_ok=True)
     tools = SRC / "tools"
     subprocess.run([sys.executable, str(tools / "gen_scales.py"), "--check"], check=True)
-    cmds = [[tools / "gen_aa_font.py", GEN / "ui_fonts.h", "--preset", "rubik"],
-            [tools / "gen_aa_keycaps.py", GEN / "ui_keycaps.h"],
+    cmds = [[tools / "gen_aa_font.py", GEN / "ui_fonts.h", "--preset", "stage"],
             [tools / "gen_ui_palettes.py", GEN / "ui_palettes.h"],
             [tools / "gen_tables.py", GEN / "melodee_tables.h"],
             [tools / "gen_fm6_patches.py", GEN / "melodee_fm6.h"],

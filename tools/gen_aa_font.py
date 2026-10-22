@@ -3,12 +3,18 @@
 # Copyright (C) 2026 Kerem Kilic (Ellic Studio)
 # Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 """Pre-rasterise TTF fonts into anti-aliased 4-bit alpha glyph tables for the UI (run by
-tools/build.py generate() with --preset rubik).
+tools/build.py generate() with --preset stage).
 
-  gen_aa_font.py OUT.h --preset rubik [--tracking EM] [--gamma G] [--kern-min N]
+  gen_aa_font.py OUT.h --preset stage|rubik [--tracking EM] [--gamma G] [--kern-min N]
   gen_aa_font.py OUT.h --face NAME=FONT[#index]:PX:FIRST-LAST[+0xNN,...] ...   (explicit faces)
 
-The preset's faces, the large type's roles:
+The presets' faces, the type's roles:
+  stage       assets/fonts/Archivo[wdth,wght].ttf (SIL OFL 1.1, Google Fonts), Saadet's face, instanced at a weight
+              and a width ("@wght,wdth"): LB 13 px 600/85 (column labels), TX 14 px 500/100 (secondary text, hints),
+              HD 14 px 800/100 (a place's name), RW 18 px 600/85 (list rows), VL 22 px 700/75 (the four values),
+              NM 32 px 700/75 (a name in the library, save, import), HR 46 px 700/75 (the sound on HOME; the
+              characters a name or a value needs) and PO 92 px 700/75 (a turned knob's number: digits and signs).
+              LB TX HD RW two phases, the rest one. Each font spec (weight and width) has its own kerning table.
   rubik       assets/fonts/Rubik[wght].ttf (SIL OFL 1.1, Google Fonts), Melodee's face: Rubik 500 at 16 / 20 / 28 / 48
               px (LB labels, TX text, VL values, HR the hero; VL and HR one phase, HR the characters a value or a name
               needs), and the same roles in Melodee Pixel (assets/fonts/melodee_pixel.txt: a 5 x 7 1-bit face drawn at
@@ -43,28 +49,43 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import aa_raster as ar  # noqa: E402
 
 FONTS = Path(__file__).resolve().parents[1] / "fonts"
-EXTRAS = [0xA9, 0xB0, 0xB7, 0xC4, 0xD6, 0xDC, 0xE4, 0xF6, 0xFC, 0x2026]  # (c) deg . A: O: U: a: o: u: (Latin-1), ...
-CODE = {0x2026: 0x85}                  # characters outside Latin-1 -> their one-byte code in the firmware
+EXTRAS = [0xA9, 0xB0, 0xB7, 0xC4, 0xD6, 0xDC, 0xE4, 0xF6, 0xFC, 0x2013, 0x2026, 0x203A]  # (c) deg . A: O: U: a: o: u:
+                                       # (Latin-1), the en dash (a range: U097-U128), ..., the single angle (LFO > PITCH)
+RUBIK_EXTRAS = [0xA9, 0xB0, 0xB7, 0xC4, 0xD6, 0xDC, 0xE4, 0xF6, 0xFC, 0x2026]   # (the rubik preset's, as before)
+CODE = {0x2013: 0x96, 0x2026: 0x85, 0x203A: 0x9B}   # characters outside Latin-1 -> their one-byte code in the firmware
+                                       # (as in Windows-1252)
 PHASES = 2                             # horizontal phases per glyph (aa_raster.raster_font): LB and TX
 LEVELS = [4]                           # alpha steps kept of the 16 (--levels)
 KERN_PX = 28                           # the shared kerning's size (VL's: exact there, within 1/16 px at 16 / 20 px)
 # faces stored Huffman-coded (--huff): all four (the pixel faces are 1 bit and need no code)
-HUFF = [("LB", "TX", "VL", "HR")]
+HUFF = [("LB", "TX", "HD", "RW", "VL", "NM", "HR", "PO")]
 # HR (the hero, 48 px) draws a value or a name: every letter, the digits and the signs names and values use (the
 # factory names' ' ( ) too); the space as its range and the rest as extras. A string with another character is drawn
 # in VL (gfx.c text_has)
 HR_CHARS = " #'()+./-_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz%&*,:<>"
 PIXEL = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "melodee_pixel.txt"
+PO_CHARS = " %+-.0123456789"            # PO (92 px) draws a number only; a value with any other character is drawn in HR
+NOKERN = ("PO",)                       # faces without kerning (tabular figures never kern)
 
 
 def preset(name):
+    if name == "stage":
+        a = str(FONTS.parent / "assets" / "fonts" / "Archivo[wdth,wght].ttf")    # SIL OFL 1.1, Google Fonts
+        return [("LB", a + "@600,85", 13, (32, 126), EXTRAS, 0.0, PHASES),
+                ("TX", a + "@500,100", 14, (32, 126), EXTRAS, 0.0, PHASES),
+                ("HD", a + "@800,100", 14, (32, 126), EXTRAS, 0.0, PHASES),
+                ("RW", a + "@600,85", 18, (32, 126), EXTRAS, 0.0, PHASES),
+                ("VL", a + "@700,75", 22, (32, 126), EXTRAS, 0.0, 1),
+                ("NM", a + "@700,75", 32, (32, 126), EXTRAS, 0.0, 1),
+                ("HR", a + "@700,75", 46, (32, 32), [ord(c) for c in HR_CHARS[1:]], 0.0, 1),
+                ("PO", a + "@700,75", 92, (32, 32), [ord(c) for c in PO_CHARS[1:]], 0.0, 1)]
     if name == "rubik":
         v = str(FONTS.parent / "assets" / "fonts" / "Rubik[wght].ttf")       # SIL OFL 1.1, Google Fonts
-        return [("LB", v + "@500", 16, (32, 126), EXTRAS, 0.0, PHASES),             # the large type's roles
-                ("TX", v + "@500", 20, (32, 126), EXTRAS, 0.0, PHASES),
-                ("VL", v + "@500", 28, (32, 126), EXTRAS, 0.0, 1),
+        return [("LB", v + "@500", 16, (32, 126), RUBIK_EXTRAS, 0.0, PHASES),             # the large type's roles
+                ("TX", v + "@500", 20, (32, 126), RUBIK_EXTRAS, 0.0, PHASES),
+                ("VL", v + "@500", 28, (32, 126), RUBIK_EXTRAS, 0.0, 1),
                 ("HR", v + "@500", 48, (32, 32), [ord(c) for c in HR_CHARS[1:]], 0.0, 1),
-                ("PIX", str(PIXEL), 0, (32, 126), EXTRAS, None, 1, [("LB", 2, 1), ("TX", 2, 0), ("VL", 3, 0), ("HR", 5, 0)])]
+                ("PIX", str(PIXEL), 0, (32, 126), RUBIK_EXTRAS, None, 1, [("LB", 2, 1), ("TX", 2, 0), ("VL", 3, 0), ("HR", 5, 0)])]
     raise SystemExit(f"unknown preset {name}")
 
 
@@ -176,9 +197,9 @@ def quantise(b, n):
     return ar.pack(q)
 
 
-def shared_kern(faces, kern_min):
-    """the kerning of every face as one table (KERN_PX): (C text, {ch: left class}, {ch: right class}, right classes,
-    the order of AF_KL / AF_KR, bytes)"""
+def shared_kern(faces, kern_min, tag=""):
+    """the kerning of faces of one font spec as one table (KERN_PX), AF_KM<tag> / AF_KL<tag> / AF_KR<tag>: (C text,
+    {ch: left class}, {ch: right class}, right classes, the order of AF_KL / AF_KR, bytes, pairs)"""
     fonts = {f[1] for f in faces}
     assert len(fonts) == 1, "one kerning table: every face of one font and weight"
     order = []
@@ -205,10 +226,11 @@ def shared_kern(faces, kern_min):
             got = km[(lc[a] - 1) * len(cols) + rc[b] - 1] if a in lc and b in rc else 0
             assert got == pairs.get((a, b), 0), f"kerning classes lose {a!r}{b!r}"
     assert all(-128 <= d < 128 for d in km)
-    text = "\n".join([f"/* kerning: {len(pairs)} pairs at {KERN_PX} px in 1/16 px, {len(rows)} x {len(cols)} classes */",
-                      ar.c_array("AF_KM", "int8_t", km, 24),
-                      ar.c_array("AF_KL", "uint8_t", [lc.get(c, 0) for c in order], 24),
-                      ar.c_array("AF_KR", "uint8_t", [rc.get(c, 0) for c in order], 24)]) + "\n"
+    text = "\n".join([f"/* kerning{tag and ' ' + tag}: {len(pairs)} pairs at {KERN_PX} px in 1/16 px, "
+                       f"{len(rows)} x {len(cols)} classes */",
+                      ar.c_array(f"AF_KM{tag}", "int8_t", km, 24),
+                      ar.c_array(f"AF_KL{tag}", "uint8_t", [lc.get(c, 0) for c in order], 24),
+                      ar.c_array(f"AF_KR{tag}", "uint8_t", [rc.get(c, 0) for c in order], 24)]) + "\n"
     return text, lc, rc, len(cols), order, len(km) + 2 * len(order), len(pairs)
 
 
@@ -273,7 +295,8 @@ def emit(face, tracking, gamma, kern):
         lines.append(ar.c_array(f"AF_{name}_KR", "uint8_t", kr, 24))
     ex = ", ".join(str(CODE.get(c, c)) for c in extras) or "0"
     lines.append(f"static const uint8_t AF_{name}_EX[{max(1, len(extras))}] = {{{ex}}};")
-    kt = (f"AF_{name}_KL, AF_{name}_KR, AF_KM" if own else "AF_KL, AF_KR, AF_KM") if kern else "0, 0, 0"
+    tag = kern[6] if kern else ""
+    kt = (f"AF_{name}_KL, AF_{name}_KR, AF_KM{tag}" if own else f"AF_KL{tag}, AF_KR{tag}, AF_KM{tag}") if kern else "0, 0, 0"
     lines.append(f"static const aafont_t AF_{name} = {{{r['h']}, {r['asc']}, {first}, {last}, {len(extras)}, "
                  f"{kern[2] if kern else 0}, AF_{name}_G, AF_{name}_DATA, {kt}, AF_{name}_EX, {psh}, "
                  f"{'AF_%s_HC' % name if hc else '0'}, {cap_px(font, px)}, 0, {round(px * 256 / KERN_PX)}}};")
@@ -362,7 +385,7 @@ def emit_pixel(face, metrics):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out")
-    ap.add_argument("--preset", choices=["rubik"])
+    ap.add_argument("--preset", choices=["stage", "rubik"])
     ap.add_argument("--face", action="append", default=[])
     ap.add_argument("--tracking", type=float, default=0.0, help="extra advance per glyph in em")
     ap.add_argument("--gamma", type=float, default=1.0, help="coverage curve; <1 thickens light-on-dark text")
@@ -375,16 +398,19 @@ def main():
     faces = ([parse_face(s) for s in a.face] if a.face else []) or (preset(a.preset) if a.preset else None)
     if not faces:
         ap.error("--preset or --face is required")
-    out = ["/* generated by tools/gen_aa_font.py: 4-bit alpha glyphs (Rubik, SIL OFL 1.1; Melodee Pixel; see "
-           "assets/fonts) */",
+    out = ["/* generated by tools/gen_aa_font.py: 4-bit alpha glyphs (" + ", ".join(sorted({os.path.basename(
+           f[1].split("@")[0]) for f in faces})) + "; see assets/fonts and LICENSING.md) */",
            "#pragma once", "#include <stdint.h>", ""]
-    total, metrics, kern = 0, {}, None
-    aa = [f for f in faces if f[0] != "PIX"]
-    if aa and a.kern_min:
-        text, *kern = shared_kern(aa, a.kern_min)
+    total, metrics, kern = 0, {}, {}
+    aa = [f for f in faces if f[0] != "PIX" and f[0] not in NOKERN]
+    specs = list(dict.fromkeys(f[1] for f in aa))
+    for i, spec in enumerate(specs if a.kern_min else []):   # one kerning table per font spec (weight, width)
+        tag = str(i) if len(specs) > 1 else ""
+        text, *k = shared_kern([f for f in aa if f[1] == spec], a.kern_min, tag)
         out.append(text)
-        total += kern[4]
-        print(f"kerning: {kern[5]} pairs at {KERN_PX} px, shared = {kern[4]} B")
+        total += k[4]
+        kern.update({f[0]: k + [tag] for f in aa if f[1] == spec})
+        print(f"kerning {os.path.basename(spec)}: {k[5]} pairs at {KERN_PX} px, shared = {k[4]} B")
     for f in faces:
         if f[0] == "PIX":
             text, cost, n = emit_pixel(f, metrics)
@@ -392,7 +418,7 @@ def main():
             total += cost
             print(f"face PIX: {os.path.basename(f[1])} {n} glyphs, 1 bit, roles {[r[:2] for r in f[7]]} = {cost} B")
             continue
-        text, c = emit(f, a.tracking, a.gamma, kern)
+        text, c = emit(f, a.tracking, a.gamma, kern.get(f[0]))
         metrics[f[0]] = (c["h"], c["asc"])
         out.append(text)
         total += c["total"]

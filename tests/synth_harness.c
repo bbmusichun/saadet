@@ -12,10 +12,17 @@ static const int8_t FM1_KEYMAP[6][FM1_NCOL];
 static uint8_t fm1_led[FM1_NCOL];
 static uint8_t fm1_led_dim[3][FM1_NCOL], fm1_led_dim_mask[3];   /* (hal/fm1_input.h: the dim planes) */
 #define FM1_TICKS_PER_US 1u
-static uint32_t host_ticks, host_pressed, host_notes;
+static uint32_t host_ticks, host_pressed, host_released, host_notes;
+static uint32_t host_px_sent;                      /* pixels sent to the panel (blits and fills): the draw cost */
 static int32_t host_enc[7];
 static uint32_t fm1_ticks(void) { return host_ticks; }
-static uint32_t fm1_input_edges(int x) { uint32_t p = host_pressed; (void)x; host_pressed = 0; return p; }
+static uint32_t fm1_input_edges(uint32_t *released)
+{
+    uint32_t p = host_pressed;
+    if (released) *released = host_released;
+    host_pressed = host_released = 0;
+    return p;
+}
 static uint32_t fm1_input_note_edges(void) { uint32_t n = host_notes; host_notes = 0; return n; }
 static int32_t fm1_enc_take(uint32_t e)
 {
@@ -30,6 +37,7 @@ static uint16_t host_screen[240 * 240];
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
     uint32_t i, j;
+    host_px_sent += w * h;
     for (j = 0; j < h && y + j < 240u; j++)
         for (i = 0; i < w && x + i < 240u; i++)
             host_screen[(y + j) * 240u + x + i] = (uint16_t)((c >> 8) | (c << 8));
@@ -38,6 +46,7 @@ static void lcd_sync(void) {}
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
     uint32_t i, j;
+    host_px_sent += w * h;
     for (j = 0; j < h && y + j < 240u; j++)
         for (i = 0; i < w && x + i < 240u; i++) host_screen[(y + j) * 240u + x + i] = p[j * w + i];
 }
@@ -77,7 +86,7 @@ static void power_on(void)
     kb_prev = kb_layer = kb_lock = kb_mask = 0;
     memset(kb_chn, 0, sizeof kb_chn); memset(mchord, 0, sizeof mchord);
     memset(chord_last, 0, sizeof chord_last);
-    fm1_in.buttons = fm1_in.notes = host_pressed = host_notes = 0;
+    fm1_in.buttons = fm1_in.notes = host_pressed = host_released = host_notes = 0;
     memset(host_enc, 0, sizeof host_enc);
     midi_sync_active=0;midi_beat_samples=beat_pos=beat_n=0;
     midi_insert_init();kb_strum_pending=midi_strum_pending=0;
@@ -92,7 +101,7 @@ static void press(uint32_t label)
 {
     fm1_ms += 320u;
     fm1_in.buttons |= 1u << panel.btn[label]; host_pressed |= 1u << panel.btn[label];
-    frame(); fm1_in.buttons &= ~(1u << panel.btn[label]); frame();
+    frame(); fm1_in.buttons &= ~(1u << panel.btn[label]); host_released |= 1u << panel.btn[label]; frame();
 }
 static void turn(uint32_t role, int32_t s)
 {

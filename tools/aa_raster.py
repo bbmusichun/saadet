@@ -22,15 +22,16 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 def open_font(spec, px):
-    """spec = "path[#index][@wght]" (a .ttc takes the face index, a variable font the weight); '~' is expanded."""
-    spec, _, wght = spec.partition("@")
+    """spec = "path[#index][@a[,b..]]" (a .ttc takes the face index, a variable font its axis values in the font's
+    own axis order: "@500" a weight, Archivo's "@600,85" weight and width); '~' is expanded."""
+    spec, _, axes = spec.partition("@")
     path, _, idx = spec.partition("#")
     path = os.path.expanduser(path)
     if not os.path.exists(path):
         raise SystemExit(f"font not found: {path}")
     f = ImageFont.truetype(path, px, index=int(idx) if idx else 0, layout_engine=ImageFont.Layout.RAQM)
-    if wght:
-        f.set_variation_by_axes([float(wght)])
+    if axes:
+        f.set_variation_by_axes([float(v) for v in axes.split(",")])
     return f
 
 

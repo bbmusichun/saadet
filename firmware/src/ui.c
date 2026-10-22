@@ -8,9 +8,6 @@ static struct {
     uint8_t uboot;               /* main.c: seconds left before UPDATE MODE (OCT- + OCT+ held), 0 = none */
 } ui;
 
-/* gfx.c's type roles: Rubik, or the pixel face a stored preference asks for (favorites.c row 15, byte 30 bit 6) */
-static uint32_t ty_pixel(void) { return (favorites.factory[15][30] & 64u) != 0u; }
-
 /* status text (a save, an import refused, USB reconnecting): nowhere to show it yet */
 static void ui_say(const char *a, const char *b) { (void)a; (void)b; }
 static void ui_message(const char *s) { (void)s; }

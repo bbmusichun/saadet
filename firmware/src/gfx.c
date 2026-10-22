@@ -4,13 +4,11 @@
 /* Small-canvas renderer (no full framebuffer). Draw text/lines into
  * an off-screen strip, then blit it in one DMA transfer. Pixels are stored
  * byte-swapped (the panel takes RGB565 big-endian).
- * Text is 4-bit alpha bitmaps made at build time (tools/gen_aa_font.py: Rubik). A glyph is trimmed to its ink box, advances are in 1/16 px, and
- * each glyph is rasterised at 1 << psh horizontal phases (2: drawn at a pen of +0, +1/2 px);
+ * Text is 4-bit alpha bitmaps made at build time (tools/gen_aa_font.py: Archivo). A glyph is trimmed to its ink box,
+ * advances are in 1/16 px, and each glyph is rasterised at 1 << psh horizontal phases (2: drawn at a pen of +0, +1/2 px);
  * cv_text takes the phase that puts it within a phase step of its true place. Blending uses a 16-entry
  * ramp per (ink, background) pair, cached, so a pixel costs a nibble read and a store. Colours come from the theme tokens.
- * The large type: text is set in four roles, TY_LB labels, TY_TX text, TY_VL values,
- * TY_HR the hero, each Rubik (16 / 20 / 28 / 48 px) or Melodee Pixel (a 5 x 7 1-bit face at 2 / 2 / 3 / 5 times: aafont_t
- * px), as the stored FONT preference says (ui.c ty_pixel); a role's two faces share its line height and baseline. */
+ * The type: eight roles (TY_LB .. TY_PO below), each Archivo at a size, weight and width of its own. */
 typedef struct { uint16_t off, adv; int8_t bx; uint8_t by, bw, bh; } aag_t;
 typedef struct {
     uint8_t h, asc, first, last, nex;   /* line height, baseline; ASCII range; extras */
@@ -24,23 +22,27 @@ typedef struct {
     const uint8_t *hc;                  /* data's Huffman code (cv_alpha_hc), 0 = 2 px per byte (cv_alpha) */
     uint8_t cap;                        /* the capitals' height in px (ty_y: capitals centred on a row) */
     uint8_t px;                         /* a pixel face: its multiple (1-bit glyphs, adv in 1/16 font px; cv_pix); 0 = AA */
-    uint16_t ks;                        /* km's scale to this size, Q8 (one kerning table for every face) */
+    uint16_t ks;                        /* km's scale to this size, Q8 (its font spec's kerning table) */
 } aafont_t;
-typedef struct { const char *name; uint16_t bg, surf, text, accent, trk[4], knob[4][4]; } ui_pal_t;
-typedef struct { const char *label; } kc_t;
-#include "ui_fonts.h"                   /* the large type's AF_LB 16, AF_TX 20, AF_VL 28, AF_HR 48 px (Rubik 500) and
-                                         * Melodee Pixel's AP_* (tools/gen_aa_font.py) */
+typedef struct {                        /* a palette (tools/gen_ui_palettes.py): the theme's tokens, then the engines' */
+    const char *name;
+    uint16_t bg, text, mid, dim, faint, fill, lit, off, line, well, eng[4];
+} ui_pal_t;
+#include "ui_fonts.h"                   /* AF_LB .. AF_PO (tools/gen_aa_font.py --preset stage: Archivo) */
 #include "ui_palettes.h"
-#include "ui_keycaps.h"                 /* KC_*: the keycaps' / badges' labels (tools/gen_aa_keycaps.py) */
+#include "x0x/fastmath.h"               /* fm_sqrtf, fm_sinf, fm_cosf (no libm) */
 #define ELLIPSIS '\x85'                 /* the ellipsis glyph (every face's extras) */
-/* the type's roles: Rubik, or Melodee Pixel as the stored FONT preference says (ui.c
- * ty_pixel). A role's two faces share its line height and baseline, so a layout holds in both; widths differ (a
- * layout fits the wider) */
-static uint32_t ty_pixel(void);
-#define TY_LB (ty_pixel() ? &AP_LB : &AF_LB)  /* labels, units, chips, tags: 16 px, pixel 2 x */
-#define TY_TX (ty_pixel() ? &AP_TX : &AF_TX)  /* names, rows, the header, text: 20 px, pixel 2 x */
-#define TY_VL (ty_pixel() ? &AP_VL : &AF_VL)  /* values: 28 px, pixel 3 x */
-#define TY_HR (ty_pixel() ? &AP_HR : &AF_HR)  /* the hero (the chord, a sound's name alone): 48 px, pixel 5 x */
+#define EN_DASH '\x96'                  /* the en dash, a range: "U097\x96U128" */
+#define ANGLE '\x9b'                    /* the single angle, a route: "LFO \x9b PITCH" */
+/* the type's roles: Archivo at a size, weight (wght) and width (wdth) each */
+#define TY_LB (&AF_LB)                  /* column labels, captions: 13 px, 600, 85 % */
+#define TY_TX (&AF_TX)                  /* secondary text, hints: 14 px, 500 */
+#define TY_HD (&AF_HD)                  /* a place's name, the engine's tag: 14 px, 800 */
+#define TY_RW (&AF_RW)                  /* list rows, sentences: 18 px, 600, 85 % */
+#define TY_VL (&AF_VL)                  /* the four values: 22 px, 700, 75 % */
+#define TY_NM (&AF_NM)                  /* a name in the library, on save, on import: 32 px, 700, 75 % */
+#define TY_HR (&AF_HR)                  /* the sound on HOME, a big readout: 46 px, 700, 75 % */
+#define TY_PO (&AF_PO)                  /* a turned knob's number: 92 px, 700, 75 %; digits and signs only (text_has) */
 
 /* host tests hook in here (layout lint, draw cost); nothing in the firmware */
 #ifndef GFX_HOOK_TEXT
@@ -107,45 +109,32 @@ static int16_t cv_cy0, cv_cy1;   /* text clip: canvas rows cv_cy0 .. cv_cy1 - 1 
 #define RGB(r, g, b) ((uint16_t)((((r) >> 3) << 11) | (((g) >> 2) << 5) | ((b) >> 3)))
 
 /* ------------------------------------------------------------- theme --- */
-/* Five stored colours per palette, the rest derived with fixed blends (tools/gen_ui_palettes.py) */
+/* The Stage theme (tools/gen_ui_palettes.py): every token stored; THEME is the colour of the sound's engine */
 static struct {
-    uint16_t bg, surf, text, theme, accent;
-    uint16_t mid, dim, line, sel, tint, ink, rec, raise, key, lane, grid;
-    uint16_t panel, quiet, lift, sec;   /* panel, a quiet lane, the selected lane, names */
+    uint16_t bg, text, mid, dim, faint, fill, lit, off, line, well;   /* (ui_pal_t's order) */
+    uint16_t theme;
     uint8_t light, mono;
-    uint8_t pal, trk;            /* the palette, the track whose colour is THEME (palette_track) */
+    uint8_t pal, eng;            /* the palette, the engine whose colour is THEME (theme_engine) */
     uint32_t gen;                /* bumped by palette_set (the text ramps follow) */
 } ux;
-#define T_BG ux.bg               /* background */
-#define T_SURF ux.surf           /* dialogs, menu rows, mixer strips */
-#define T_TEXT ux.text           /* primary text */
-#define T_THEME ux.theme         /* the selected track's colour: values, curves, the gauge's end line */
-#define T_ACCENT ux.accent       /* the one active thing: hot knob, cursor, playhead */
-#define T_MID ux.mid             /* labels, units, secondary text */
-#define T_DIM ux.dim             /* inactive, empty */
-#define T_LINE ux.line           /* 1 px dividers, gauge track */
-#define T_SEL ux.sel             /* selection and gauge fill */
-#define T_TINT ux.tint           /* a faint theme area */
-#define T_INK ux.ink             /* text on T_SEL / T_THEME */
-#define T_REC ux.rec             /* REC: fixed red (MONO: the accent) */
-#define T_RAISE ux.raise         /* a raised area on a surface: stubs, guides, slots, chips, button wells */
-#define T_KEY ux.key             /* a keycap's fill (its label: T_INK; unavailable: a T_DIM fill) */
-#define T_LANE ux.lane           /* the piano roll: an in-scale row (SURF -> THEME 10 %) */
-#define T_GRID ux.grid           /* the piano roll: a step line (SURF -> TEXT 6 %; beats and C rows: RAISE) */
-#define T_PANEL ux.panel         /* a view's big area (BG -> SURF 55 %) */
-#define T_QUIET ux.quiet         /* a lane not selected (BG -> SURF 25 %) */
-#define T_LIFT ux.lift           /* the selected lane (SURF -> TEXT 3 %) */
-#define T_SEC ux.sec             /* secondary names (BG -> TEXT 80 %) */
+#define T_BG ux.bg               /* the ground */
+#define T_TEXT ux.text           /* names and values */
+#define T_MID ux.mid             /* labels, the place's object, hints */
+#define T_DIM ux.dim             /* an inactive value, an unbound row, a key's number */
+#define T_FAINT ux.faint         /* the far rows of a list */
+#define T_FILL ux.fill           /* a bar's fill, an inactive curve */
+#define T_LIT ux.lit             /* a lit key, a used slot */
+#define T_OFF ux.off             /* a page dot not shown, beat ticks */
+#define T_LINE ux.line           /* a bar's track, rules */
+#define T_WELL ux.well           /* an unlit key, an empty slot */
+#define T_THEME ux.theme         /* the sound's engine: the value being turned, curves, the engine's tag */
+#define T_ENG(k) UI_PALETTES[ux.pal].eng[(k) & 3u]   /* engine k's colour: 0 PROPHET, 1 FM6, 2 CZ-1, 3 SID */
 #define NPALETTES UI_NPALETTES
 #ifdef UI_TEST_PALETTE
 #define UI_PAL_ENTRIES (UI_NPALETTES + 1u)   /* + GRAY (host tests: every screen must stay gray in it) */
 #else
 #define UI_PAL_ENTRIES UI_NPALETTES
 #endif
-#define T_TRK(k) UI_PALETTES[ux.pal].trk[(k) & 3u]   /* track k's colour (the mixer, lanes, track chips) */
-/* knob k's colour on the selected track's pages (its label, its curve segment, a row, a lane, a slot): a shade of the
- * track's colour (tools/gen_ui_palettes.py SHADES; knob 1 the track's own), so a page keeps its track's family */
-#define T_KNOB(k) UI_PALETTES[ux.pal].knob[ux.trk & 3u][(k) & 3u]
 
 static inline uint16_t ux_gray(uint32_t x5) { return (uint16_t)((x5 << 11) | (x5 << 6) | x5); }
 /* a + (b - a) * pct / 100 per channel, rounded; MONO on the red channel, so it stays gray */
@@ -168,15 +157,6 @@ static uint32_t ux_luma(uint16_t c)        /* 0..255 */
     return ((c >> 11) * 255u / 31u * 54u + ((c >> 5) & 63u) * 255u / 63u * 183u + (c & 31u) * 255u / 31u * 19u) >> 8;
 }
 
-static void palette_theme(void)                    /* THEME and what is mixed from it: the track's colour */
-{
-    const ui_pal_t *p = &UI_PALETTES[ux.pal];
-    ux.theme = p->trk[ux.trk & 3u];
-    ux.sel = ux_mix(p->bg, ux.theme, UI_SEL_PCT);
-    ux.tint = ux_mix(p->bg, ux.theme, UI_TINT_PCT);
-    ux.lane = ux_mix(p->surf, ux.theme, 10);
-    ux.gen++;                                    /* the text ramps follow */
-}
 static void palette_set(uint32_t i)
 {
     const ui_pal_t *p = &UI_PALETTES[ux.pal = (uint8_t)(i < UI_PAL_ENTRIES ? i : UI_DEFAULT_INDEX)];
@@ -185,29 +165,19 @@ static void palette_set(uint32_t i)
 #else
     ux.mono = 0;
 #endif
-    ux.bg = p->bg; ux.surf = p->surf; ux.text = p->text; ux.accent = p->accent;
-    ux.mid = ux_mix(p->bg, p->text, UI_MID_PCT);
-    ux.dim = ux_mix(p->bg, p->text, UI_DIM_PCT);
-    ux.line = ux_mix(p->bg, p->text, UI_LINE_PCTS[ux.pal]);     /* (NIGHT's fainter: the design's) */
-    ux.ink = p->bg;
-    ux.raise = ux_mix(p->surf, p->text, UI_RAISE_PCT);
-    ux.key = ux_mix(p->bg, p->text, UI_KEY_PCT);
-    ux.grid = ux_mix(p->surf, p->text, 6);
-    ux.panel = ux_mix(p->bg, p->surf, 55);
-    ux.quiet = ux_mix(p->bg, p->surf, 25);
-    ux.lift = ux_mix(p->surf, p->text, 3);
-    ux.sec = ux_mix(p->bg, p->text, 80);
+    ux.bg = p->bg; ux.text = p->text; ux.mid = p->mid; ux.dim = p->dim; ux.faint = p->faint;
+    ux.fill = p->fill; ux.lit = p->lit; ux.off = p->off; ux.line = p->line; ux.well = p->well;
+    ux.theme = p->eng[ux.eng & 3u];
     ux.light = ux_luma(p->bg) > 128u;
-    ux.rec = ux.mono ? p->accent : ux.light ? UI_REC_LIGHT : UI_REC_DARK;
-    palette_theme();
+    ux.gen++;                                    /* the text ramps follow */
 }
-/* the selected track (ui_draw, every frame): THEME takes its colour; 1 = it changed (redraw everything) */
-static int palette_track(uint32_t t)
+/* THEME takes engine k's colour (0 PROPHET, 1 FM6, 2 CZ-1, 3 SID); 1 = it changed (redraw everything) */
+static int theme_engine(uint32_t k)
 {
-    if (ux.trk == (t & 3u))
+    if (ux.eng == (k & 3u))
         return 0;
-    ux.trk = (uint8_t)(t & 3u);
-    palette_theme();
+    ux.eng = (uint8_t)(k & 3u);
+    ux.theme = T_ENG(k);
     return 1;
 }
 
@@ -767,6 +737,119 @@ static void cv_dashed(int32_t x, int32_t y, int32_t w, int32_t h, int32_t r, uin
     }
 }
 
+/* a 1 px vertical dashed line at x from y0 to y1 (inclusive): on px drawn, off px skipped (a sustain point) */
+static void cv_vdash(int32_t x, int32_t y0, int32_t y1, int32_t on, int32_t off, uint16_t c)
+{
+    int32_t y;
+    for (y = y0; y <= y1; y++)
+        if ((y - y0) % (on + off) < on)
+            cv_pset(x, y, c);
+}
+
+/* --------------------------------------------------- smooth shapes --- */
+/* Segments, polylines and arcs for the pictures (curves, envelopes, a turned knob's ring): coverage from each pixel
+ * centre's distance to the shape, a 1 px ramp across its edge, blended over the canvas. Coordinates in 1/16 px. */
+static void cv_blend(int32_t x, int32_t y, float a, uint16_t c)   /* pixel (x, y) toward c by a (0..1) */
+{
+    uint16_t *p;
+    y += cv_oy;
+    if (a <= 0.0f || (uint32_t)x >= cv_w || (uint32_t)y < cv_top || (uint32_t)y >= cv_top + cv_rows)
+        return;
+    p = &cv_px[((uint32_t)y - cv_top) * cv_w + (uint32_t)x];
+    *p = swap16(a >= 1.0f ? c : mix565(swap16(*p), c, (uint32_t)(a * 32.0f + 0.5f)));
+}
+/* canvas rows y0 .. y1 (inclusive) cut to the band being drawn: 0 = none of them */
+static int cv_rows_in(int32_t *y0, int32_t *y1)
+{
+    int32_t a = (int32_t)cv_top - cv_oy, b = (int32_t)(cv_top + cv_rows) - 1 - cv_oy;
+    if (*y0 < a) *y0 = a;
+    if (*y1 > b) *y1 = b;
+    return *y0 <= *y1;
+}
+/* a segment from (x0, y0) to (x1, y1), w wide. caps: bit 0 round at the start, bit 1 round at the end; without one
+ * the segment stops square there, so a polyline draws each joint once (cv_poly) */
+static void cv_seg(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t w, uint16_t c, uint32_t caps)
+{
+    float dx = (float)(x1 - x0), dy = (float)(y1 - y0), ll = dx * dx + dy * dy, hw = (float)w * 0.5f;
+    float inv = ll > 0.0f ? 1.0f / ll : 0.0f, il = ll > 0.0f ? 1.0f / fm_sqrtf(ll) : 0.0f;
+    int32_t m = w / 2 + 16, xa = ((x0 < x1 ? x0 : x1) - m) >> 4, xb = ((x0 > x1 ? x0 : x1) + m) >> 4;
+    int32_t ya = ((y0 < y1 ? y0 : y1) - m) >> 4, yb = ((y0 > y1 ? y0 : y1) + m) >> 4, x, y;
+    if (xa < 0) xa = 0;
+    if (xb >= (int32_t)cv_w) xb = (int32_t)cv_w - 1;
+    if (!cv_rows_in(&ya, &yb))
+        return;
+    for (y = ya; y <= yb; y++)
+        for (x = xa; x <= xb; x++) {
+            float px = (float)(x * 16 + 8 - x0), py = (float)(y * 16 + 8 - y0);
+            float t = ll > 0.0f ? (px * dx + py * dy) * inv : -1.0f, d;   /* (a point: its start cap only) */
+            if (t < 0.0f) {
+                if (!(caps & 1u)) continue;
+                d = fm_sqrtf(px * px + py * py);
+            } else if (t > 1.0f || (t >= 1.0f && !(caps & 2u))) {   /* (a joint's own pixel: the next segment's) */
+                if (!(caps & 2u)) continue;
+                d = fm_sqrtf((px - dx) * (px - dx) + (py - dy) * (py - dy));
+            } else {
+                d = fm_fabsf(px * dy - py * dx) * il;
+            }
+            cv_blend(x, y, (hw + 8.0f - d) * (1.0f / 16.0f), c);
+        }
+}
+/* a polyline through n points (xy: x0, y0, x1, y1 .. in 1/16 px), w wide; caps as cv_seg's, for its two ends */
+static void cv_poly(const int32_t *xy, uint32_t n, int32_t w, uint16_t c, uint32_t caps)
+{
+    uint32_t i;
+    for (i = 0; i + 1u < n; i++)
+        cv_seg(xy[2u * i], xy[2u * i + 1u], xy[2u * i + 2u], xy[2u * i + 3u], w, c,
+               (i == 0 ? caps & 1u : 0u) | (i + 2u == n ? caps & 2u : 0u));
+}
+/* atan2 in radians (-pi .. pi), within about 1e-5: the arc's angle test */
+static float gfx_atan2(float y, float x)
+{
+    float ax = fm_fabsf(x), ay = fm_fabsf(y), a, t, r;
+    if (ax == 0.0f && ay == 0.0f)
+        return 0.0f;
+    a = ax > ay ? ay / ax : ax / ay;
+    t = a * a;
+    r = ((-0.0464964749f * t + 0.15931422f) * t - 0.327622764f) * t * a + a;
+    if (ay > ax) r = 1.57079637f - r;
+    if (x < 0.0f) r = FM_PI - r;
+    return y < 0.0f ? -r : r;
+}
+/* an arc round (cx, cy), its centre line at radius r, w wide (1/16 px), from a0 degrees (clockwise from 3 o'clock: the
+ * screen's y runs down) through sweep degrees (1 .. 360), its ends square: a turned knob's ring */
+static void cv_arc(int32_t cx, int32_t cy, int32_t r, int32_t w, int32_t a0, int32_t sweep, uint16_t c)
+{
+    const float deg = FM_PI / 180.0f, hw = (float)w * 0.5f, s = (float)sweep * deg, start = (float)a0 * deg;
+    float ro = (float)r + hw + 16.0f, ri = (float)r - hw - 16.0f;
+    int32_t m = r + w / 2 + 16, xa = (cx - m) >> 4, xb = (cx + m) >> 4, ya = (cy - m) >> 4, yb = (cy + m) >> 4, x, y;
+    if (sweep <= 0)
+        return;
+    if (xa < 0) xa = 0;
+    if (xb >= (int32_t)cv_w) xb = (int32_t)cv_w - 1;
+    if (ri < 0.0f) ri = 0.0f;
+    if (!cv_rows_in(&ya, &yb))
+        return;
+    for (y = ya; y <= yb; y++)
+        for (x = xa; x <= xb; x++) {
+            float px = (float)(x * 16 + 8 - cx), py = (float)(y * 16 + 8 - cy), q = px * px + py * py, d, a, th, e;
+            if (q > ro * ro || q < ri * ri)
+                continue;
+            d = fm_sqrtf(q);
+            a = (hw + 8.0f - fm_fabsf(d - (float)r)) * (1.0f / 16.0f);   /* across the band */
+            if (a <= 0.0f)
+                continue;
+            if (sweep < 360) {                                            /* along it: past an end, square */
+                th = gfx_atan2(py, px) - start;
+                while (th < 0.0f) th += FM_TWO_PI;
+                while (th >= FM_TWO_PI) th -= FM_TWO_PI;
+                e = th <= s ? (th < s - th ? th : s - th) : -(th - s < FM_TWO_PI - th ? th - s : FM_TWO_PI - th);
+                e = e * d * (1.0f / 16.0f) + 0.5f;
+                if (e < a) a = e;
+            }
+            cv_blend(x, y, a, c);
+        }
+}
+
 /* ------------------------------------------------- 4-bit alpha blit --- */
 /* coverage curves: a little heavier for light ink on dark, lighter for dark ink on light */
 static const uint8_t CURVE_DARK[16] = {0, 24, 43, 62, 80, 97, 114, 130, 147, 163, 178, 194, 210, 225, 240, 255};
@@ -1178,106 +1261,6 @@ static int32_t cv_free_text(int32_t x, int32_t y, const aafont_t *f, const char 
     char b[48];
     int cut = text_fit(b, sizeof b, s, f, maxw);
     return cv_text_flags(x, y, f, b, fg, bg, cut ? 9u : 8u);
-}
-
-/* ---------------------------------------------------------- keycaps --- */
-/* a keycap (the large type): a pill KC_PH tall, its label (KC[id].label) in the label face, 4 px each side */
-#define KC_PH 22
-static int32_t kc_w(uint32_t id) { return id < KC_COUNT ? text_w(TY_LB, KC[id].label) + 8 : 0; }
-/* keycap / badge `id` with its top-left at (x, y), KC_PH tall: fill and label tinted with tokens, `under` what lies
- * behind its corners; returns its right edge */
-static int32_t cv_keycap(int32_t x, int32_t y, uint32_t id, uint16_t fill, uint16_t ink, uint16_t under)
-{
-    const char *l = KC[id < KC_COUNT ? id : 0u].label;
-    int32_t w = kc_w(id < KC_COUNT ? id : 0u);
-    cv_rrect(x, y, w, KC_PH, 6, fill, under);
-    cv_text_on(x + 4, ty_y(y + KC_PH / 2, TY_LB), TY_LB, l, ink, fill);
-    return x + w;
-}
-
-/* a key hint: the keycap, then what it does (the label face, TEXT); unavailable: a DIM keycap and a DIM word, the
- * word's capitals on the keycap's centre line. act may be 0 (the keycap alone); returns the end x */
-#define KH_GAP 5                                  /* keycap -> its word */
-static int32_t kh_w(uint32_t id, const char *act) { return kc_w(id) + (act && act[0] ? KH_GAP + text_w(TY_LB, act) : 0); }
-static int32_t cv_key_hint(int32_t x, int32_t y, uint32_t id, const char *act, int on, uint16_t under)
-{
-    x = cv_keycap(x, y, id, on ? T_KEY : T_DIM, T_INK, under);
-    if (act && act[0])
-        x = cv_text_on(x + KH_GAP, ty_y(y + KC_PH / 2, TY_LB), TY_LB, act, on ? T_TEXT : T_DIM, under);
-    return x;
-}
-/* a row of key hints from x0 to x1: the first at x0, the last ending at x1, the space shared between them. When
- * the row is too wide the action words go first, from the last hint back (the keycaps never shrink).
- * on: a bit per hint (1 = available) */
-typedef struct { uint8_t key; const char *act; } khint_t;
-static void cv_key_row(int32_t x0, int32_t x1, int32_t y, const khint_t *h, uint32_t n, uint32_t on, uint16_t under)
-{
-    uint32_t i, words = n;                         /* hints 0 .. words-1 keep their word */
-    int32_t w, gap, x = x0;
-    for (;;) {
-        w = 0;
-        for (i = 0; i < n; i++)
-            w += kh_w(h[i].key, i < words ? h[i].act : 0);
-        if (w + 6 * (int32_t)(n - 1u) <= x1 - x0 || !words)
-            break;
-        words--;
-    }
-    gap = n > 1u ? (x1 - x0 - w) / (int32_t)(n - 1u) : 0;
-    for (i = 0; i < n; i++) {
-        if (n > 1u && i + 1u == n)
-            x = x1 - kh_w(h[i].key, i < words ? h[i].act : 0);   /* the last one flush right */
-        x = cv_key_hint(x, y, h[i].key, i < words ? h[i].act : 0, (on >> i) & 1u, under) + gap;
-    }
-}
-
-/* "[OCT+]..." -> the keycap's id and the length of the bracket, else -1 (a bracketed word that is no keycap is text) */
-static int32_t kc_tag(const char *s, uint32_t *len)
-{
-    uint32_t i, n;
-    if (s[0] != '[')
-        return -1;
-    for (n = 1; s[n] && s[n] != ']'; n++)
-        if (n > 8u)
-            return -1;
-    if (s[n] != ']')
-        return -1;
-    for (i = 0; i < KC_COUNT; i++) {
-        const char *l = KC[i].label;
-        uint32_t k = 0;
-        while (k + 1u < n && l[k] == s[k + 1u])
-            k++;
-        if (k + 1u == n && !l[k]) {
-            *len = n + 1u;
-            return (int32_t)i;
-        }
-    }
-    return -1;
-}
-/* free text (the text face; y: its line top) that may start with a keycap, "[EDIT] HOLD TO UNDO", or have one after its
- * first word, "HOLD [GLO] QUICK": the word, the keycap, then the rest, cut to maxw */
-static int32_t cv_free_hint(int32_t x, int32_t y, const char *s, uint16_t fg, uint16_t bg, int32_t maxw)
-{
-    uint32_t n, i;
-    int32_t id = kc_tag(s, &n), x0 = x;
-    for (i = 0; id < 0 && i < 7u && s[i] && s[i] != ' '; i++)
-        ;
-    if (id < 0 && i && s[i] == ' ' && (id = kc_tag(s + i + 1u, &n)) >= 0) {
-        char w[8] = {0};
-        uint32_t j;
-        for (j = 0; j < i; j++)
-            w[j] = s[j];
-        x = cv_text_on(x, y, TY_TX, w, fg, bg) + KH_GAP;
-        s += i + 1u;
-    }
-    if (id >= 0 && kc_w((uint32_t)id) + KH_GAP < maxw - (x - x0)) {
-        x = cv_keycap(x, y + TY_TX->asc - (TY_TX->cap + 1) / 2 - KC_PH / 2, (uint32_t)id, T_KEY, T_INK, bg) + KH_GAP;
-        s += n;
-        while (*s == ' ')
-            s++;
-        if (!*s)
-            return x - KH_GAP;
-    }
-    return cv_free_text(x, y, TY_TX, s, fg, bg, maxw - (x - x0));
 }
 
 /* one-shot: a line of text in a box of colour bg, blitted (align: 0 left, 1 centre, 2 right) */

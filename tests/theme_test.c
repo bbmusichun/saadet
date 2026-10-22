@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
-/* The palettes and the real canvas/text renderer (src/gfx.c): NIGHT DAY CONTRAST with each track's colour as THEME,
- * the test-only GRAY stays gray in every token and blend, every palette's text contrast, the alpha blend, the ramp
- * cache (palette and track), the fonts' metrics (Rubik) and the ellipsis.
- * Optional: a palette sheet (PPM). */
+/* The theme and the real canvas/text renderer (src/gfx.c): STAGE with each engine's colour as THEME, the test-only
+ * GRAY stays gray in every token and blend, the contrast of what is read on the screen, the alpha blend, the ramp
+ * cache, the faces (Archivo: metrics, tabular figures, the extras, the ellipsis, PO's digits only) and the smooth
+ * shapes (segment, polyline, arc) across the canvas's bands.
+ * Optional: a sheet of the theme and the faces (PPM). */
 #include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
@@ -16,10 +17,9 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 { (void)x; (void)y; (void)w; (void)h; (void)p; }
 #define UI_TEST_PALETTE 1
 #include "../firmware/src/gfx.c"
-static uint32_t ty_pixel(void) { return 0; }            /* (ui.c: the FONT preference; Rubik here) */
 
-#define SHEET_W 960u
-#define SHEET_H (((UI_PAL_ENTRIES + 3u) / 4u) * 124u)   /* (every palette, GRAY too) */
+#define SHEET_W (240u * UI_PAL_ENTRIES)
+#define SHEET_H 240u
 static uint16_t sheet[SHEET_W * SHEET_H];
 static unsigned channel(uint16_t c, unsigned n)
 { return n == 0 ? c >> 11 : n == 1 ? (c >> 5) & 63 : c & 31; }
@@ -39,51 +39,75 @@ static double contrast(uint16_t fg, uint16_t bg)
     double a = luminance(fg), b = luminance(bg);
     return a > b ? (a + 0.05) / (b + 0.05) : (b + 0.05) / (a + 0.05);
 }
+static uint16_t px_at(uint32_t x, uint32_t y) { return swap16(cv_px[(y - cv_top) * cv_w + x]); }
+
+/* a page in the D look, drawn into the band at cv_top: every face, the tokens and the shapes */
+static void specimen(void)
+{
+    static const int32_t curve[] = {160, 1536, 1792, 1536, 2016, 1120, 2336, 1120, 2752, 2080, 3296, 2784};
+    cv_text(10, 9, TY_HD, "EDIT", T_TEXT);
+    cv_text(52, 9, TY_TX, "FILTER", T_MID);
+    cv_disc(217, 17, 6, T_TEXT, 0);
+    cv_disc(227, 17, 6, T_OFF, 0);
+    cv_poly(curve, 6, 32, T_THEME, 3);
+    cv_arc(120 * 16, 112 * 16, 40 * 16, 6 * 16, 135, 153, T_THEME);
+    cv_arc(120 * 16, 112 * 16, 40 * 16, 6 * 16, 288, 117, T_LINE);
+    cv_text(12, 120, TY_RW, "LFO \x9b PITCH", T_TEXT);
+    cv_vdash(160, 120, 168, 2, 3, T_FILL);
+    cv_text(8, 184, TY_LB, "CUTOFF", T_MID);
+    cv_text(8, 201, TY_VL, "72", T_THEME);
+    cv_rect(8, 231, 50, 2, T_LINE);
+    cv_rect(8, 231, 28, 2, T_THEME);
+    cv_text(68, 184, TY_LB, "RES", T_MID);
+    cv_text(68, 201, TY_VL, "38", T_TEXT);
+    cv_text(128, 184, TY_LB, "ENV AMT", T_DIM);
+    cv_text(128, 201, TY_VL, "54", T_DIM);
+    cv_rect(188, 200, 13, 28, T_WELL);
+    cv_rect(202, 200, 13, 28, T_LIT);
+    cv_rect(216, 200, 13, 28, T_FILL);
+    cv_text(10, 40, TY_NM, "U097\x96U128", T_FAINT);
+    cv_text(140, 30, TY_HR, "14", T_TEXT);
+    cv_text(170, 120, TY_PO, "7", T_TEXT);
+}
 
 int main(int argc, char **argv)
 {
     static const aag_t pg[1] = {{0, 48, 0, 0, 3, 1}};   /* one glyph 'A': 3 px, alpha 0, 8, 15 */
     static const uint8_t pd[] = {0x08, 0xf0};
     const aafont_t probe = {1, 1, 'A', 'A', 0, 0, pg, pd, 0, 0, 0};
+    const aafont_t *const FACES[8] = {TY_LB, TY_TX, TY_HD, TY_RW, TY_VL, TY_NM, TY_HR, TY_PO};
     double worst = 100;
-    assert(NPALETTES == 8u && !strcmp(UI_PALETTES[0].name, "NIGHT") && !strcmp(UI_PALETTES[1].name, "DAY") &&
-           !strcmp(UI_PALETTES[2].name, "CONTRAST") && !strcmp(UI_PALETTES[3].name, "SUNSET") &&
-           !strcmp(UI_PALETTES[4].name, "OCEAN") && !strcmp(UI_PALETTES[5].name, "NEON") &&
-           !strcmp(UI_PALETTES[6].name, "CANDY") && !strcmp(UI_PALETTES[7].name, "LO-FI") &&
-           !strcmp(UI_PALETTES[UI_GRAY_INDEX].name, "GRAY"));
-    for (unsigned pt = 0; pt < UI_PAL_ENTRIES * 4u; pt++) {
-        unsigned p = pt / 4u, t = pt % 4u;
-        uint16_t *tok = &ux.bg;
+    assert(NPALETTES == 1u && !strcmp(UI_PALETTES[0].name, "STAGE") && !strcmp(UI_PALETTES[UI_GRAY_INDEX].name, "GRAY"));
+    for (unsigned pe = 0; pe < UI_PAL_ENTRIES * 4u; pe++) {
+        unsigned p = pe / 4u, e = pe % 4u;
+        const uint16_t *tok = &ux.bg;
         palette_set(p);
-        ux.trk = 0xFF;
-        palette_track(t);                                      /* THEME: track t's colour */
-        assert(T_THEME == UI_PALETTES[p].trk[t] && T_TRK(t) == T_THEME);
-        if (p == UI_GRAY_INDEX)
-            for (unsigned i = 0; i < 14; i++) assert(gray(tok[i]));      /* every token, derived ones too (RAISE, KEY the last) */
-        /* text and the things read on the screen; the generator checks the same (tools/gen_ui_palettes.py) */
+        theme_engine(e + 1u);
+        assert(theme_engine(e) && !theme_engine(e));          /* (a change is reported once) */
+        assert(T_THEME == T_ENG(e) && T_THEME == UI_PALETTES[p].eng[e]);
+        if (p == UI_GRAY_INDEX) {
+            for (unsigned i = 0; i < 10u; i++) assert(gray(tok[i]));   /* every token */
+            assert(gray(T_THEME));
+        }
+        /* what is read on the screen; the generator checks the same (tools/gen_ui_palettes.py) */
         struct { uint16_t fg, bg; double min; } c[] = {
-            {T_TEXT, T_BG, 12.0}, {T_TEXT, T_SURF, 9.0}, {T_MID, T_BG, 5.0}, {T_MID, T_SURF, 4.0},
-            {T_THEME, T_BG, 4.5}, {T_THEME, T_SURF, 4.5}, {T_ACCENT, T_BG, 4.5}, {T_ACCENT, T_SURF, 4.5},
-            {T_INK, T_SEL, 4.5}, {T_INK, T_THEME, 4.5}, {T_DIM, T_BG, 2.2}, {T_LINE, T_BG, 1.25}, {T_REC, T_BG, 3.0},
-            {T_INK, T_KEY, 4.5}, {T_KEY, T_BG, 3.0}, {T_KEY, T_SURF, 2.5}, {T_INK, T_DIM, 1.8}, {T_INK, T_ACCENT, 4.5},
-            {T_KNOB(0), T_BG, 4.5}, {T_KNOB(1), T_BG, 4.5}, {T_KNOB(2), T_BG, 4.5}, {T_KNOB(3), T_BG, 4.5},
-            {T_KNOB(0), T_SURF, 4.5}, {T_KNOB(1), T_SURF, 4.5}, {T_KNOB(2), T_SURF, 4.5}, {T_KNOB(3), T_SURF, 4.5}};
-        assert(T_KNOB(0) == T_THEME);                          /* (knob 1's colour: the track's own) */
+            {T_TEXT, T_BG, 15.0}, {T_MID, T_BG, 7.0}, {T_DIM, T_BG, 4.5}, {T_FAINT, T_BG, 2.5}, {T_THEME, T_BG, 4.5},
+            {T_TEXT, T_WELL, 12.0}, {T_MID, T_LINE, 5.5}, {T_FILL, T_LINE, 2.0}, {T_LIT, T_WELL, 1.8},
+            {T_OFF, T_BG, 1.7}, {T_LINE, T_BG, 1.2}};
         double min = 100;
         for (unsigned i = 0; i < sizeof c / sizeof c[0]; i++) {
             double r = contrast(c[i].fg, c[i].bg);
-            if (r < c[i].min) printf("%s T%u: pairing %u contrast %.2f < %.2f\n", UI_PALETTES[p].name, t + 1, i, r, c[i].min);
+            if (r < c[i].min) printf("%s E%u: pairing %u contrast %.2f < %.2f\n", UI_PALETTES[p].name, e, i, r, c[i].min);
             assert(r >= c[i].min);
             if (r / c[i].min < min) min = r / c[i].min;
         }
         if (min < worst) worst = min;
-        printf("%-8s T%u text %.1f:1, labels %.1f:1, track %.1f:1, selection %.1f:1\n", UI_PALETTES[p].name, t + 1,
-               contrast(T_TEXT, T_BG), contrast(T_MID, T_BG), contrast(T_THEME, T_BG), contrast(T_INK, T_SEL));
-        assert((p == 1u || p == 6u) == ux.light);              /* DAY and CANDY are the light ones */
-        assert(T_REC == (p == UI_GRAY_INDEX ? T_ACCENT : ux.light ? UI_REC_LIGHT : UI_REC_DARK));
+        printf("%-6s E%u text %.1f:1, labels %.1f:1, engine %.1f:1\n", UI_PALETTES[p].name, e,
+               contrast(T_TEXT, T_BG), contrast(T_MID, T_BG), contrast(T_THEME, T_BG));
+        assert(!ux.light);
         /* the blend: transparent, solid and an edge between the two, on two backgrounds */
         for (unsigned b = 0; b < 2; b++) {
-            uint16_t under = b ? T_SEL : T_BG, ink = b ? T_INK : T_THEME;
+            uint16_t under = b ? T_WELL : T_BG, ink = b ? T_TEXT : T_THEME;
             cv_begin(3, 1, under);
             cv_text_on(0, 0, &probe, "A", ink, under);
             assert(swap16(cv_px[0]) == under && swap16(cv_px[2]) == ink);
@@ -93,67 +117,87 @@ int main(int argc, char **argv)
             }
             if (p == UI_GRAY_INDEX) assert(gray(swap16(cv_px[1])));
         }
-        {   /* the COLOR row's value, as ui_menu.c menu_words writes it ("CONTRAST" -> "Contrast") */
-            char w[16];
-            unsigned k;
-            snprintf(w, sizeof w, "%s", UI_PALETTES[p].name);
-            for (k = 1; w[k]; k++) if (w[k] >= 'A' && w[k] <= 'Z') w[k] = (char)(w[k] + 32);
-            assert(text_w(&AF_TX, w) <= 120);
-        }
-        for(uint32_t top=0;top<124u;top+=CV_MAX/240u){
-        cv_begin_band(240,124,T_BG,top);
-        cv_text(4, 0, &AF_TX, UI_PALETTES[p].name, T_TEXT);      /* (the large type's roles) */
-        for (unsigned k = 0; k < 5; k++) cv_rect(150 + k * 16, 6, 12, 12, tok[k]);
-        cv_text(4, 26, &AF_LB, "LABEL", T_MID);
-        cv_text(70, 24, &AF_TX, "VALUE 127", T_THEME);
-        cv_text(180, 24, &AF_TX, "HOT", T_ACCENT);
-        cv_text(4, 46, &AF_LB, "INACTIVE", T_DIM);
-        cv_rect(84, 46, 150, 20, T_SEL);
-        cv_text_on(90, 47, &AF_LB, "SELECTED ROW", T_INK, T_SEL);
-        cv_rect(4, 70, 232, 1, T_LINE);
-        cv_rect(4, 76, 120, 3, T_LINE);
-        cv_rect(4, 76, 70, 3, T_SEL);
-        cv_rect(74, 74, 1, 7, T_THEME);
-        cv_text(136, 70, &AF_LB, "REC", T_REC);
-        cv_text(4, 84, &AF_VL, "124", T_THEME);
-        cv_text(80, 82, &AF_LB, "Mixed case text", T_TEXT);
-        cv_key_hint(80, 100, KC_OCTUP, "LOAD", 1, T_BG);          /* keycaps: available, unavailable */
-        cv_key_hint(160, 100, KC_OCTDN, "BACK", 0, T_BG);
-        for (unsigned y = top; y < top+cv_rows; y++)
-            for (unsigned x = 0; x < 240; x++) {
-                uint16_t v = swap16(cv_px[(y-top) * 240 + x]);
-                if (p == UI_GRAY_INDEX) assert(gray(v));          /* every blended pixel of GRAY */
-                if (!t) sheet[(p / 4 * 124 + y) * 960 + p % 4 * 240 + x] = v;
-            }
+        for (uint32_t top = 0; top < 240u; top += CV_MAX / 240u) {   /* the specimen, band by band */
+            cv_begin_band(240, 240, T_BG, top);
+            specimen();
+            for (unsigned y = top; y < top + cv_rows; y++)
+                for (unsigned x = 0; x < 240; x++) {
+                    uint16_t v = px_at(x, y);
+                    if (p == UI_GRAY_INDEX) assert(gray(v));      /* every blended pixel of GRAY */
+                    if (!e) sheet[y * SHEET_W + p * 240u + x] = v;
+                }
         }
     }
     /* the ramp cache follows the palette (a stale ramp would blend toward the old background) */
     palette_set(0);
-    cv_begin(3, 1, T_BG); cv_text(0, 0, &probe, "A", T_THEME);
-    uint16_t night = swap16(cv_px[1]);
-    palette_set(1);
-    cv_begin(3, 1, T_BG); cv_text(0, 0, &probe, "A", T_THEME);
-    assert(swap16(cv_px[1]) != night);
+    cv_begin(3, 1, T_BG); cv_text(0, 0, &probe, "A", T_TEXT);
+    uint16_t stage = swap16(cv_px[1]);
+    palette_set(UI_GRAY_INDEX);
+    cv_begin(3, 1, T_BG); cv_text(0, 0, &probe, "A", T_TEXT);
+    assert(swap16(cv_px[1]) != stage);
     palette_set(0);
-    assert(palette_track(1) && !palette_track(1));             /* (and so does the track: once) */
+    theme_engine(0);
     cv_begin(3, 1, T_BG); cv_text(0, 0, &probe, "A", T_THEME);
-    assert(swap16(cv_px[1]) != night);
-    /* fonts: Rubik 500 LB 16, TX 20, VL 28, HR 48 px; Melodee Pixel's faces on the
-     * same line heights and baselines; tabular digits; the ellipsis; HR small letters too */
-    assert(AF_LB.h == 19 && AF_LB.asc == 15 && AF_TX.h == 24 && AF_TX.asc == 19 && AF_VL.h == 34 && AF_VL.asc == 27 &&
-           AF_HR.h == 57 && AF_HR.asc == 45);
-    assert(AP_LB.h == AF_LB.h && AP_LB.asc == AF_LB.asc && AP_TX.h == AF_TX.h && AP_TX.asc == AF_TX.asc &&
-           AP_VL.h == AF_VL.h && AP_VL.asc == AF_VL.asc && AP_HR.h == AF_HR.h && AP_HR.asc == AF_HR.asc);
-    assert(text_w(&AF_LB, "0000") == text_w(&AF_LB, "1111") && text_w(&AF_VL, "0000") == text_w(&AF_VL, "1111"));
-    assert(text_w(&AF_TX, "0000") == text_w(&AF_TX, "1111") && text_w(&AF_LB, "1.25") == text_w(&AF_LB, "8.75"));
-    assert(glyph(&AF_LB, (uint8_t)ELLIPSIS) != glyph(&AF_LB, '?') && glyph(&AF_TX, (uint8_t)ELLIPSIS) != glyph(&AF_TX, '?'));
-    assert(text_w(&AF_HR, "abc") != text_w(&AF_HR, "ABC") && glyph(&AF_HR, 'a') != glyph(&AF_HR, 'A'));
+    uint16_t p5 = swap16(cv_px[1]);
+    theme_engine(1);
+    cv_begin(3, 1, T_BG); cv_text(0, 0, &probe, "A", T_THEME);
+    assert(swap16(cv_px[1]) != p5);                           /* (and the engine's colour) */
+    /* the faces: Archivo LB 13, TX 14, HD 14, RW 18, VL 22, NM 32, HR 46, PO 92 px (tools/gen_aa_font.py --preset stage) */
+    assert(AF_LB.h == 15 && AF_LB.asc == 12 && AF_TX.h == 16 && AF_TX.asc == 13 && AF_HD.h == 16 && AF_HD.asc == 13);
+    assert(AF_RW.h == 20 && AF_RW.asc == 16 && AF_VL.h == 25 && AF_VL.asc == 20 && AF_NM.h == 36 && AF_NM.asc == 29);
+    assert(AF_HR.h == 51 && AF_HR.asc == 41 && AF_PO.h == 101 && AF_PO.asc == 81);
+    for (unsigned f = 0; f < 8u; f++) {
+        assert(text_w(FACES[f], "0000") == text_w(FACES[f], "1111") && text_w(FACES[f], "1.25") == text_w(FACES[f], "8.75"));
+        if (f < 6u)                                            /* (HR PO: the characters a name or a number needs) */
+            assert(glyph(FACES[f], (uint8_t)ELLIPSIS) != glyph(FACES[f], '?') &&
+                   glyph(FACES[f], (uint8_t)EN_DASH) != glyph(FACES[f], '?') &&
+                   glyph(FACES[f], (uint8_t)ANGLE) != glyph(FACES[f], '?'));
+    }
+    assert(text_w(TY_HR, "abc") != text_w(TY_HR, "ABC") && glyph(TY_HR, 'a') != glyph(TY_HR, 'A'));
+    assert(text_has(TY_PO, "+72.5%") && !text_has(TY_PO, "HALF"));
+    assert(text_w(TY_HD, "EDIT") > text_w(TY_TX, "EDIT"));    /* (800 is wider than 500) */
+    assert(text_w(TY_VL, "RATIO") <= 54 && text_w(TY_LB, "RELEASE") <= 54);   /* (fits a 60 px column, 6 px apart) */
     {
         char b[32];
-        assert(!text_fit(b, sizeof b, "KICK", &AF_LB, 60) && !strcmp(b, "KICK"));
-        assert(text_fit(b, sizeof b, "A VERY LONG PRESET NAME", &AF_LB, 60) && text_w(&AF_LB, b) <= 60);
+        assert(!text_fit(b, sizeof b, "KICK", TY_LB, 60) && !strcmp(b, "KICK"));
+        assert(text_fit(b, sizeof b, "A VERY LONG PRESET NAME", TY_LB, 60) && text_w(TY_LB, b) <= 60);
         assert(b[strlen(b) - 1] == ELLIPSIS && b[strlen(b) - 2] != ' ');
-        assert(text_fit(b, sizeof b, "WWWWWWWW", &AF_TX, 1) && b[0] == ELLIPSIS && !b[1]);
+        assert(text_fit(b, sizeof b, "WWWWWWWW", TY_TX, 1) && b[0] == ELLIPSIS && !b[1]);
+    }
+    /* the shapes: a 2 px segment covers its two rows whole and nothing else */
+    cv_begin(40, 10, T_BG);
+    cv_seg(5 * 16, 5 * 16, 35 * 16, 5 * 16, 32, T_TEXT, 3u);
+    assert(px_at(20, 4) == T_TEXT && px_at(20, 5) == T_TEXT && px_at(20, 3) == T_BG && px_at(20, 6) == T_BG);
+    assert(px_at(3, 5) == T_BG && px_at(37, 5) == T_BG);                      /* (round caps: 1 px past each end) */
+    cv_begin(40, 10, T_BG);
+    cv_seg(5 * 16, 5 * 16, 35 * 16, 5 * 16, 32, T_TEXT, 0u);
+    assert(px_at(4, 5) == T_BG && px_at(5, 5) == T_TEXT && px_at(35, 5) == T_BG);   /* (square ends: at the ends) */
+    /* .. a polyline's joint is drawn once (no brighter bead where two segments meet) */
+    {
+        static const int32_t v[] = {16 * 2 + 8, 16 * 2 + 8, 16 * 20 + 8, 16 * 2 + 8, 16 * 38 + 8, 16 * 2 + 8};
+        cv_begin(40, 6, T_BG);
+        cv_poly(v, 3, 24, T_THEME, 3u);
+        assert(px_at(20, 2) == px_at(10, 2) && px_at(20, 3) == px_at(10, 3));
+    }
+    /* .. a full ring is symmetric, an arc stops at its ends, and both draw the same across a band's edge */
+    {
+        uint16_t top_row[240], bot_row[240];
+        uint32_t rows = CV_MAX / 240u;
+        for (uint32_t top = 0; top < 2u * rows; top += rows) {
+            cv_begin_band(240, 2u * rows, T_BG, top);
+            cv_arc(120 * 16, (int32_t)rows * 16, 30 * 16, 4 * 16, 0, 360, T_TEXT);
+            for (unsigned x = 0; x < 240; x++) {
+                if (top) bot_row[x] = px_at(x, rows);
+                else top_row[x] = px_at(x, rows - 1u);
+            }
+        }
+        for (unsigned x = 0; x < 240; x++) assert(top_row[x] == bot_row[x]);   /* (the ring's rows mirror at the edge) */
+        cv_begin(120, 120, T_BG);
+        cv_arc(60 * 16, 60 * 16, 40 * 16, 6 * 16, 0, 360, T_TEXT);
+        assert(px_at(100, 60) == px_at(19, 60) && px_at(60, 100) == px_at(60, 19) && px_at(60, 60) == T_BG);
+        cv_begin(120, 120, T_BG);
+        cv_arc(60 * 16, 60 * 16, 40 * 16, 6 * 16, 0, 90, T_TEXT);             /* 3 o'clock to 6 o'clock */
+        assert(px_at(88, 88) == T_TEXT && px_at(32, 88) == T_BG && px_at(88, 32) == T_BG && px_at(32, 32) == T_BG);
     }
     if (argc > 1) {
         FILE *f = fopen(argv[1], "wb"); assert(f);
@@ -165,6 +209,6 @@ int main(int argc, char **argv)
         }
         fclose(f);
     }
-    printf("Palettes: MONO gray, contrast (worst margin x%.2f), blending, ramp cache, font metrics and ellipsis passed.\n", worst);
+    printf("Theme: GRAY stays gray, contrast (worst margin x%.2f), blending, ramp cache, faces and shapes passed.\n", worst);
     return 0;
 }
