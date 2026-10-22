@@ -198,13 +198,7 @@ static __attribute__((noinline)) void cz_native_render(track_t *t,voice_t *v,int
         float depth=cz_native_env_tick(&c->native_eg[l][1],&defs[src][1],v->gate);
         uint32_t kfn=v->note>36u?v->note-36u:0u;
         float rate_scale=1.0f+(float)((b[16u+off]&15u)*kfn)*(1.0f/96.0f);
-        uint32_t release = midi_verb[t-trk];
-        if (release && !v->gate) {
-            cz_native_env_t *eg = &c->native_eg[l][2];
-            eg->gate = 0; eg->stage = defs[src][2].end;
-            eg->level = fm_maxf(0.0f, eg->level - (127.0f * CTL * 10000.0f / FS) / (float)TIME_MS_X10[release]);
-            if (eg->level == 0.0f) eg->stage++;
-        } else cz_native_env_scaled(&c->native_eg[l][2],&defs[src][2],v->gate,rate_scale);
+        cz_native_env_scaled(&c->native_eg[l][2],&defs[src][2],v->gate,rate_scale);
         /* Unheard envelopes keep advancing. Their stateless waveform,
          * amplitude and frequency preparation cannot affect next-note state. */
         if(!heard)continue;
@@ -253,7 +247,7 @@ static __attribute__((noinline)) void cz_native_render(track_t *t,voice_t *v,int
         }
         float sample=first==last?line[first]:modulation==4u?line[0]*line[1]*2.0f:(line[0]+line[1])*0.5f;
         float gain=((float)m->amp0+(float)(m->amp1-m->amp0)*(float)i*(1.0f/CTL))*(1.0f/32768.0f);
-        out[i]+=(int32_t)(sample*gain*(4.0f*VOICE_FS));
+        out[i]+=(int32_t)(sample*gain*(4.0f*VOICE_FS*AUDIO_ONE));
     }
     v->ph[0]=ph[0];v->ph[1]=ph[1];v->s[0]=(int32_t)tg[0];v->s[1]=(int32_t)tg[1];
 }

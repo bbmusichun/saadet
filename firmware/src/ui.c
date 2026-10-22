@@ -3,10 +3,11 @@
 /* The interface. Every button is one place (ui_pages.c) and the screen names it; the four knobs edit the four values at
  * the foot of the screen; pressing the place's button again or turning SELECT turns its page; holding the button lists
  * what is inside on the screen and on the keys (a key jumps there, the keys play no notes while it is held). On HOME the
- * four knobs are the sound's macros and a turn shows its value over the whole screen. PRESETS browses the sounds and
- * ALGORITHM the engines (the sound loads when they rest). REC latches the notes held, OCT- / OCT+ shift the octave
- * (both: back to 0; both for 5 s: UPDATE MODE, main.c). Startup maintenance (ui_boot.c), the update countdown below,
- * UPDATE (ota_hw.c) and the crash report (main.c) are the system's own screens. */
+ * four knobs are the sound's macros and a turn shows its value over the whole screen; holding HOME lists the favourites
+ * on the keys. PRESETS browses the sounds and ALGORITHM the engines (the sound loads when they rest); FX opens the
+ * library, SAVE stores the sound (pressed again) or a dump that came in. REC latches the notes held, OCT- / OCT+ shift
+ * the octave (both: back to 0; both for 5 s: UPDATE MODE, main.c). Startup maintenance (ui_boot.c), the update
+ * countdown below, UPDATE (ota_hw.c) and the crash report (main.c) are the system's own screens. */
 static struct {
     uint8_t force;               /* the screen to be drawn again whole */
     uint8_t uboot;               /* main.c: seconds left before UPDATE MODE (OCT- + OCT+ held), 0 = none */
@@ -21,8 +22,7 @@ static void ui_say(const char *a, const char *b);
 #include "ui_pages.c"
 #include "ui_view.c"
 #include "ui_pics.c"
-static void up_name(uint32_t k, char *b);                  /* upreset.c */
-static void up_slot_label(char *b, uint32_t k);
+#include "ui_lib.c"
 
 #define POP_MS 1200u             /* HOME: a macro's value over the screen, after the knob rests */
 #define TOAST_MS 1500u           /* a message in the header */
@@ -35,10 +35,11 @@ static struct {
     uint32_t held_t;
     uint8_t hot, pop;            /* the column last turned (4: none); HOME: its value over the screen */
     uint32_t hot_t, knob_t[4];
-    struct { uint8_t on, pending, eng; uint16_t idx; uint32_t t; } br;   /* browsing the sounds */
+    struct { uint8_t on, src; uint32_t t; } br;   /* browsing the sounds: the engine's list (ui_lib.c) */
+    uint8_t eng;                 /* the engine the pages were of (another: EDIT, ENV, LFO from their first) */
     char toast[28];
     uint32_t toast_t;
-} uix = {.held = PL_N, .hot = 4u};
+} uix = {.held = PL_N, .hot = 4u, .eng = 255u};
 
 static void fmt3(char *b, int32_t v)             /* "041" */
 {
@@ -65,9 +66,18 @@ static uint32_t ui_stop(uint32_t p)
 }
 static void ui_open(uint32_t p)
 {
+    if (uix.place == PL_SAVE && p != PL_SAVE && sx_staged()) {   /* away from an import: it is dropped */
+        sx_drop();
+        ui_message("IMPORT CANCELLED");
+    }
+    if (p == PL_SAVE && uix.place != PL_SAVE) {
+        if (sx_staged()) import_open(); else save_open();
+    }
     uix.place = (uint8_t)p;
     uix.hot = 4u;
     uix.pop = 0;
+    if (p == PL_LIB)
+        lib_open(ui_stop(PL_LIB));
 }
 static void ui_turn_page(uint32_t p, int32_t d)  /* the place's next (d > 0) or previous stop, round */
 {
@@ -75,6 +85,8 @@ static void ui_turn_page(uint32_t p, int32_t d)  /* the place's next (d > 0) or 
     if (pl.n)
         uix.stop[p] = (uint8_t)(((int32_t)ui_stop(p) + d % pl.n + pl.n) % pl.n);
     uix.hot = 4u;
+    if (p == PL_LIB)
+        lib_open(ui_stop(PL_LIB));
 }
 /* the field knob k edits now: a HOME macro, the stop's, or none */
 static const ui_field_t *ui_knob_field(uint32_t k)
@@ -87,33 +99,22 @@ static const ui_field_t *ui_knob_field(uint32_t k)
 }
 
 /* ----------------------------------------------------------- browse --- */
-static void browse_load(void)
+static void browse_load(void) { lib_poll(fm1_ms, 0u); }   /* (the chosen sound now) */
+static void browse_turn(int engine, int32_t s)  /* PRESETS: the engine's list; ALGORITHM: the next engine's */
 {
-    if (!uix.br.pending)
-        return;
-    uix.br.pending = 0;
-    if (uix.br.eng != TSEL->eng_req)
-        engine_load_of(TSEL, uix.br.eng, uix.br.idx);
-    else
-        apply_preset(uix.br.idx);
-}
-static void browse_turn(int engine, int32_t s)
-{
-    uint32_t n;
     if (!uix.br.on) {
         uix.br.on = 1;
-        uix.br.eng = (uint8_t)(eng_ok(TSEL->eng_req) ? TSEL->eng_req : ENGI_PROPHET);
-        uix.br.idx = user_of(TSEL) != USER_NONE ? 0u : TSEL->preset;
+        uix.br.src = (uint8_t)(LIB_P5 + eng_tint(eng_ok(TSEL->eng_req) ? TSEL->eng_req : ENGI_PROPHET));
+        lib_open(uix.br.src);
     }
     if (engine) {
-        uix.br.eng = (uint8_t)eng_step(uix.br.eng, s);
-        uix.br.idx = uix.br.eng == ENGI_PROPHET ? 1u : 0u;   /* (set_engine_of: Sequential's first program) */
+        uint32_t e = eng_step(lib_engine(uix.br.src), s);
+        uix.br.src = (uint8_t)(LIB_P5 + eng_tint(e));
+        lib.at[uix.br.src] = e == ENGI_PROPHET ? 1u : 0u;   /* (set_engine_of: Sequential's first program) */
+        lib_move(uix.br.src, 0);
     } else {
-        n = ENGINES[uix.br.eng]->npresets;
-        if (n)
-            uix.br.idx = (uint16_t)(((int32_t)uix.br.idx + s % (int32_t)n + (int32_t)n) % (int32_t)n);
+        lib_move(uix.br.src, s);
     }
-    uix.br.pending = 1;
     uix.br.t = fm1_ms;
     uix.pop = 0;
 }
@@ -136,7 +137,7 @@ static void ui_octave(uint32_t b)
 }
 static void ui_button_down(uint32_t b)
 {
-    uint32_t p = place_of_button(b);
+    uint32_t p = place_of_button(b), browsing = uix.br.on;
     if (uix.br.on) {                                   /* a button closes the browsing (its sound loads now) */
         browse_load();
         uix.br.on = 0;
@@ -151,7 +152,7 @@ static void ui_button_down(uint32_t b)
     }
     if (p >= PL_N)
         return;
-    uix.held_new = uix.place != p;
+    uix.held_new = uix.place != p || browsing;
     if (uix.held_new)
         ui_open(p);
     uix.pop = 0;
@@ -164,22 +165,50 @@ static void ui_button_up(uint32_t b)
     uint32_t p = place_of_button(b);
     if (p >= PL_N || p != uix.held)
         return;
-    if (!uix.held_new && !uix.jumped && !uix.reveal)   /* a tap on the open place: its next page */
-        ui_turn_page(p, 1);
+    if (!uix.held_new && !uix.jumped && !uix.reveal) { /* a tap on the open place: its next page; SAVE: it stores */
+        if (p == PL_SAVE) {
+            if (sx_staged()) import_store(); else save_store();
+        } else {
+            ui_turn_page(p, 1);
+        }
+    }
     uix.held = PL_N;
     uix.reveal = 0;
+}
+/* the held button's entries: the place's objects or pages; HOME's: the favourites (n of them, the one playing: *cur) */
+static uint32_t held_entries(uint32_t p, uint8_t *s, uint32_t *cur)
+{
+    ui_place_t pl = place_of(p);
+    uint32_t n, k;
+    *cur = 255u;
+    if (p == PL_HOME) {
+        int32_t now = lib_find_now(LIB_FAV);
+        n = lib_count(LIB_FAV);
+        *cur = now >= 0 && now < 27 ? (uint32_t)now : 255u;
+        return n < 27u ? n : 27u;
+    }
+    n = place_entries(&pl, s, 27u);
+    for (k = 0; k < n; k++)
+        if (s[k] <= ui_stop(p)) *cur = k;
+    return n;
 }
 static void ui_keys(uint32_t notes)                    /* a key while a place's button is held: jump there */
 {
     uint8_t s[27];
-    uint32_t k, n;
-    ui_place_t pl;
+    uint32_t k, n, cur;
     if (uix.held >= PL_N || !notes)
         return;
-    pl = place_of(uix.held);
-    n = place_entries(&pl, s, 27u);
+    n = held_entries(uix.held, s, &cur);
     for (k = 0; k < 27u && !((notes >> k) & 1u); k++)
         ;
+    if (uix.held == PL_HOME) {                         /* HOME: the favourite of the key plays */
+        lib_item_t it;
+        if (k < n && lib_item(LIB_FAV, k, &it)) {
+            lib_load(&it);
+            uix.jumped = 1;
+        }
+        return;
+    }
     if (k < n) {
         uix.stop[uix.held] = s[k];
         ui_open(uix.held);
@@ -208,13 +237,22 @@ static void ui_timers(void)
     uint32_t now = fm1_ms;
     if (uix.pop && now - uix.hot_t >= POP_MS)
         uix.pop = 0;
-    if (uix.br.pending && now - uix.br.t >= LOAD_MS)
-        browse_load();
-    if (uix.br.on && !uix.br.pending && now - uix.br.t >= BROWSE_MS)
+    lib_poll(now, LOAD_MS);
+    if (uix.br.on && !lib.pending && now - uix.br.t >= BROWSE_MS)
         uix.br.on = 0;
     if (uix.held < PL_N && !uix.reveal && now - uix.held_t >= HOLD_MS[settings_hold % 4u]) {
         ui_place_t pl = place_of(uix.held);
-        uix.reveal = pl.n > 1u;
+        uix.reveal = uix.held == PL_HOME ? lib_count(LIB_FAV) > 0u : pl.n > 1u;
+    }
+    if (sx_stage.arrived) {                            /* a dump came in: SAVE shows it */
+        sx_stage.arrived = 0;
+        uix.br.on = 0;
+        if (uix.place == PL_SAVE) import_open();
+        else ui_open(PL_SAVE);
+    }
+    if (eng_tint(TSEL->eng_req) != uix.eng) {          /* another engine: its own pages from the first */
+        uix.eng = (uint8_t)eng_tint(TSEL->eng_req);
+        uix.stop[PL_EDIT] = uix.stop[PL_ENV] = uix.stop[PL_LFO] = 0;
     }
     if (uix.toast[0] && now - uix.toast_t >= TOAST_MS)
         uix.toast[0] = 0;
@@ -271,6 +309,7 @@ static void vm_col_of(vm_col_t *c, const ui_field_t *f)
     if (!d)
         return;
     c->on = 1;
+    c->dim = (uint8_t)!field_active(f);
     str_cpy(c->label, field_label(f, d), sizeof c->label);
     field_text(f, d, c->val, c->unit);
     v = field_get(f);
@@ -316,6 +355,66 @@ static void vm_state(char *b, uint32_t n)        /* what changes the notes now: 
         ADD("LATCH");
 #undef ADD
 }
+/* the list's five sounds around the one chosen (an empty list: its word in name); the count */
+static uint32_t vm_list_of(ui_vm_t *v, uint32_t src)
+{
+    static const char *const EMPTY[LIB_N] = {"NO FAVOURITES YET", "NO USER SOUNDS YET", "", "", "", ""};
+    lib_item_t w[5];
+    uint32_t n = lib_count(src), i, at = n ? lib.at[src] % n : 0u;
+    lib_scan(src, (int32_t)at - 2, w, 5u);
+    str_cpy(v->name, EMPTY[src % LIB_N], sizeof v->name);
+    for (i = 0; i < 5u; i++) {
+        if (w[i].eng == 255u) continue;
+        lib_item_name(&w[i], v->brow[i]);
+        if (!v->brow[i][0]) str_cpy(v->brow[i], "-", 2);
+        if (w[i].user) up_slot_label(v->btag[i], w[i].idx);
+        else fmt3(v->btag[i], w[i].idx);
+        if (lib_item_star(&w[i])) v->bstar |= (uint8_t)(1u << i);
+        if (lib_item_now(&w[i])) v->bnow |= (uint8_t)(1u << i);
+    }
+    return n;
+}
+/* SAVE: the name with its cursor, what the store does; IMPORT: the dump, its first names, its slots */
+static void vm_save(ui_vm_t *v)
+{
+    char l[5], b[13];
+    uint32_t i;
+    if (sx_staged()) {
+        uint32_t taken = import_taken();
+        v->mode = VM_IMPORT;
+        str_cpy(v->sub, ENG_TAG[eng_tint(sx_stage.e)], sizeof v->sub);
+        fmt_int(v->name, sx_stage.count);
+        str_cpy(v->name + str_len(v->name), sx_stage.count == 1u ? " SOUND" : " SOUNDS", 9);
+        for (i = 0; i < 3u && i < sx_stage.count; i++) {
+            sx_name(i, v->row[i]);
+            if (i == 2u && sx_stage.count > 3u) str_cpy(v->row[i] + str_len(v->row[i]), " \x85", 3);
+        }
+        up_slot_label(v->line[0], lib.first);
+        if (sx_stage.count > 1u) {
+            up_slot_label(l, lib.first + sx_stage.count - 1u);
+            str_cpy(v->line[0] + str_len(v->line[0]), " \x96 ", 4);
+            str_cpy(v->line[0] + str_len(v->line[0]), l, 5);
+        }
+        if (taken) {
+            str_cpy(v->line[0] + str_len(v->line[0]), " \xb7 REPLACES ", sizeof v->line[0] - str_len(v->line[0]));
+            fmt_int(v->line[0] + str_len(v->line[0]), (int32_t)taken);
+        }
+        str_cpy(v->line[2], "PRESS SAVE TO IMPORT", sizeof v->line[2]);
+        return;
+    }
+    v->mode = VM_SAVE;
+    str_cpy(v->name, lib.name, sizeof v->name);
+    v->cursor = lib.cursor;
+    up_slot_label(v->sub, lib.slot);
+    if (up_used(lib.slot)) {
+        up_name(lib.slot, b);
+        str_cpy(v->line[0], "REPLACES", sizeof v->line[0]);
+        str_cpy(v->line[1], b, sizeof v->line[1]);
+    } else {
+        str_cpy(v->line[0], up_old(lib.slot) ? "OLD FORMAT SLOT" : "EMPTY SLOT", sizeof v->line[0]);
+    }
+    str_cpy(v->line[2], "PRESS SAVE TO STORE", sizeof v->line[2]);
+}
 static void vm_build(ui_vm_t *v)
 {
     uint32_t i, e = eng_tint(TSEL->eng_req);
@@ -325,39 +424,33 @@ static void vm_build(ui_vm_t *v)
     v->hot = uix.hot;
     str_cpy(v->toast, uix.toast, sizeof v->toast);
     if (uix.br.on) {                                   /* browsing: the sounds around the one chosen */
-        const engine_t *en = ENGINES[uix.br.eng];
-        uint32_t n = en->npresets;
+        uint32_t n = vm_list_of(v, uix.br.src);
         v->mode = VM_BROWSE;
-        v->bsrc = (uint8_t)eng_tint(uix.br.eng);
+        v->bsrc = (uint8_t)(uix.br.src - LIB_P5);
         str_cpy(v->head, ENG_TAG[v->bsrc], sizeof v->head);
-        str_cpy(v->sub, "FACTORY", sizeof v->sub);
-        for (i = 0; i < 5u; i++) {
-            int32_t j = (int32_t)uix.br.idx + (int32_t)i - 2;
-            char *r = v->brow[i];
-            if (j < 0 || j >= (int32_t)n) continue;
-            fmt3(r, j);
-            r[3] = r[4] = ' ';
-            str_cpy(r + 5, eng_preset(en, (uint32_t)j)->name, sizeof v->brow[i] - 5u);
-        }
-        fmt3(v->bcount, (int32_t)uix.br.idx);
+        fmt_int(v->bcount, n ? (int32_t)(lib.at[uix.br.src] % n) + 1 : 0);
         str_cpy(v->bcount + str_len(v->bcount), " / ", 4);
-        fmt_int(v->bcount + str_len(v->bcount), n ? (int32_t)n - 1 : 0);
+        fmt_int(v->bcount + str_len(v->bcount), (int32_t)n);
         return;
     }
     if (uix.held < PL_N && uix.reveal) {               /* the held button's list, on the keys too */
         ui_place_t hp = place_of(uix.held);
         uint8_t s[27];
-        uint32_t n = place_entries(&hp, s, 27u), cur = 0;
-        for (i = 0; i < n; i++)
-            if (s[i] <= ui_stop(uix.held)) cur = i;
+        uint32_t cur, n = held_entries(uix.held, s, &cur), c = cur < n ? cur : 0u;
         v->mode = VM_REVEAL;
-        str_cpy(v->head, hp.name, sizeof v->head);
-        if (uix.held == PL_EDIT) str_cpy(v->sub, ENG_TAG[e], sizeof v->sub);
+        str_cpy(v->head, uix.held == PL_HOME ? "FAVOURITES" : hp.name, sizeof v->head);
+        if (uix.held == PL_EDIT || uix.held == PL_ENV || uix.held == PL_LFO) str_cpy(v->sub, ENG_TAG[e], sizeof v->sub);
         v->cur = (uint8_t)cur;
-        v->first = (uint8_t)(cur > 3u && n > VM_ROWS ? (cur - 3u < n - VM_ROWS ? cur - 3u : n - VM_ROWS) : 0u);
+        v->first = (uint8_t)(c > 3u && n > VM_ROWS ? (c - 3u < n - VM_ROWS ? c - 3u : n - VM_ROWS) : 0u);
         v->nrows = (uint8_t)(n - v->first < VM_ROWS ? n - v->first : VM_ROWS);
-        for (i = 0; i < v->nrows; i++)
-            str_cpy(v->row[i], entry_name(&hp, s[v->first + i]), sizeof v->row[i]);
+        for (i = 0; i < v->nrows; i++) {
+            if (uix.held == PL_HOME) {
+                lib_item_t it;
+                if (lib_item(LIB_FAV, v->first + i, &it)) lib_item_name(&it, v->row[i]);
+            } else {
+                str_cpy(v->row[i], entry_name(&hp, s[v->first + i]), sizeof v->row[i]);
+            }
+        }
         v->keys = n >= 32u ? 0xFFFFFFFFu : (1u << n) - 1u;
         return;
     }
@@ -402,84 +495,131 @@ static void vm_build(ui_vm_t *v)
         return;
     }
     str_cpy(v->head, pl.name, sizeof v->head);
-    if (uix.place == PL_SAVE) {
-        v->mode = VM_SAVE;
-        ui_sound_name(v->name);
-        return;
-    }
     v->mode = VM_PAGE;
     if (pl.n) {
         uint32_t s = ui_stop(uix.place);
-        str_cpy(v->sub, stop_title(&pl, s), sizeof v->sub);
+        if (uix.place != PL_SAVE) str_cpy(v->sub, stop_title(&pl, s), sizeof v->sub);
         stop_dots(&pl, s, &v->ndots, &v->dot);
         for (i = 0; i < 4u; i++)
             vm_col_of(&v->col[i], &pl.stop[s].f[i]);
-        pic_build(v, &pl.stop[s]);
+        if (uix.place == PL_SAVE) vm_save(v);
+        else if (pl.stop[s].pic == PIC_LIB) { v->pic = PIC_LIB; vm_list_of(v, ui_stop(PL_LIB)); }
+        else pic_build(v, &pl.stop[s]);
     }
 }
 
 /* ------------------------------------------------------------- LEDs --- */
-/* each LED's level now: 0 off, 1 dim, 2 mid, 3 full (ids: buttons 0..13, keys 14..40) */
+/* The lights' grammar (Melodee's), keys and buttons alike: dark nothing there, dim something there, bright happening
+ * now, breathing waiting. Every button glows when idle (LIGHTS not OFF); the place on the screen is bright, the ARP
+ * flashes on the beat, REC is bright while it latches, an octave shift lights its button, SAVE breathes while a dump
+ * waits. A key is bright while it sounds, dim when it plays something (QNT OFF: the notes of the scale; a layout: every
+ * key not silent), else dark; a held button's entries are dim on the keys, the current one bright. The picture is
+ * built off-line and copied one byte a column: clearing and relighting would let the 10 kHz scan catch the dark gap
+ * and flicker. ui_led_lv: each LED's level as drawn (0 dark, 1 dim, 2 breathing, 3 bright; ids: buttons 0..13,
+ * keys 14..40) */
 #define UI_LEDS 41u
 static uint8_t ui_led_lv[UI_LEDS];
-static void ui_led_levels(void)
+static uint8_t led_pos[UI_LEDS];                         /* (col << 3) | row bit, 0xFF = none */
+static void led_pos_init(void)
 {
-    const track_t *t = TSEL;
-    uint32_t k, fx = 0;
-    memset(ui_led_lv, 0, sizeof ui_led_lv);
-    for (k = 0; k < FX_SLOTS; k++)
-        fx |= t->p[P_FXTYPE + k * FX_PARAMS] != FX_OFF;
-    ui_led_lv[panel.btn[B_ARP]] = t->p[P_AMODE] ? (t->arp_note ? 3u : 1u) : 0u;   /* (the arp: its notes flash) */
-    ui_led_lv[panel.btn[B_SCL]] = t->p[P_QUANT] ? 1u : 0u;
-    ui_led_lv[panel.btn[B_SEQ]] = t->p[P_CHRD] ? 1u : 0u;
-    ui_led_lv[panel.btn[B_FX]] = fx ? 1u : 0u;
-    ui_led_lv[panel.btn[B_REC]] = t->p[P_AHOLD] ? 3u : 0u;
-    ui_led_lv[panel.btn[button_of_place(uix.place)]] = 3u;   /* the place on the screen: full */
-    if (uix.held < PL_N) {                                    /* the held button's entries on the keys */
-        ui_place_t pl = place_of(uix.held);
-        uint8_t s[27];
-        uint32_t n = place_entries(&pl, s, 27u), cur = 0;
-        for (k = 0; k < n; k++)
-            if (s[k] <= ui_stop(uix.held)) cur = k;
-        for (k = 0; k < n; k++)
-            ui_led_lv[14u + k] = k == cur ? 3u : 1u;
-    } else {
-        uint32_t snap = t->p[P_QUANT] == Q_SNAP && t->p[P_SCALE] < (int32_t)SCALE_LEGACY && settings_lights != LIGHTS_OFF;
-        for (k = 0; k < 27u; k++) {                           /* the keys down; SNAP: the scale dim, its root mid */
-            uint32_t pc = (uint32_t)(53 + (int32_t)k - t->p[P_ROOT] + 120) % 12u;   /* (key 0: F, MIDI 53) */
-            if ((fm1_in.notes >> k) & 1u) ui_led_lv[14u + k] = 3u;
-            else if (snap && !pc) ui_led_lv[14u + k] = 2u;
-            else if (snap && (SCALE_MASK[t->p[P_SCALE]] >> pc) & 1u) ui_led_lv[14u + k] = 1u;
-        }
+    uint32_t id, p, r;
+    for (id = 0; id < UI_LEDS; id++) {
+        led_pos[id] = 0xFF;
+        for (p = 0; p < FM1_NCOL; p++)
+            for (r = 1; r < 5u; r++)
+                if (FM1_KEYMAP[r][p] == (int8_t)id)
+                    led_pos[id] = (uint8_t)((p << 3) | r);
     }
 }
+static void led_put(uint8_t *nl, uint32_t id, int on)
+{
+    uint8_t q = led_pos[id];
+    if (q != 0xFF && on)
+        nl[q >> 3] |= (uint8_t)(1u << (q & 7u));
+}
+static int led_get(const uint8_t *nl, uint32_t id)
+{
+    uint8_t q = led_pos[id];
+    return q != 0xFF && ((nl[q >> 3] >> (q & 7u)) & 1u);
+}
+/* an ARP playing on any part flashes the ARP button on the beat, the bar's first beat longer: 1 lit, 0 dark,
+ * 2 no ARP playing */
+static uint32_t arp_led(void)
+{
+    uint32_t k, on = 0, b = seq_beat_samples();
+    for (k = 0; k < NPART; k++)
+        on |= trk[k].p[P_AMODE] && trk[k].nheld;
+    return !on ? 2u : beat_pos < (beat_n ? b / 6u : b / 2u);
+}
+/* key k of track t as the keys play now (LIGHTS): bright while it sounds (pressed, or its note held on the track by
+ * a key or MIDI), dim when it plays something (a kit's own map: every key; QNT OFF: the notes in the scale; the
+ * layouts: the keys not silent), else dark */
+enum { KL_OFF, KL_DIM, KL_ON };
+static uint32_t play_key_led(const track_t *t, uint32_t k)
+{
+    const engine_t *e = ENGINES[eng_idx(t->eng_req)];
+    uint32_t n = kb_map(t, k), ti = trk_index(t);
+    if (((fm1_in.notes >> k) & 1u) || (n < 128u && ((live_held[ti][n >> 5] >> (n & 31u)) & 1u)))
+        return KL_ON;
+    if (n >= 128u)
+        return KL_OFF;
+    if (e->keys && e->keys(t, k) >= 0)
+        return KL_DIM;
+    if (t->p[P_QUANT] == Q_OFF)
+        return (scale_mask(t) >> ((n + 120u - (uint32_t)t->p[P_ROOT]) % 12u)) & 1u ? KL_DIM : KL_OFF;
+    return KL_DIM;
+}
+static const uint8_t LIGHTS_MASK[LIGHTS_N] = {0, 7, 3, 1, 0};   /* the dim keys' duty: -, 1/8, 1/4, 1/2, all */
+#define BTN_DIM_MASK 3u                                         /* idle buttons: 1/4 duty each scan */
+/* breathing: the third dim plane, its level swept full .. 1/8 .. dark .. 1/8 .. full over a second (125 ms a step) */
+static const uint8_t BREATH[8] = {0, 1, 3, 7, 0xFF, 7, 3, 1};
+static uint32_t breath_on(void) { return BREATH[(fm1_ms / 125u) & 7u] != 0xFFu; }
+
 static void ui_leds(void)
 {
-    static uint8_t col[UI_LEDS], row[UI_LEDS], mapped;
-    uint32_t c, r, id;
-    if (!mapped) {                                            /* (hal/fm1_input.h: LED rows 1..4 of the matrix) */
-        for (id = 0; id < UI_LEDS; id++) row[id] = 0;
-        for (c = 0; c < FM1_NCOL; c++)
-            for (r = 1; r < 5u; r++)
-                if (FM1_KEYMAP[r][c] >= 0 && (uint32_t)FM1_KEYMAP[r][c] < UI_LEDS && !row[FM1_KEYMAP[r][c]]) {
-                    col[FM1_KEYMAP[r][c]] = (uint8_t)c;
-                    row[FM1_KEYMAP[r][c]] = (uint8_t)r;
-                }
-        mapped = 1;
+    uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0}, nb[FM1_NCOL] = {0}, nw[FM1_NCOL] = {0};
+    uint32_t k, c, keys = 0, dimkeys = 0, play = 1, lights = settings_lights % LIGHTS_N, id;
+    uint32_t place = button_of_place(uix.place);
+    static uint8_t ready;
+    if (!ready) {
+        led_pos_init();
+        ready = 1;
     }
-    ui_led_levels();
-    for (c = 0; c < FM1_NCOL; c++)
-        fm1_led[c] = fm1_led_dim[0][c] = fm1_led_dim[1][c] = fm1_led_dim[2][c] = 0;
-    fm1_led_dim_mask[0] = settings_lights == LIGHTS_OFF ? 0xFFu : 7u;   /* keys dim: 1/8 */
-    fm1_led_dim_mask[1] = 3u;                                           /* buttons dim: 1/4 */
-    fm1_led_dim_mask[2] = 1u;                                           /* mid: 1/2 */
-    for (id = 0; id < UI_LEDS; id++) {
-        uint8_t bit = (uint8_t)(1u << row[id]);
-        if (!row[id] || !ui_led_lv[id]) continue;
-        if (ui_led_lv[id] == 3u) fm1_led[col[id]] |= bit;
-        else if (ui_led_lv[id] == 2u) fm1_led_dim[2][col[id]] |= bit;
-        else fm1_led_dim[id < 14u ? 1u : 0u][col[id]] |= bit;
+    led_put(nl, panel.btn[place], 1);
+    if ((k = arp_led()) != 2u)
+        led_put(nl, panel.btn[B_ARP], place == B_ARP ? !k : (int)k);   /* (on ARP's page: dark flashes) */
+    led_put(nl, panel.btn[B_REC], TSEL->p[P_AHOLD] != 0);   /* REC: the latch */
+    led_put(nl, panel.btn[B_OCTDN], song.octave < 0);
+    led_put(nl, panel.btn[B_OCTUP], song.octave > 0);
+    led_put(nw, panel.btn[B_SAVE], sx_staged());             /* a dump waits in SAVE */
+    if (uix.held < PL_N && uix.reveal) {                     /* the held button's entries, the current one bright */
+        uint8_t s[27];
+        uint32_t cur, n = held_entries(uix.held, s, &cur);
+        dimkeys = n >= 27u ? 0x7FFFFFFu : (1u << n) - 1u;
+        keys = cur < 27u ? 1u << cur : 0u;
+        play = 0;
+    } else {
+        keys = fm1_in.notes & ~kb_layer;                    /* the keys held */
     }
+    for (k = 0; k < 27u; k++) {
+        uint32_t lv = play ? play_key_led(TSEL, k) : KL_OFF;   /* playing: the layout, MIDI's notes too (LIGHTS) */
+        led_put(nl, 14u + k, (int)(((keys >> k) & 1u) || lv == KL_ON));
+        led_put(nd, 14u + k, (((dimkeys >> k) & 1u) || lv == KL_DIM) && (lights != LIGHTS_OFF || !play));
+    }
+    for (k = 0; lights != LIGHTS_OFF && k < NB; k++)       /* the buttons glow when idle (one breathing: not under it) */
+        led_put(nb, panel.btn[k], !led_get(nw, panel.btn[k]));
+    fm1_led_dim_mask[0] = lights != LIGHTS_OFF ? LIGHTS_MASK[lights] : 3u;   /* (OFF: a held list's keys at 1/4) */
+    fm1_led_dim_mask[1] = BTN_DIM_MASK;
+    fm1_led_dim_mask[2] = BREATH[(fm1_ms / 125u) & 7u];
+    for (c = 0; c < FM1_NCOL; c++) {
+        fm1_led_dim[0][c] = (uint8_t)(nd[c] | nl[c]);   /* first: a key going dim <-> bright never goes dark */
+        fm1_led_dim[1][c] = nb[c];
+        fm1_led_dim[2][c] = breath_on() ? nw[c] : 0u;
+        fm1_led[c] = nl[c];
+    }
+    for (id = 0; id < UI_LEDS; id++)                         /* (the levels drawn, for the tests) */
+        ui_led_lv[id] = (uint8_t)(led_get(nl, id) ? 3u : led_get(nw, id) ? 2u :
+                                  led_get(nd, id) || led_get(nb, id) ? 1u : 0u);
 }
 
 /* ------------------------------------------------------------- draw --- */

@@ -143,7 +143,6 @@ static void fm1_fault(const fm1_crash_t *c)
 static void melodee_init(void)
 {
     uint32_t i;
-    midi_insert_init();
 
     for (i = 0; i < G_COUNT; i++)
         song.g[i] = GP[i].def;

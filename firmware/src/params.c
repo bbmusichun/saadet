@@ -10,8 +10,6 @@ static const char *const N_DIV[] = {"1/4", "1/8", "1/16", "1/32", "8T", "16T", "
 static const char *const N_RECQ[] = {"OFF", "1/4", "1/8", "1/16", "1/32", "8T", "16T", "1/2", "1/1", "2BAR", "4BAR"};
 static const char *const N_LTRIG[] = {"NOTE", "FREE"};
 static const char *const N_LPOL[] = {"BI", "UNI"};
-static const char *const N_FX[] = {"OFF", "PHASER", "WIDTH", "FORMANT", "TAPE", "SPIT", "", "ROOM", "ECHOVERB", "CHORUS", "MIDIVerb", "MIDIDelay"};
-static const char *const N_AUDIO_FX[] = {"OFF", "PHASER", "WIDTH", "FORMANT", "TAPE", "SPIT", "", "ROOM", "ECHOVERB", "CHORUS"};
 static const char *const N_ONOFF[] = {"OFF", "ON"};
 static const char *const N_VPOINTS[] = {"AUTO", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
                                         "14", "15"};
@@ -135,14 +133,11 @@ static void fm6_freq_text(char *val, const char **unit, int coarse)
 }
 
 static const param_desc_t TP[P_COUNT] = {
-    [P_FXTYPE] = PE("FX", N_FX, 0),
-    [P_FXMIX] = PD("MIX", F_PCT, 0, 127, 0),
-    [P_FXRATE] = PD("RATE", F_LFOHZ, 0, 127, 60),
-    [P_FXCHAR] = PD("CHAR", F_PCT, 0, 127, 64),
-    [P_FX2TYPE] = PE("FX", N_FX, 0), [P_FX2MIX] = PD("MIX", F_PCT, 0, 127, 0),
-    [P_FX2RATE] = PD("RATE", F_LFOHZ, 0, 127, 60), [P_FX2CHAR] = PD("CHAR", F_PCT, 0, 127, 64),
-    [P_FX3TYPE] = PE("FX", N_FX, 0), [P_FX3MIX] = PD("MIX", F_PCT, 0, 127, 0),
-    [P_FX3RATE] = PD("RATE", F_LFOHZ, 0, 127, 60), [P_FX3CHAR] = PD("CHAR", F_PCT, 0, 127, 64),
+    /* the retired inserts (param_reserved) */
+    [P_FXTYPE] = PD("", F_INT, 0, 0, 0), [P_FXMIX] = PD("", F_INT, 0, 0, 0), [P_FXRATE] = PD("", F_INT, 0, 0, 0),
+    [P_FXCHAR] = PD("", F_INT, 0, 0, 0), [P_FX2TYPE] = PD("", F_INT, 0, 0, 0), [P_FX2MIX] = PD("", F_INT, 0, 0, 0),
+    [P_FX2RATE] = PD("", F_INT, 0, 0, 0), [P_FX2CHAR] = PD("", F_INT, 0, 0, 0), [P_FX3TYPE] = PD("", F_INT, 0, 0, 0),
+    [P_FX3MIX] = PD("", F_INT, 0, 0, 0), [P_FX3RATE] = PD("", F_INT, 0, 0, 0), [P_FX3CHAR] = PD("", F_INT, 0, 0, 0),
     [P_LN0] = PD("", F_INT, 0, 0, 0),
     [P_LN1] = PD("", F_INT, 0, 0, 0),
     [P_LN2] = PD("", F_INT, 0, 0, 0),
@@ -217,12 +212,8 @@ static const param_desc_t TP[P_COUNT] = {
                 [P_FM##k##_LEVEL] = PD("LVL", F_PCT, 0, 127, 127)
     FMOP(1), FMOP(2), FMOP(3), FMOP(4),
 #undef FMOP
-    [P_FXSEND] = PD("SEND", F_PCT, 0, 127, 0),
-    [P_FXSEND2] = PD("SEND 2", F_PCT, 0, 127, 0),
-    [P_FXSEND3] = PD("SEND 3", F_PCT, 0, 127, 0),
-    [P_FXTONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
-    [P_FX2TONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
-    [P_FX3TONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
+    [P_FXSEND] = PD("", F_INT, 0, 0, 0), [P_FXSEND2] = PD("", F_INT, 0, 0, 0), [P_FXSEND3] = PD("", F_INT, 0, 0, 0),
+    [P_FXTONE] = PD("", F_INT, 0, 0, 0), [P_FX2TONE] = PD("", F_INT, 0, 0, 0), [P_FX3TONE] = PD("", F_INT, 0, 0, 0),
     [P_CHRD] = PE("CHRD", N_CHRD, 0),
     [P_VOIC] = PE("VOIC", N_VOIC, 0),
     [P_STRUM] = PE("STRUM", N_STRUM, 0),
@@ -258,60 +249,23 @@ static const param_desc_t GP[G_COUNT] = {
     [G_RESERVED24] = PD("", F_INT, 0, 127, 0),
     [G_RESERVED25] = PD("", F_INT, 0, 127, 0),
     [G_RESERVED26] = PD("", F_INT, 0, 127, 0),
-    [G_MFXTYPE] = PE("TYPE", N_AUDIO_FX, 0),
-    [G_MFXMIX] = PD("MIX", F_PCT, 0, 127, 127),
-    [G_MFXRATE] = PD("RATE", F_LFOHZ, 0, 127, 60),
-    [G_MFXCHAR] = PD("CHAR", F_PCT, 0, 127, 64),
-    [G_MFX2TYPE] = PE("TYPE", N_AUDIO_FX, 0),
-    [G_MFX2MIX] = PD("MIX", F_PCT, 0, 127, 127),
-    [G_MFX2RATE] = PD("RATE", F_LFOHZ, 0, 127, 60),
-    [G_MFX2CHAR] = PD("CHAR", F_PCT, 0, 127, 64),
-    [G_MFX3TYPE] = PE("TYPE", N_AUDIO_FX, 0),
-    [G_MFX3MIX] = PD("MIX", F_PCT, 0, 127, 127),
-    [G_MFX3RATE] = PD("RATE", F_LFOHZ, 0, 127, 60),
-    [G_MFX3CHAR] = PD("CHAR", F_PCT, 0, 127, 64),
-    [G_FXRETURN] = PD("RETURN", F_PCT, 0, 127, 100),
-    [G_FXMODE] = {"MODE", F_ENUM, 0, 1, 0, (const char *const []){"CHAIN", "SPLIT"}, 0},
+    /* the retired shared inserts (global_reserved) */
+    [G_MFXTYPE] = PD("", F_INT, 0, 0, 0), [G_MFXMIX] = PD("", F_INT, 0, 0, 0), [G_MFXRATE] = PD("", F_INT, 0, 0, 0),
+    [G_MFXCHAR] = PD("", F_INT, 0, 0, 0), [G_MFX2TYPE] = PD("", F_INT, 0, 0, 0), [G_MFX2MIX] = PD("", F_INT, 0, 0, 0),
+    [G_MFX2RATE] = PD("", F_INT, 0, 0, 0), [G_MFX2CHAR] = PD("", F_INT, 0, 0, 0),
+    [G_MFX3TYPE] = PD("", F_INT, 0, 0, 0), [G_MFX3MIX] = PD("", F_INT, 0, 0, 0),
+    [G_MFX3RATE] = PD("", F_INT, 0, 0, 0), [G_MFX3CHAR] = PD("", F_INT, 0, 0, 0),
+    [G_FXRETURN] = PD("", F_INT, 0, 0, 0), [G_FXMODE] = PD("", F_INT, 0, 0, 0),
     [G_BUDGET] = {"BUDGET", F_INT, 8, 32, VOICE_BUDGET_DEFAULT, 0, "pts"},
-    [G_MFXTONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
-    [G_MFX2TONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
-    [G_MFX3TONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
+    [G_MFXTONE] = PD("", F_INT, 0, 0, 0), [G_MFX2TONE] = PD("", F_INT, 0, 0, 0),
+    [G_MFX3TONE] = PD("", F_INT, 0, 0, 0),
 
 };
 
-static const param_desc_t *global_desc(uint32_t id)
-{
-    if(param_master_fx(id) && (id-G_MFXTYPE)%FX_PARAMS>=2u){
-        static param_desc_t d;static const char *const character[]={"CHAR","DEPTH","DEPTH","FOCUS","JITTER","BITE","REPEAT","DECAY","DIFFUSE","DEPTH"};
-        uint32_t base=G_MFXTYPE+(id-G_MFXTYPE)/FX_PARAMS*FX_PARAMS,type=(uint32_t)clamp(song.g[base],0,NELEM(N_AUDIO_FX)-1);d=GP[id];
-        if(id-base==3u)d.label=character[type];else if(type>=6u && type<=8u){d.label=type==7u?"SIZE":"TIME";d.fmt=F_PCT;}
-        return &d;
-    }
-    return &GP[id];
-}
+static const param_desc_t *global_desc(uint32_t id) { return &GP[id]; }
 static uint32_t scale_count(const track_t *t);          /* seq.c */
 static const param_desc_t *track_desc(const track_t *t, uint32_t id)
 {
-    if (id >= P_FXTYPE && id <= P_FX3CHAR) {
-        uint32_t base = P_FXTYPE + (id - P_FXTYPE) / FX_PARAMS * FX_PARAMS, col = id - base;
-        if (fx_is_midi(t->p[base]) && col) {
-            static param_desc_t d;
-            d = TP[id];
-            if (t->p[base] == FX_MIDIVERB) { d.label = "REL"; d.fmt = F_TIME; }
-            else if (col == 2u) { d.label = "TIME"; d.fmt = F_ENUM; d.names = N_DIV; d.max = NELEM(N_DIV) - 1u; }
-            else if (col == 3u) { d.label = "DECAY"; d.fmt = F_PCT; }
-            return &d;
-        }
-    }
-    if (param_fx(id) && !param_fx_tone(id) && ((id-P_FXTYPE)%FX_PARAMS)>=2u) {
-        static param_desc_t fx_desc;
-        static const char *const character[] = {"CHAR", "DEPTH", "DEPTH", "FOCUS", "JITTER", "BITE", "REPEAT", "DECAY", "DIFFUSE", "DEPTH"};
-        uint32_t base=P_FXTYPE+(id-P_FXTYPE)/FX_PARAMS*FX_PARAMS;
-        fx_desc=TP[id];uint32_t type=(uint32_t)clamp(t->p[base],0,NELEM(N_FX)-1);
-        if(id-base==3u)fx_desc.label=character[type];
-        else if(type>=6u && type<=8u){fx_desc.label=type==7u?"SIZE":"TIME";fx_desc.fmt=F_PCT;}
-        return &fx_desc;
-    }
     if (t->eng_req == 2u && id >= P_FM1_ATK && id <= P_FM4_LEVEL)
         return &CZ_ED[id - P_FM1_ATK];
     if (id == P_MPCDEG) {                             /* a degree of the track's scale */
@@ -401,9 +355,6 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
         *unit = "Hz";
         break;
     }
-    case F_TONE:                                      /* (the cut's frequency: the FX picture's strip) */
-        str_cpy(val, v < 0 ? "DARK" : v > 0 ? "THIN" : "FULL", 6);
-        break;
     case F_CUTOFF: {
         uint32_t h = CUTOFF_HZ[v & 127];
         if (h < 1000u) {

@@ -104,7 +104,6 @@ static void host_tracks_init(void)                /* as melodee_init: defaults, 
  * the engine as the UI asks for it (eng_req: the audio side switches; host_preset: at once) */
 static void host_preset_values(track_t *t, uint32_t e, uint32_t pi, const preset_t *p)
 {
-    static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
     uint32_t i;
     t->eng_req = (uint8_t)e;
     t->preset = (uint8_t)pi;

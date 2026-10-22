@@ -2,25 +2,23 @@
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio)
  * Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 #include "performance_options.h"
-/* Engine output -> optional stereo insert -> track level -> master.
- * The bypass retains the original level/pan/spread path exactly. */
-#include "fx.c"
+/* Engine output -> track level, pan and spread -> master. */
 static int32_t part_storage[CTL],mix_l[CTL],mix_r[CTL];
 static int32_t *part_buf=part_storage;
 static volatile uint32_t kb_mask, kb_layer;
 static volatile uint8_t kb_lock;
-#define LIM_T 18000
+#define LIM_T AUDIO_Q15(18000)
 static int32_t lim_env = LIM_T;
-static int32_t dc_l, dc_r, dce_l, dce_r;
+static audio_dc_t dc_l, dc_r, dce_l, dce_r;
 
 /* DC blocker (~2 Hz), always on: a leaky integrator of the input (Q6 state) subtracted from it.
  * The >> 12 step keeps its remainder (error feedback, 0..4095) and adds it to the next one, so no
  * part of the step is lost: the state follows the input exactly, down to 0 after the sound stops.
  * (A rounded step of (x - dc) / 4096 would stop moving at |x - dc| < 2048 and leave an offset of up
  * to +-31 at the output after silence.) */
-static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
+static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, audio_dc_t *dc, audio_dc_t *err)
 {
-    int32_t e = x * 64 - *dc + *err, d = e >> 12;
+    audio_dc_t e = (audio_dc_t)x * 64 - *dc + *err, d = e >> 12;
     *err = e - d * 4096;
     *dc += d;
     return x - ((*dc + 32) >> 6);
@@ -37,12 +35,17 @@ static __attribute__((noinline,section(".dsp_text"))) void master_out(int32_t *l
     a = al > ar ? al : ar;
     if (a > lim_env)
         lim_env += (a - lim_env) >> 2;
-    else if (lim_env > LIM_T)
-        lim_env -= ((lim_env - LIM_T) >> 12) + 1;
+    else if (lim_env > LIM_T) {
+        /* Release in whole Q15 steps: the envelope keeps the nightly limiter's timing exactly
+         * (its 1/4096 decay and one-unit linear tail) while the gain applies at native precision. */
+        lim_env -= (((lim_env - LIM_T) >> (12 + AUDIO_FRAC_BITS)) + 1) * AUDIO_ONE;
+        if (lim_env < LIM_T)
+            lim_env = LIM_T;
+    }
     if (lim_env > LIM_T) {
-        int32_t g = (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)lim_env);   /* < 32768 */
-        *l = ((*l >> 4) * g) >> 11; /* pre-shift bounds hot mixer products */
-        *r = ((*r >> 4) * g) >> 11;
+        int32_t g = (int32_t)(((uint64_t)LIM_T << 15) / (uint32_t)lim_env);   /* < 32768 */
+        *l = audio_mul(*l,g,15); /* wide products retain the quiet fractional bits */
+        *r = audio_mul(*r,g,15);
     }
     *l = softclip(*l);
     *r = softclip(*r);
@@ -100,15 +103,15 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
     int32_t pa=clamp(pan-s,-64,63),pb=clamp(pan+s,-64,63);
     int32_t gla=4096-(pa>0?pa*64:0),gra=4096+(pa<0?pa*64:0);
     int32_t glb=4096-(pb>0?pb*64:0),grb=4096+(pb<0?pb*64:0);
-    int32_t glm=(gla+glb)>>1,grm=(gra+grb)>>1,gld=(gla-glb)>>1,grd=(gra-grb)>>1,pk=t->peak;
+    int32_t glm=(gla+glb)>>1,grm=(gra+grb)>>1,gld=(gla-glb)>>1,grd=(gra-grb)>>1,pk=AUDIO_Q15(t->peak);
     for(uint32_t i=0;i<n;i++){
-        int32_t x=clamp(((clamp(b[i],-884000,884000)>>2)*lvl)>>10,-524287,524287);
-        int32_t y=clamp(((clamp((d[i]*2)-b[i],-884000,884000)>>2)*lvl)>>10,-524287,524287);
+        int32_t x=audio_clamp(audio_mul(audio_clamp(b[i],-884000,884000),lvl,12),-524287,524287);
+        int32_t y=audio_clamp(audio_mul(audio_clamp((d[i]*2)-b[i],-884000,884000),lvl,12),-524287,524287);
         int32_t a=x<0?-x:x;
         if(a>pk)pk=a;
-        mix_add(((x*glm)>>12)+((y*gld)>>12),((x*grm)>>12)+((y*grd)>>12),i);
+        mix_add(audio_mul(x,glm,12)+audio_mul(y,gld,12),audio_mul(x,grm,12)+audio_mul(y,grd,12),i);
     }
-    t->peak=pk;
+    t->peak=pk>>AUDIO_FRAC_BITS;
 }
 #if MELODEE_MIX_FAST
 #define MIX_MONO_GENERAL mix_mono_general
@@ -117,13 +120,13 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
 #endif
 static __attribute__((noinline,section(".dsp_text"))) void MIX_MONO_GENERAL(track_t *t,int32_t *b,uint32_t n,const mix_cache_t *mc)
 {
-    int32_t lvl=mc->lvl,gl=mc->gl,gr=mc->gr,pk=t->peak;
+    int32_t lvl=mc->lvl,gl=mc->gl,gr=mc->gr,pk=AUDIO_Q15(t->peak);
     for(uint32_t i=0;i<n;i++){
-        int32_t x=clamp(((clamp(b[i],-884000,884000)>>2)*lvl)>>10,-524287,524287),a=x<0?-x:x;
+        int32_t x=audio_clamp(audio_mul(audio_clamp(b[i],-884000,884000),lvl,12),-524287,524287),a=x<0?-x:x;
         if(a>pk)pk=a;
-        mix_add((x*gl)>>12,(x*gr)>>12,i);
+        mix_add(audio_mul(x,gl,12),audio_mul(x,gr,12),i);
     }
-    t->peak=pk;
+    t->peak=pk>>AUDIO_FRAC_BITS;
 }
 #undef MIX_MONO_GENERAL
 #if MELODEE_MIX_FAST
@@ -131,13 +134,13 @@ static __attribute__((noinline,section(".dsp_text"))) void mix_mono_samples(trac
 {
     if(mc->pan){mix_mono_general(t,b,n,mc);return;}
     /* Centre pan needs no extra channel multiplications. */
-    int32_t lvl=mc->lvl,pk=t->peak;
+    int32_t lvl=mc->lvl,pk=AUDIO_Q15(t->peak);
     for(uint32_t i=0;i<n;i++){
-        int32_t x=clamp(((clamp(b[i],-884000,884000)>>2)*lvl)>>10,-524287,524287),a=x<0?-x:x;
+        int32_t x=audio_clamp(audio_mul(audio_clamp(b[i],-884000,884000),lvl,12),-524287,524287),a=x<0?-x:x;
         if(a>pk)pk=a;
         mix_add(x,x,i);
     }
-    t->peak=pk;
+    t->peak=pk>>AUDIO_FRAC_BITS;
 }
 #endif
 
@@ -153,18 +156,6 @@ static void mix_solo(track_t *t,int32_t *b,uint32_t n)
         if(spread_on)spread_buf[i]=mulq16(spread_buf[i],(uint32_t)from<<1);
     }
     solo_gain[ti]=from;
-}
-static __attribute__((noinline,section(".dsp_text"))) void mix_fx_samples(track_t *t,uint32_t n)
-{
-    uint32_t ti=(uint32_t)(t-trk);int32_t lvl=LEVEL_Q12[t->p[P_LEVEL]&127],pk=t->peak;
-    int32_t gain=solo_gain[ti],to=!t->p[P_MUTE] && (1)?32768:0;
-    for(uint32_t i=0;i<n;i++){
-        gain+=clamp(to-gain,-256,256);
-        int32_t l=fx_scale(fx_left[i],(uint32_t)gain*2u),r=fx_scale(fx_right[i],(uint32_t)gain*2u);
-        l=clamp(fx_div_pow2((l>>2)*lvl,10),-524287,524287);r=clamp(fx_div_pow2((r>>2)*lvl,10),-524287,524287);
-        mix_add(l,r,i);int32_t a=l<0?-l:l,c=r<0?-r:r;if(c>a)a=c;if(a>pk)pk=a;
-    }
-    solo_gain[ti]=gain;t->peak=pk;
 }
 #if MELODEE_BATCH_AUDIO && !MELODEE_LEGACY_EXTRAS
 static int32_t batch_pcm[NPART][CTL],batch_spread[NPART][CTL];
@@ -222,26 +213,15 @@ static __attribute__((noinline)) void mix_part(track_t *t,uint32_t n)
         spread_on=t->p[P_SPRD]>0 && (trk_vmode(t)==V_POLY || trk_vmode(t)==V_UNISON);
         rendered=(int)track_render_audio(t,part_buf,n,0);
     }
-#if defined(MELODEE_FX_PROFILE) && MELODEE_FX_PROFILE && defined(FM1_IRQ_TARGET)
-    if(fx_profile_track((uint32_t)(t-trk))){for(uint32_t i=0;i<n;i++)part_buf[i]=((i&8u)?-8000:8000)+(int32_t)i*97;rendered=1;spread_on=0;}
-#endif
     AP_START(mix_start);
-    if(rendered || fx_active(t)){
-        if(!rendered){memset(part_buf,0,n*sizeof *part_buf);if(spread_on)memset(spread_buf,0,n*sizeof *spread_buf);}
-        AP_START(fx_start);int wet;
-        wet=fx_process(t,part_buf,n);
-        AP_END(AP_FX,fx_start);
-        if(wet){
-            void (*volatile run)(track_t *,uint32_t)=mix_fx_samples;run(t,n);
-        }else{
-            mix_solo(t,part_buf,n);
-            if(spread_on)mix_spread(t,part_buf,n);
-            else{
+    if(rendered){
+        mix_solo(t,part_buf,n);
+        if(spread_on)mix_spread(t,part_buf,n);
+        else{
             mix_cache_t *mc=&mix_cache[(uint32_t)(t-trk)];
             if(!mc->valid || mc->level!=t->p[P_LEVEL] || mc->pan!=t->p[P_PAN])mix_cache_update(t,mc);
             void (*volatile mix)(track_t *,int32_t *,uint32_t,const mix_cache_t *)=mix_mono_samples;
             mix(t,part_buf,n,mc);
-            }
         }
     }
     AP_END(AP_MIX,mix_start);
@@ -253,9 +233,6 @@ static __attribute__((noinline,section(".dsp_text"))) void master_samples(int32_
 }
 static __attribute__((noinline)) void mix_block(int32_t *out,uint32_t n)
 {
-#if defined(MELODEE_FX_PROFILE) && MELODEE_FX_PROFILE && defined(FM1_IRQ_TARGET)
-    fx_profile_poll();
-#endif
     memset(mix_l,0,n*sizeof *mix_l);memset(mix_r,0,n*sizeof *mix_r);
     AP_START(events_start);events_block(n);AP_END(AP_EVENTS,events_start);
     uint32_t nt=trk_n();                                /* (the tracks not in use: none of their CPU) */
@@ -266,8 +243,8 @@ static __attribute__((noinline)) void mix_block(int32_t *out,uint32_t n)
 #if MELODEE_BATCH_AUDIO && !MELODEE_LEGACY_EXTRAS
     batch_ready=0;part_buf=part_storage;spread_buf=spread_storage;
 #endif
-    /* The sole synth and its inserts feed the master directly. */
-    for(uint32_t i=0;i<n;i++){mix_l[i]=((mix_l[i]>>2)*(int32_t)song.master_q12)>>10;mix_r[i]=((mix_r[i]>>2)*(int32_t)song.master_q12)>>10;}
+    /* The sole synth feeds the master directly. */
+    for(uint32_t i=0;i<n;i++){mix_l[i]=audio_mul(mix_l[i],(int32_t)song.master_q12,12);mix_r[i]=audio_mul(mix_r[i],(int32_t)song.master_q12,12);}
     void (*volatile run)(int32_t *,uint32_t)=master_samples;
     AP_START(output_start);run(out,n);AP_END(AP_OUTPUT,output_start);
 }

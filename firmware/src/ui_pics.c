@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* The pictures between a page's header and its four values: what the values do, drawn from the sound itself (the
- * envelope's shape, the LFO's wave, the routes, the arp's steps, the scale, the chord, the voices, the FX chain) or,
- * on the GLOBAL pages, the first value large. pic_build puts a picture's data into the view (pv, ps), so the picture is
+ * envelope's shape, the LFO's wave, the routes, the arp's steps, the scale, the chord, the voices, a filter's curve,
+ * FM6's algorithm, an operator's or a CZ-1 line's envelope) or the four values as faders; on the GLOBAL pages the first
+ * value large. pic_build puts a picture's data into the view (pv, ps), so the picture is
  * drawn again whenever what it shows changes (an arp step, a voice starting); pic_draw draws it from the view alone.
  * The area: y 30 .. 172, between the header and the column labels. */
 
@@ -118,16 +119,39 @@ static void pic_build(ui_vm_t *v, const ui_stop_t *st)
             if (t->v[k].active) v->pv[2] = (int16_t)(v->pv[2] | (int16_t)(1u << k));
         break;
     }
-    case PIC_FX:
-        for (k = 0; k < FX_SLOTS; k++) {
-            int32_t type = t->p[P_FXTYPE + k * FX_PARAMS];
-            str_cpy(v->ps[k], N_FX[clamp(type, 0, (int32_t)NELEM(N_FX) - 1)], 24);
-            v->pv[k] = type ? t->p[P_FXMIX + k * FX_PARAMS] : 0;
-            v->pv[4 + k] = (int16_t)type;
-        }
-        v->pv[3] = (int16_t)(st->f[0].id >= P_FXTONE && st->f[0].id <= P_FX3TONE ? st->f[0].id - P_FXTONE :
-                             (st->f[0].id - P_FXTYPE) / FX_PARAMS);
+    case PIC_P5ENV: {                                     /* the Prophet's filter (arg 0) or amp envelope, 0..127 */
+        const uint8_t *p = p5_patch_of(t)->raw;
+        uint32_t a = st->arg ? P5_ATTACK_AMP : P5_ATTACK_FILTER;
+        v->pv[0] = p[a]; v->pv[1] = p[a + 2u]; v->pv[2] = p[a + 4u];
+        v->pv[3] = p[P5_RELEASE_ON] ? p[a + 6u] : 16;   /* (RELEASE off: the short release, as eng_prophet) */
         break;
+    }
+    case PIC_FILTER:                                      /* the cut 0..127 and the resonance 0..127 (SID: arg 1) */
+        if (st->arg) {
+            v->pv[0] = t->p[P_E4]; v->pv[1] = (int16_t)(t->p[P_E5] * 127 / 15);
+        } else {
+            v->pv[0] = p5_patch_of(t)->raw[P5_CUTOFF]; v->pv[1] = p5_patch_of(t)->raw[P5_RESONANCE];
+        }
+        break;
+    case PIC_ALGO: {                                      /* the algorithm, the operator of the page (6: none) */
+        const uint8_t *p = fm6_patch[song.sel % NTRK];
+        v->pv[0] = (int16_t)(p[FP_ALG] & 31u); v->pv[1] = st->arg; v->pv[2] = fm6_on[song.sel % NTRK];
+        v->pv[3] = (int16_t)(p[FP_FB] & 7u);
+        break;
+    }
+    case PIC_FMEG: {                                      /* R1..R4, L1..L4 of an operator, or the pitch EG (arg 6) */
+        const uint8_t *p = st->arg < 6u ? &fm6_patch[song.sel % NTRK][(5u - st->arg) * FP_OP + FP_R1]
+                                        : &fm6_patch[song.sel % NTRK][FP_PR1];
+        for (k = 0; k < 8u; k++) v->pv[k] = p[k];
+        v->pv[8] = st->arg == 6u;
+        break;
+    }
+    case PIC_CZEG: {                                      /* R1..R8, L1..L8, SUS, END of line arg / 3, envelope arg % 3 */
+        uint8_t p[LCZ_PACKED];
+        cz_ed_decode(p, cz_patch[song.sel % NTRK].raw);
+        for (k = 0; k < 18u; k++) v->pv[k] = p[LCZ_EBASE(st->arg / 3u, st->arg % 3u) + k];
+        break;
+    }
     }
 }
 
@@ -257,23 +281,164 @@ static void pic_voices(const ui_vm_t *v)
     str_cpy(b + str_len(b), cap == 1 ? " VOICE" : " VOICES", 12);
     cv_text_c(120, 124, TY_TX, b, T_MID, T_BG);
 }
-static void pic_fx(const ui_vm_t *v)
+static void pic_faders(const ui_vm_t *v)                 /* each column's value, tall over its column */
 {
-    char n[2] = {0, 0};
-    for (int32_t k = 0; k < 3; k++) {
-        int32_t y = 36 + 42 * k, cur = v->pv[3] == k, off = !v->pv[4 + k];
-        uint16_t ink = off ? T_DIM : cur ? T_TEXT : T_MID;
-        char mix[8];
-        n[0] = (char)('1' + k);
-        cv_text(10, y + 3, TY_HD, n, cur ? T_THEME : T_DIM);
-        cv_text_fit(30, y, TY_RW, v->ps[k], ink, T_BG, 140);
-        if (!off) {
-            fmt_int(mix, (v->pv[k] * 100 + 63) / 127);
-            str_cpy(mix + str_len(mix), "%", 2);
-            cv_text_r(230, y, TY_RW, mix, ink, T_BG);
+    for (uint32_t i = 0; i < 4u; i++) {
+        const vm_col_t *c = &v->col[i];
+        int32_t x = UI_COL_X(i), top = 40, h = 124, k;
+        uint16_t ink = i == v->hot ? T_THEME : c->dim ? T_LINE : T_FILL;
+        if (!c->on)
+            continue;
+        switch (c->bar) {
+        case BAR_FILL:
+            cv_rect(x + 18, top, 14, h, T_WELL);
+            cv_rect(x + 18, top + h - c->b * h / 50, 14, c->b * h / 50, ink);
+            break;
+        case BAR_BIPOLAR: {
+            int32_t mid = top + h / 2;                  /* (a..b around 25: below the middle, or above it) */
+            cv_rect(x + 18, top, 14, h, T_WELL);
+            if (c->a < 25) cv_rect(x + 18, mid, 14, (25 - c->a) * h / 50, ink);
+            else cv_rect(x + 18, mid - (c->b - 25) * h / 50, 14, (c->b - 25) * h / 50, ink);
+            cv_rect(x + 12, mid, 26, 1, T_MID);
+            break;
         }
-        cv_rect(30, y + 26, 200, 2, T_LINE);
-        cv_rect(30, y + 26, v->pv[k] * 200 / 127, 2, cur ? T_THEME : T_FILL);
+        case BAR_TICK:
+            cv_rect(x + 24, top, 2, h, T_WELL);
+            cv_rect(x + 12, top + h - 6 - c->a * (h - 6) / 44, 26, 6, ink);
+            break;
+        case BAR_STEPS:                                   /* a switch or a short list: one block a value */
+            for (k = 0; k < c->b; k++) {
+                int32_t bh = (h - 4 * (c->b - 1)) / c->b, y = top + h - (k + 1) * bh - k * 4;
+                cv_rect(x + 14, y, 22, bh, k == c->a ? ink : T_WELL);
+            }
+            break;
+        default: break;
+        }
+    }
+}
+static void pic_filter(const ui_vm_t *v)                 /* a low pass: flat, its peak at the cut, falling past it */
+{
+    int32_t xy[2 * 55], i, fc = 20 + v->pv[0] * 190 / 127;
+    float q = (float)v->pv[1] / 127.0f;
+    for (i = 0; i < 55; i++) {
+        int32_t x = 12 + 4 * i;
+        float d = (float)(x - fc) / 24.0f, y;
+        y = q * 48.0f * fm_expf(-d * d * 2.0f) - (d > 0.0f ? d * 26.0f : 0.0f);   /* (the peak, then the slope) */
+        if (y < -48.0f) y = -48.0f;                       /* (the floor of the picture) */
+        xy[2 * i] = x * 16;
+        xy[2 * i + 1] = (int32_t)((120.0f - y) * 16.0f);
+    }
+    cv_rect(12, 120, 216, 1, T_LINE);
+    cv_rect(fc, 50, 1, 120, T_LINE);
+    cv_poly(xy, 55, 32, T_THEME, 3u);
+}
+/* FM6's algorithm as the DX7 draws it: the carriers on the floor, each modulator over what it modulates (fm6_core.c
+ * FM6_ALG: the operators run sixth first, each reads a bus and writes one); the operator of the page lit, those
+ * switched off dim, a loop on the one that feeds back */
+static void pic_algo(const ui_vm_t *v)
+{
+    uint32_t a = (uint32_t)v->pv[0] & 31u, bus[3] = {0, 0, 0}, mods[6] = {0}, k, o;
+    int32_t col[6], row[6], owner[6], next = 0, ncol, nrow = 1, cw, rh, x[6], y[6];
+    uint32_t stack[12], sp = 0, placed = 0, carriers = 0;
+    char n[2] = {0, 0};
+    for (k = 0; k < 6u; k++) {                          /* (k: run order, OP 6 - k) */
+        uint32_t f = FM6_ALG[a][k], op = 5u - k;
+        if (f & 0x30u) mods[op] = bus[(f >> 4) & 3u];
+        if (f & 3u) bus[f & 3u] = (f & 4u ? bus[f & 3u] : 0u) | 1u << op;
+        else carriers |= 1u << op;
+    }
+    for (o = 0; o < 6u; o++) col[o] = row[o] = owner[o] = -1;
+    for (o = 0; o < 6u; o++) {                          /* depth first from each carrier: a leaf takes the next column */
+        if (!((carriers >> o) & 1u)) continue;
+        row[o] = 0;
+        stack[sp++] = o;
+        while (sp) {
+            uint32_t c = stack[sp - 1u], m, any = 0;
+            for (m = 0; m < 6u; m++)
+                if ((mods[c] >> m) & 1u && !((placed >> m) & 1u) && row[m] < 0) {
+                    row[m] = row[c] + 1;
+                    owner[m] = (int32_t)c;
+                    if (row[m] + 1 > nrow) nrow = row[m] + 1;
+                    stack[sp++] = m;
+                    any = 1;
+                    break;
+                }
+            if (any) continue;
+            sp--;
+            {                                           /* its column: the middle of the modulators it brought, or the
+                                                         * next free (one it shares stays over its first) */
+                int32_t s = 0, cnt = 0;
+                for (m = 0; m < 6u; m++)
+                    if ((mods[c] >> m) & 1u && owner[m] == (int32_t)c) { s += col[m]; cnt++; }
+                col[c] = cnt ? (s + cnt / 2) / cnt : next++;
+                if (col[c] >= next) next = col[c] + 1;
+            }
+            placed |= 1u << c;
+        }
+    }
+    ncol = next > 0 ? next : 1;
+    cw = 216 / ncol; if (cw > 44) cw = 44;
+    rh = 128 / nrow; if (rh > 36) rh = 36;
+    for (o = 0; o < 6u; o++) {
+        x[o] = 120 - ncol * cw / 2 + col[o] * cw + cw / 2;
+        y[o] = 156 - row[o] * rh;
+    }
+    cv_rect(12, 168, 216, 1, T_LINE);                   /* the output */
+    for (o = 0; o < 6u; o++) {                          /* the wires: modulator top to bottom, carrier down to the floor */
+        for (k = 0; k < 6u; k++)
+            if ((mods[o] >> k) & 1u) {
+                int32_t xy[4] = {x[k] * 16, (y[k] + 9) * 16, x[o] * 16, (y[o] - 9) * 16};
+                cv_poly(xy, 2, 24, T_MID, 3u);
+            }
+        if ((carriers >> o) & 1u)
+            cv_rect(x[o], y[o] + 9, 1, 168 - y[o] - 9, T_MID);
+    }
+    for (o = 0; o < 6u; o++) {
+        uint32_t f = FM6_ALG[a][5u - o], on = (v->pv[2] >> (5u - o)) & 1u, cur = (int32_t)o == v->pv[1];
+        uint16_t box = cur ? T_THEME : on ? T_FILL : T_WELL, ink = cur ? T_BG : on ? T_TEXT : T_DIM;
+        if (f & 0xC0u) {                                /* feedback: a loop from its top round its right side */
+            int32_t xy[8] = {x[o] * 16, (y[o] - 9) * 16, x[o] * 16, (y[o] - 14) * 16, (x[o] + 15) * 16, (y[o] - 14) * 16,
+                             (x[o] + 15) * 16, y[o] * 16};
+            cv_poly(xy, 4, 20, v->pv[3] ? T_MID : T_LINE, 3u);
+        }
+        cv_rect(x[o] - 11, y[o] - 9, 22, 18, box);
+        n[0] = (char)('1' + o);
+        cv_text_c(x[o], y[o] - 8, TY_HD, n, ink, box);
+    }
+}
+static void pic_fmeg(const ui_vm_t *v)                  /* a DX7 envelope: from L4 at R1 to L1, R2 L2, R3 L3, held, R4 L4 */
+{
+    int32_t xy[12], x = 14, i, lv[5];
+    lv[0] = v->pv[7];
+    for (i = 0; i < 4; i++) lv[i + 1] = v->pv[4 + i];
+    xy[0] = x * 16; xy[1] = (160 - lv[0] * 112 / 99) * 16;
+    for (i = 0; i < 4; i++) {
+        x += 8 + (99 - clamp(v->pv[i], 0, 99)) * 34 / 99 + (i == 3 ? 28 : 0);   /* (the hold before R4) */
+        if (i == 3) { xy[8] = (x - 28) * 16; xy[9] = xy[7]; }
+        xy[2 * (i + 1) + (i == 3 ? 2 : 0)] = x * 16;
+        xy[2 * (i + 1) + 1 + (i == 3 ? 2 : 0)] = (160 - lv[i + 1] * 112 / 99) * 16;
+    }
+    cv_rect(12, 161, 216, 1, T_LINE);
+    if (v->pv[8]) cv_rect(12, 160 - 50 * 112 / 99, 216, 1, T_LINE);   /* (the pitch EG: 50 is the note itself) */
+    cv_poly(xy, 6, 32, T_THEME, 3u);
+    for (i = 1; i < 6; i++)
+        if (i != 4) cv_disc(xy[2 * i] / 16, xy[2 * i + 1] / 16, 6, T_THEME, 0);
+}
+static void pic_czeg(const ui_vm_t *v)                  /* a CZ-1 envelope: steps 1..END from 0, SUS ringed */
+{
+    int32_t xy[2 * 10], x = 14, end = clamp(v->pv[17], 0, 7), sus = v->pv[16], i, n = 1;
+    xy[0] = x * 16; xy[1] = 160 * 16;
+    for (i = 0; i <= end; i++) {
+        x += 6 + (99 - clamp(v->pv[i], 0, 99)) * (180 / (end + 1)) / 99;
+        xy[2 * n] = x * 16;
+        xy[2 * n + 1] = (160 - (i == end ? 0 : v->pv[8 + i]) * 112 / 99) * 16;
+        n++;
+    }
+    cv_rect(12, 161, 216, 1, T_LINE);
+    cv_poly(xy, n, 32, T_THEME, 3u);
+    for (i = 1; i < n; i++) {
+        cv_disc(xy[2 * i] / 16, xy[2 * i + 1] / 16, 6, T_THEME, 0);
+        if (i - 1 == sus && sus < end) cv_ring(xy[2 * i] / 16, xy[2 * i + 1] / 16, 14, T_TEXT);
     }
 }
 static void pic_readout(const ui_vm_t *v)                 /* the first value, large; its unit under it */
@@ -295,7 +460,12 @@ static void pic_draw(const ui_vm_t *v)
     case PIC_SCALE: pic_scale(v); break;
     case PIC_CHORD: pic_chord(v); break;
     case PIC_VOICES: pic_voices(v); break;
-    case PIC_FX: pic_fx(v); break;
+    case PIC_FADERS: pic_faders(v); break;
+    case PIC_P5ENV: pic_env(v); break;
+    case PIC_FILTER: pic_filter(v); break;
+    case PIC_ALGO: pic_algo(v); break;
+    case PIC_FMEG: pic_fmeg(v); break;
+    case PIC_CZEG: pic_czeg(v); break;
     case PIC_READOUT: pic_readout(v); break;
     }
 }

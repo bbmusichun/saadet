@@ -24,11 +24,11 @@ static int transport_busy(void) { return song.playing; }
 
 /* the track's settings, not the sound's: what a sound load (factory or user preset, an engine jump) leaves alone.
  * The mix (LEVEL, PAN, MUTE), the arpeggiator, the scale and key map, the retired pattern parameters (LEN, DIV,
- * SWING, GATE) and the inserts */
+ * SWING, GATE) */
 static int param_kept(uint32_t i)
 {
     return i == P_LEVEL || i == P_PAN || i == P_MUTE || (i >= P_AMODE && i <= P_SGATE) ||
-           i == P_CHRD || i == P_VOIC || i == P_STRUM || i == P_STROKE || i == P_MPCDEG || i == P_RECQ || param_fx(i) || param_fx_send(i);
+           i == P_CHRD || i == P_VOIC || i == P_STRUM || i == P_STROKE || i == P_MPCDEG || i == P_RECQ;
 }
 
 /* SCL, QNT and the MPC degree are the song's: one scale for every part, kept the same in each track's own slots
@@ -115,12 +115,23 @@ static uint8_t sx_checksum(const uint8_t *p,uint32_t n)
 {
     uint32_t sum=0;while(n--)sum+=*p++;return (uint8_t)(-sum&127u);
 }
-/* An incoming dump (FM6, CZ-1, Prophet, a user preset) waits for the player to choose its user slots; with no
- * interface to choose them it is refused, and nothing is written. 0: not staged */
+/* An incoming dump (FM6: one voice or a bank of 32, a CZ-1 tone, a Prophet program, a user preset) waits here for the
+ * player to choose its user slots: SAVE shows it and a press stores it (ui_lib.c, shared_presets.c sx_commit); a newer
+ * dump takes its place, and nothing is written before that press. 0: not staged (too large) */
+#define SX_STAGE_MAX 4096u
+static struct { uint8_t on, arrived, e; uint16_t count, size; uint8_t raw[SX_STAGE_MAX]; } sx_stage;
+static int sx_staged(void) { return sx_stage.on; }
+static void sx_drop(void) { sx_stage.on = sx_stage.arrived = 0; }
 static int sysex_stage(uint32_t e, const uint8_t *raw, uint32_t count, uint32_t size)
 {
-    (void)e; (void)raw; (void)count; (void)size;
-    return 0;
+    if (!count || !size || count * size > SX_STAGE_MAX)
+        return 0;
+    memcpy(sx_stage.raw, raw, count * size);
+    sx_stage.e = (uint8_t)e;
+    sx_stage.count = (uint16_t)count;
+    sx_stage.size = (uint16_t)size;
+    sx_stage.on = sx_stage.arrived = 1;                /* (the interface opens SAVE on it once: arrived) */
+    return 1;
 }
 
 /* -------------------------------------------------------- autosave --- */

@@ -98,6 +98,34 @@ static int shared_import(uint32_t e,uint32_t first,uint32_t count,const uint8_t 
     return 0;
 }
 static int native_fm_import32(uint32_t first,const uint8_t *raw,uint32_t *saved){return shared_import(ENGI_FM6,first,32u,raw,FM6_PACKED,saved);}
+/* the staged dump (sound.c sysex_stage): sound i's name (b holds 13), and all of it into slots first.. (saved: how
+ * many); shared_import's or up_put's result */
+static int sx_native(void){return native_limit(sx_stage.e) && sx_stage.size==native_size(sx_stage.e);}
+static void sx_name(uint32_t i,char *b)
+{
+    const uint8_t *raw=sx_stage.raw+i*sx_stage.size;
+    up_rec_t r;uint32_t n=0;
+    b[0]=0;
+    if(i>=sx_stage.count)return;
+    if(sx_native())shared_native_record(&r,sx_stage.e,raw);
+    else if(sx_stage.size==sizeof r)memcpy(&r,raw,sizeof r);
+    else return;
+    for(uint32_t k=0;k<12u;k++){char c=r.name[k];b[k]=c>='a'&&c<='z'?(char)(c-32):c>=32&&c<=126?c:' ';if(b[k]!=' ')n=k+1u;}
+    b[n]=0;
+}
+static int sx_commit(uint32_t first,uint32_t *saved)
+{
+    int rc;
+    *saved=0;
+    if(!sx_stage.on || first>=UP_SLOTS || sx_stage.count>UP_SLOTS-first)return 1;
+    if(sx_native())rc=shared_import(sx_stage.e,first,sx_stage.count,sx_stage.raw,sx_stage.size,saved);
+    else if(sx_stage.size==sizeof(up_rec_t) && sx_stage.count==1u){
+        up_rec_t r;memcpy(&r,sx_stage.raw,sizeof r);r.used=(uint8_t)(UP_USED|(r.used&UP_STAR));
+        rc=up_valid(&r)?up_put(first,&r):1;if(!rc || rc==3)*saved=1;
+    }else rc=1;
+    if(!rc || rc==3)sx_drop();
+    return rc;
+}
 
 #if MELODEE_FLASH
 /* P5's 26-record banks spill their final eight records into the two unused

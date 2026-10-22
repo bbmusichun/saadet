@@ -52,17 +52,20 @@ SECTIONS
     _cpu1_ustack_top = _cpu1_stacks_lo + 4096;
     _cpu1_sstack_top = _cpu1_stacks_lo + 8192;
     _resource_end = ORIGIN(POOL) + LENGTH(POOL);
-    /* Complete resident interrupt/input graph trades arena capacity for code.
-     * Four largest engine states must fit 48 KiB (ram_audio_test); effect
-     * delay memory has its own admission/allocation limits. */
-    _resource_minimum = DEFINED(AUDIO_RESIDENT) ? 48K : 139K;
+    /* Q23 fixture minima: two full-length packed Echoverb histories use
+     * the main bank; one synth and the split diffusion state use SRAM tails.
+     * Keep these in sync with tests/audio_precision_test.c. */
+    _resource_minimum = DEFINED(AUDIO_RESIDENT) ? 168K : 139K;
     ASSERT(_resource_end - _resource_start >= _resource_minimum, "audio working arena below worst-case budget")
+    ASSERT(!DEFINED(AUDIO_RESIDENT) || _resource_data_end - _resource_data_start >= 48000, "Q23 data resource tail below fixture budget")
     .noinit (NOLOAD) : { *(.noinit*) . = ALIGN(4); _noinit_end = .; } > NOINIT
     /* These transfer/job buffers are always filled before use, never retained
      * musical state. Keep diagnostic .noinit addresses ahead of them intact. */
     .audio_scratch (NOLOAD) : { . = ALIGN(32); *(.audio_scratch*) . = ALIGN(4); _audio_scratch_end = .; } > NOINIT
     _resource_retained_start = _audio_scratch_end;
     _resource_retained_end = ORIGIN(NOINIT) + LENGTH(NOINIT);
+    ASSERT(!DEFINED(AUDIO_RESIDENT) || _resource_retained_end - _resource_retained_start >= 15200, "Q23 retained resource tail below fixture budget")
+    ASSERT(!DEFINED(AUDIO_RESIDENT) || _resource_low_end - _resource_low_start >= 8192, "Q23 low resource tail below fixture budget")
     /* Never part of .bss or startup zeroing: use only after HAL self-test. */
     _resource_cache_start = ORIGIN(CACHE);
     _resource_cache_end = ORIGIN(CACHE) + LENGTH(CACHE);

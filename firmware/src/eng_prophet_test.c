@@ -37,7 +37,7 @@ typedef struct {
     uint32_t ia,ib;
     const float *wheel,*wheel_pitch;
 } p5_render_params_t;
-typedef struct { p5_voice_t voice[P5_POLY]; uint32_t lfo; int32_t lfo_value, last_pitch, mod_noise, dc_x1, dc_y1; float wheel[CTL * P5_OVERSAMPLE], wheel_pitch[CTL * P5_OVERSAMPLE]; uint8_t value[56],input_key[56],base_valid; int16_t base_e[8]; int32_t coarse_a,coarse_b,fixed_b,fine_b; p5_render_params_t base; } p5_part_t;
+typedef struct { p5_voice_t voice[P5_POLY]; uint32_t lfo; int32_t lfo_value, last_pitch, mod_noise, dc_x1; audio_dc_t dc_y1; float wheel[CTL * P5_OVERSAMPLE], wheel_pitch[CTL * P5_OVERSAMPLE]; uint8_t value[56],input_key[56],base_valid; int16_t base_e[8]; int32_t coarse_a,coarse_b,fixed_b,fine_b; p5_render_params_t base; } p5_part_t;
 static p5_part_t *p5_part(uint32_t part);
 static p5_patch_t p5_patch[NPART] __attribute__((section(".pool")));
 static uint8_t p5_ready[NPART];
@@ -88,12 +88,12 @@ static int32_t p5_value(const uint8_t *p,uint32_t k) { return p[k]>127u?127:p[k]
 /* Linear attack, exponential decay/release; the SSM filter envelope uses
  * its measured linear decay. Float avoids an integer floor in quiet tails. */
 static float p5_env_tick(p5_env_t *e, int gate, const uint8_t *p,
-                        uint32_t a, uint32_t d, uint32_t s, uint32_t r, int32_t variation, const uint8_t *value, int ssm, uint32_t release)
+                        uint32_t a, uint32_t d, uint32_t s, uint32_t r, int32_t variation, const uint8_t *value, int ssm)
 {
     if (!gate && e->stage != 0u) e->stage = 3;
     float target = (float)value[s] * (1.0f / 127.0f);
     float scale = 1.0f + (float)variation * (1.0f / 32768.0f);
-    uint32_t rel = release ? release : p[P5_RELEASE_ON] ? value[r] : 16u;
+    uint32_t rel = p[P5_RELEASE_ON] ? value[r] : 16u;
     if (e->stage == 1u) {
         e->value += P5_ENV_ATK[value[a]] * scale;
         if (e->value >= 1.0f) { e->value = 1.0f; e->stage = 2; }
@@ -389,7 +389,7 @@ static __attribute__((section(".dsp_text"))) void p5_samples(p5_voice_t *restric
         sum*=1.0f/P5_OVERSAMPLE;
         float gain=ae*c->amp_velocity*(1.0f+(float)s->amp_drift/32768.0f);
         float amp=((float)m->amp0+(float)(m->amp1-m->amp0)*time)*(1.0f/32768.0f);
-        last=(int32_t)(sum*gain*amp*(2.0f*VOICE_FS));out[i]+=last;
+        last=(int32_t)(sum*gain*amp*(2.0f*VOICE_FS*AUDIO_ONE));out[i]+=last;
     }
     s->last_pcm=last;
 }
@@ -442,10 +442,10 @@ static void p5_join(void)
 _Static_assert(FS == 44100, "P5_DC_K: the sample rate");
 static __attribute__((noinline,section(".dsp_text"))) void p5_dc_samples(p5_part_t *P,int32_t *out,uint32_t n)
 {
-    int32_t x1=P->dc_x1,y=P->dc_y1;
+    int32_t x1=P->dc_x1;audio_dc_t y=P->dc_y1;
     for(uint32_t i=0;i<n;i++){
         int32_t x=out[i];
-        y=(int32_t)((int64_t)(x-x1)*256+(((int64_t)y*P5_DC_K)>>30));
+        y=(audio_dc_t)((int64_t)(x-x1)*256+audio_dc_decay(y,P5_DC_K));
         x1=x;
         out[i]=(y+128)>>8;
     }
@@ -490,8 +490,8 @@ static void p5_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vm
     const uint8_t *q=part->value;
     float f0=s->filter_prev, a0=s->amp_prev;
     int curtis=!!p[P5_FILTER_REV];
-    float f1=p5_env_tick(&s->filter,v->gate,p,P5_ATTACK_FILTER,P5_DECAY_FILTER,P5_SUSTAIN_FILTER,P5_RELEASE_FILTER,s->env_drift,q,!curtis,midi_verb[t-trk]);
-    float a1=p5_env_tick(&s->amp,v->gate,p,P5_ATTACK_AMP,P5_DECAY_AMP,P5_SUSTAIN_AMP,P5_RELEASE_AMP,s->env_drift,q,0,midi_verb[t-trk]);
+    float f1=p5_env_tick(&s->filter,v->gate,p,P5_ATTACK_FILTER,P5_DECAY_FILTER,P5_SUSTAIN_FILTER,P5_RELEASE_FILTER,s->env_drift,q,!curtis);
+    float a1=p5_env_tick(&s->amp,v->gate,p,P5_ATTACK_AMP,P5_DECAY_AMP,P5_SUSTAIN_AMP,P5_RELEASE_AMP,s->env_drift,q,0);
     s->filter_prev=f1; s->amp_prev=a1;
     int32_t glide=0;
     if(p[P5_GLIDE]){

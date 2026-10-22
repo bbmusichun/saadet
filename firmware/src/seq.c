@@ -298,9 +298,29 @@ static void key_chord_tone(uint32_t k, track_t *t)
     midi_out_event(0x09u | (0x90u | trk_midi_ch(trk_index(t))) << 8 | x << 16 | 100u << 24);
 }
 
+/* REC (P_AHOLD) with the arp off: the notes the keys let go of keep sounding (and their MIDI note-offs wait) until
+ * the next keys go down from none, or REC lets go (seq_block). The arp latches its own (arp_add) */
+static uint32_t kb_latched[NTRK][4];
+static int latch_plain(const track_t *t) { return t->p[P_AHOLD] && !t->p[P_AMODE]; }
+static void latch_release(track_t *t)
+{
+    uint32_t tr = trk_index(t), mc = trk_midi_ch(tr), x;
+    if (!(kb_latched[tr][0] | kb_latched[tr][1] | kb_latched[tr][2] | kb_latched[tr][3]))
+        return;
+    for (x = 0; x < 128u; x++)
+        if ((kb_latched[tr][x >> 5] >> (x & 31u)) & 1u && !midi_local_held(t, x)) {
+            input_off(t, x);
+            midi_out_event(0x08u | (0x80u | mc) << 8 | x << 16);
+        }
+    memset(kb_latched[tr], 0, sizeof kb_latched[tr]);
+}
+
 static void key_on(uint32_t k, track_t *t)
 {
-    uint32_t n = chord_build(t, kb_note[k], kb_chord[k]);
+    uint32_t n;
+    if (!(kb_prev & ~(1u << k)))                    /* keys from none: a new chord replaces the latched one */
+        latch_release(t);
+    n = chord_build(t, kb_note[k], kb_chord[k]);
     n = chord_strum_begin(t, kb_chord[k], n, &kb_strum[k], 100);
     kb_chn[k] = 0;
     /* Publish pending work after the first tone: input_on may start transport. */
@@ -319,6 +339,10 @@ static void key_off(uint32_t k, track_t *t)
     for (i = 0; i < n; i++) {
         uint32_t x = kb_chord[k][i];
         if (midi_local_held(t, x)) continue;
+        if (latch_plain(t)) {
+            kb_latched[trk_index(t)][x >> 5] |= 1u << (x & 31u);
+            continue;
+        }
         input_off(t, x);
         midi_out_event(0x08u | (0x80u | mc) << 8 | x << 16);
     }
@@ -397,7 +421,6 @@ static void transport_start(void)
 static void transport_stop(void)
 {
     uint32_t i;
-    midi_insert_cancel(0);
     song.playing = 0;
     if (midi_sync_active)                           /* external clock: the arp stops with the transport, */
         for (i = 0; i < NPART; i++)                /* its sounding note too (HOLD keeps the latched chord) */
@@ -493,6 +516,7 @@ static void events_block(uint32_t n)
         if ((pr >> i) & 1u) {
             midi_forget_track(i);
             trk_all_off(t);
+            memset(kb_latched[i], 0, sizeof kb_latched[i]);
             t->nheld = 0;
             t->arp_phys = 0;
             t->arp_note = 0;
@@ -508,6 +532,8 @@ static void events_block(uint32_t n)
                 t->arp_note = 0;
             }
         }
+        if (!latch_plain(t))                          /* REC let go (or the arp took over): what it latched ends */
+            latch_release(t);
         t->armp = t->p[P_AMODE];
         t->aholdp = t->p[P_AHOLD];
     }

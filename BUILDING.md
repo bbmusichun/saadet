@@ -38,8 +38,11 @@ Use the actual Saadet package and detected FM-1 port. Read the storage note in
 README before switching between Saadet and Melodee. Host and target checks are
 not physical audio/control/deadline validation.
 
-The shipping audio path uses the original Q15 scale with PCM16 USB rings and
-effect histories. All DSP fixtures exercise that same default path. USB still
-offers 16/24-bit formats; PCM24 playback discards the low byte and capture pads
-it with zero. Target build and host checks do not measure physical noise floor
-or on-device render deadlines.
+The shipping audio path is Q23 (24-bit signed samples in 32-bit buffers).
+The inherited DSP fixtures run with `AUDIO_FRAC_BITS=0` to preserve their Q15
+numeric contracts. The suite also runs native Q23 integration, numerical,
+concurrent-worker and precision/overflow checks. `tests/audio_precision_test.c`
+checks signed PCM24, low-level synthesis/effects, dithered PCM16 export, insert
+controls and two full-length Echoverbs plus chorus in conservative target SRAM
+banks. The linker enforces those bank minima. These checks do not measure
+physical noise floor or on-device render deadlines.

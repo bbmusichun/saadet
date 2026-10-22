@@ -8,7 +8,7 @@
 #define HALF_WORDS (HALF_FRAMES * 2u)
 #define DAC_TICKS 544u            /* TIMER4 ticks per I2S frame (24 MHz / 44,117.6 Hz) */
 #define CPU_AVG (4096u / HALF_FRAMES)   /* halves the load meter averages: ~93 ms whatever the half */
-#define OUT_SHIFT 7              /* Q15 -> 24-bit container, -6 dBFS ceiling */
+#define OUT_SHIFT 7              /* legacy Q15 conversion; native Q23 keeps the same -6 dBFS ceiling */
 
 static int32_t abuf[2u * HALF_WORDS] __attribute__((aligned(32)));
 
@@ -30,7 +30,7 @@ static uint32_t audio_irq_max_ticks,audio_timer5_max_ticks;
 static volatile uint32_t t5_nested_ticks;              /* TIMER4 ticks TIMER5 spent nested in this ISR (main.c) */
 static uint32_t audio_cpu_rem;                         /* keep the fractional IIR step: no low-load bias */
 
-static void audio_block(int32_t *out, uint32_t n)       /* mix (mix.c), then Q15 -> codec */
+static void audio_block(int32_t *out, uint32_t n)       /* mix (mix.c), then native PCM -> codec */
 {
     uint32_t i;
     mix_block(out, n);
@@ -46,8 +46,14 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (mix.c), then Q15
 #endif
 
     for (i = 0; i < n; i++) {
+#if AUDIO_FRAC_BITS
+        /* Keep the inherited -6 dBFS analogue ceiling at native precision. */
+        out[2u*i] >>= 1;
+        out[2u*i+1u] >>= 1;
+#else
         out[2u*i] *= 1 << OUT_SHIFT;
         out[2u*i+1u] *= 1 << OUT_SHIFT;
+#endif
 #if defined(MELODEE_BENCH_SILENT) && MELODEE_BENCH_SILENT
         /* Bench builds silence only the physical output. Full engine/mixer work,
          * and USB capture still run; never use track mutes for timing. */

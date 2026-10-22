@@ -26,7 +26,7 @@ static void lz_unpack(uint8_t *o, const uint8_t *b, uint32_t n)
     }
 }
 
-static inline int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }
+static inline int32_t mulq15(int32_t a, int32_t b) { return audio_mul(a,b,15); }
 /* a * k / 65536 without 64-bit: a up to 2^31, k Q16 */
 static inline int32_t mulq16(int32_t a, uint32_t k)
 {
@@ -80,7 +80,7 @@ static inline int32_t osc_tri(uint32_t ph)
 
 /* tanh(x / 32768) * 32767, linearly interpolated (a plain lookup gives
  * 256-unit steps, audible on quiet signals) */
-static inline __attribute__((always_inline)) int32_t softclip(int32_t x)
+static inline __attribute__((always_inline)) int32_t softclip_q15(int32_t x)
 {
     int32_t a = x < 0 ? -x : x, i = a >> 8, y;
     if (i >= 256)
@@ -88,6 +88,26 @@ static inline __attribute__((always_inline)) int32_t softclip(int32_t x)
     else
         y = TANH_Q15[i] + (((TANH_Q15[i + 1] - TANH_Q15[i]) * (a & 255)) >> 8);
     return x < 0 ? -y : y;
+}
+
+/* Native saturation uses fp32 knots and cubic interpolation. Retain the
+ * inherited tanh curve and its +/-2 input ceiling without Q15 table steps. */
+static inline __attribute__((always_inline)) int32_t softclip(int32_t x)
+{
+#if AUDIO_FRAC_BITS
+    int32_t a=x<0?-x:x;uint32_t i=(uint32_t)a>>16;
+    float y=P5_TANH[256];
+    if(i<256u){
+        float t=(float)(a&65535)*(1.0f/65536.0f);
+        float p=i?P5_TANH[i-1u]:-P5_TANH[1],q=P5_TANH[i];
+        float r=P5_TANH[i+1u],s=P5_TANH[i+2u];
+        y=q+0.5f*t*(r-p+t*(2.0f*p-5.0f*q+4.0f*r-s+t*(3.0f*(q-r)+s-p)));
+    }
+    int32_t sample=(int32_t)(y*(32767.0f*AUDIO_ONE)+0.5f);
+    return x<0?-sample:sample;
+#else
+    return softclip_q15(x);
+#endif
 }
 
 /* xorshift32 */
@@ -149,7 +169,7 @@ static inline __attribute__((always_inline)) int32_t amp_at(const vmod_t *m, uin
  * engines whose signal peaks near half scale add it << 1 */
 static inline int32_t voice_amp(int32_t s, const vmod_t *m, uint32_t i)
 {
-    return mulq15(mulq15(s, amp_at(m, i)), VOICE_FS);
+    return mulq15(mulq15(AUDIO_Q15(s), amp_at(m, i)), VOICE_FS);
 }
 
 /* linear up to k, then a soft knee: only the peaks above k saturate (|y| - k must stay < 2^30) */
@@ -158,7 +178,7 @@ static inline int32_t soft_knee(int32_t y, int32_t k)
     int32_t a = y < 0 ? -y : y;
     if (a <= k)
         return y;
-    a = k + (softclip((a - k) * 2) >> 1);
+    a = k + (softclip_q15((a - k) * 2) >> 1);
     return y < 0 ? -a : a;
 }
 

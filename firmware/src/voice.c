@@ -586,17 +586,18 @@ static void trk_note_off_engine(track_t *t, uint32_t note)
         }
 }
 
-#include "midi_insert.c"
-/* All ordinary notes go through the persistent per-track MIDI inserts. */
-static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
-{ if (vel) trk_note_on_raw(t, note, vel); else trk_note_off_raw(t, note); }
+/* A note to the track's engine: none from a muted track or one not in use; velocity 0 is a note off. */
 static void trk_note_off(track_t *t, uint32_t note)
-{ trk_note_off_raw(t, note); }
+{ if (note <= 127u) trk_note_off_engine(t, note); }
+static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
+{
+    if (!vel) { trk_note_off(t, note); return; }
+    if (note > 127u || t->p[P_MUTE] || (uint32_t)(t - trk) >= trk_n()) return;
+    trk_note_on_engine(t, note, vel);
+}
 
 static void trk_all_off(track_t *t)
 {
-    midi_insert_cancel((uint32_t)(t - trk));
-    memset(midi_insert.held[t-trk], 0, sizeof midi_insert.held[0]);
     uint32_t i;
     for (i = 0; i < NVOICE; i++) {
         t->v[i].gate = 0;
@@ -645,7 +646,7 @@ static void engine_block(track_t *t)
             uint32_t n = t->xp_n;
             t->xp_n = 0;
             for (i = 0; i < n; i++)
-                trk_note_on_raw(t, t->xp_note[i], t->xp_vel[i]);
+                trk_note_on(t, t->xp_note[i], t->xp_vel[i]);
         }
     }
     for (i = 0; i < 8u; i++)                            /* the engine's own values, for a later fade */
@@ -669,7 +670,7 @@ static int32_t env_tick(track_t *t, voice_t *v)
         v->env += mulq16(sus - v->env, ENV_EXP[p[P_DEC] & 127]);
         break;
     case 3:
-        v->env -= mulq16(v->env, ENV_EXP[midi_verb[t-trk] ? midi_verb[t-trk] : p[P_REL] & 127]);
+        v->env -= mulq16(v->env, ENV_EXP[p[P_REL] & 127]);
         if (v->env < (1 << 12)) {
             v->env = 0;
             v->stage = 0;

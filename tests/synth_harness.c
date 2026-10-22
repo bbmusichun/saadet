@@ -8,7 +8,14 @@
 
 /* ------------------------------------------------------------ HAL stubs --- */
 #define FM1_NCOL 11u
-static const int8_t FM1_KEYMAP[6][FM1_NCOL];
+static const int8_t FM1_KEYMAP[6][FM1_NCOL] = {   /* (hal/fm1_input.h: the LEDs and keys of each matrix spot) */
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+    { 5, 11,  4, 10,  3,  9,  2,  8, -1, -1, -1},
+    {34, 35, 36, 37, 38, 40, 39, 13,  7,  6, 12},
+    {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33},
+    { 0,  1, 15, 14, 17, 16, 19, 18, 20, 21, 22},
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+};
 static uint8_t fm1_led[FM1_NCOL];
 static uint8_t fm1_led_dim[3][FM1_NCOL], fm1_led_dim_mask[3];   /* (hal/fm1_input.h: the dim planes) */
 #define FM1_TICKS_PER_US 1u
@@ -89,7 +96,7 @@ static void power_on(void)
     fm1_in.buttons = fm1_in.notes = host_pressed = host_released = host_notes = 0;
     memset(host_enc, 0, sizeof host_enc);
     midi_sync_active=0;midi_beat_samples=beat_pos=beat_n=0;
-    midi_insert_init();kb_strum_pending=midi_strum_pending=0;
+    kb_strum_pending=midi_strum_pending=0;
     panic_req = 0; mi_r = mi_w = midi_in_overflow = 0;
 }
 static void frame(void)

@@ -535,7 +535,7 @@ static int up_store_to(uint32_t k,uint32_t tr,const char *name)
         if(name && name[0])up_native_name(&r,name);
         return up_put(k,&r);
     }
-    for(uint32_t i=0;i<P_COUNT;i++)up_set_value(&r,i,(param_fx(i)||param_fx_send(i))?param_desc_of(r.engine,i)->def:t->p[i]);
+    for(uint32_t i=0;i<P_COUNT;i++)up_set_value(&r,i,param_reserved(i)?0:t->p[i]);
     return up_put(k,&r);
 }
 static int up_store(uint32_t k,const char *name){return up_store_to(k,song.sel,name);}

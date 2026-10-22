@@ -331,7 +331,7 @@ typedef struct {                                         /* a part's (engines.c 
     fm6_mono_t ms[16];
     fm6_lfo_t lfo;
     fm6_ctl_t pt;
-    int32_t dc_x1, dc_y1;                                /* the DC filter: the last input; the last output << 8 */
+    int32_t dc_x1; audio_dc_t dc_y1;                                /* the DC filter: the last input; the last output << 8 */
 } fm6_part_t;
 static fm6_part_t *fm6_part(uint32_t part);             /* engines.c */
 #define FM6P(t) fm6_part((uint32_t)((t) - trk))
@@ -641,7 +641,6 @@ static void fm6_note_on(track_t *t, voice_t *v)
     }
     fm6_peg_set(&s->pe, ed);
     s->down = 1;
-    s->midi_release = 0;
     if (ed[FP_OKS] && !steal)                            /* KEY SYNC (not on a stolen voice: no click) */
         for (k = 0; k < 6u; k++)
             s->ph[k] = 0, s->gout[k] = 0;
@@ -752,21 +751,9 @@ static __attribute__((noinline,section(".audio_text"))) void fm6_control_ram(tra
     alg = (uint32_t)ed[FP_ALG] & 31u;
     if (!v->gate && s->down) {                           /* key up: every envelope to its fourth segment */
         s->down = 0;
-        s->midi_release = 0;                           /* native R4 is installed below */
         for (k = 0; k < 6u; k++)
             fm6_eg_go(&s->eg[k], &ed[k * FP_OP], s->ol[k], s->rs[k], 3);
         fm6_peg_go(&s->pe, 3);
-    }
-    if (!s->down && midi_verb[tr] != s->midi_release) {
-        /* The native EG stays in its logarithmic domain. Change only R4's
-         * running increment; the raw DX7 patch and held stages stay intact. */
-        int32_t release = midi_verb[tr] ? 99 - midi_verb[tr] * 99 / 127 : -1;
-        for (k = 0; k < 6u; k++) if (s->eg[k].ix == 3u) {
-            int32_t rate = release >= 0 ? release : ed[k * FP_OP + FP_R1 + 3u];
-            int32_t q = clamp(((rate * 41) >> 6) + s->rs[k], 0, 63);
-            s->eg[k].inc = (4 + (q & 3)) << (2 + FM6_LG_N + (q >> 2));
-        }
-        s->midi_release = midi_verb[tr];
     }
     pm=fm6_peg_step(&s->pe,s->down)+P->pt.shared_pm+m->plog;
     amd=P->pt.shared_amd;pbase=P->pt.shared_tune;
@@ -912,7 +899,7 @@ static inline __attribute__((always_inline)) float fm6_output_clip(float x)
 
 static __attribute__((noinline,section(".dsp_text"))) void fm6_output(const float *sum, int32_t *out, uint32_t n, const vmod_t *m, int32_t gain, int add)
 {
-    float scale = (float)gain * (1.0f / 131072.0f);
+    float scale = (float)gain * ((float)AUDIO_ONE / 131072.0f);
     for (uint32_t i = 0; i < n; i++) {
         int32_t y = (int32_t)(fm6_output_clip(sum[i]) * (float)amp_at(m, i) * scale);
         if (add) out[i] += y; else out[i] = y;
@@ -1066,9 +1053,6 @@ static void fm6_sync(track_t *t, const voice_t *self)
             continue;
         }
         fm6_keyed(s, ed, fm6_note(t, v));
-        /* Patch/rate scaling edits invalidate an installed MIDI release.
-         * Native released envelopes otherwise retain their existing rate. */
-        if (s->midi_release) s->midi_release = UINT8_MAX;
         if (s->down)
             for (k = 0; k < 6u; k++)
                 fm6_eg_go(&s->eg[k], &ed[k * FP_OP], s->ol[k], s->rs[k], 2);
@@ -1091,10 +1075,10 @@ static void fm6_block(track_t *t)                        /* per part and block: 
 static __attribute__((noinline,section(".dsp_text"))) void fm6_dc_samples(fm6_part_t *P, int32_t *out, uint32_t n)
 {
     uint32_t i;
-    int32_t x1 = P->dc_x1, y = P->dc_y1;
+    int32_t x1 = P->dc_x1; audio_dc_t y = P->dc_y1;
     for (i = 0; i < n; i++) {
         int32_t x = out[i];
-        y = (int32_t)(((int64_t)(x - x1) * 256 + (((int64_t)y * 1070673990) >> 30)));
+        y = (audio_dc_t)((int64_t)(x - x1) * 256 + audio_dc_decay(y,1070673990));
         x1 = x;
         out[i] = (y + 128) >> 8;
     }

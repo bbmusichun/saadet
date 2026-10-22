@@ -253,7 +253,7 @@ def build_app(stub):
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("MELODEE_FLASH", "MELODEE_OTA", "MELODEE_OTA_DRYRUN", "MELODEE_OTA_RAMONLY", "MELODEE_CDC",
                  "MELODEE_UART", "MELODEE_USB_AUDIO", "MELODEE_ICONS", "MELODEE_PROPHET_PROTOTYPE", "MELODEE_CORE1_FALLBACK",
-                 "MELODEE_BENCH_SILENT", "MELODEE_FX_PROFILE", "MELODEE_AUDIO_PROFILE", "MELODEE_BATCH_AUDIO", "MELODEE_ADMISSION", "MELODEE_AUDIO_BENCH", "MELODEE_DUAL_CORE", "MELODEE_CACHE_RAM", "MELODEE_CORE1_TEST", "MELODEE_RAM_AUDIO", "MELODEE_HW_EQ", "MELODEE_MOD_CACHE", "MELODEE_CONTROL_FAST", "MELODEE_MIX_FAST", "MELODEE_FX_DORMANT", "MELODEE_RECORD_INDEX", "MELODEE_PROPHET_FAST", "MELODEE_PANEL_FAST", "MELODEE_FM6_FAST", "MELODEE_CZ_FAST", "MELODEE_DRUM_FAST", "MELODEE_SID_FAST", "MELODEE_CAPTURE_FAST"):
+                 "MELODEE_BENCH_SILENT", "MELODEE_AUDIO_PROFILE", "MELODEE_BATCH_AUDIO", "MELODEE_ADMISSION", "MELODEE_AUDIO_BENCH", "MELODEE_DUAL_CORE", "MELODEE_CACHE_RAM", "MELODEE_CORE1_TEST", "MELODEE_RAM_AUDIO", "MELODEE_MOD_CACHE", "MELODEE_CONTROL_FAST", "MELODEE_MIX_FAST", "MELODEE_FX_DORMANT", "MELODEE_RECORD_INDEX", "MELODEE_PROPHET_FAST", "MELODEE_PANEL_FAST", "MELODEE_FM6_FAST", "MELODEE_CZ_FAST", "MELODEE_DRUM_FAST", "MELODEE_SID_FAST", "MELODEE_CAPTURE_FAST"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/melodee.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")
@@ -367,7 +367,7 @@ def check(img, syms, dis, rt):
                 call = re.search(r"\bcall -?\d+ <[^>]* : ([0-9a-f]+) >", line)
                 if call and int(call[1], 16) >= APP_XIP:
                     errors.append(f"audio function {current} calls XIP directly")
-        notes.append(f"audio RAM: {live} linked functions verified in SRAM; optional bounded FX inserts")
+        notes.append(f"audio RAM: {live} linked functions verified in SRAM")
     for name in ("rev_room", "rev_spring", "rev_hall", "dly_bus", "chorus", "distortion", "sl_enter", "sl_block", "perf_begin", "perf_block", "perf_end"):
         if sym(name):
             errors.append(f"removed effect {name} must not be linked")
@@ -431,7 +431,7 @@ def check(img, syms, dis, rt):
         if (sym("_resource_cache_start"), sym("_resource_cache_end")) != (0x01F28000, 0x01F2F000):
             errors.append("cache resource bank must cover exactly the seven freed data-cache ways")
         # resources.c reserves the UI partition before exposing this bank to
-        # audio. Do not count undo storage as additional engine/FX capacity.
+        # audio. Do not count undo storage as additional engine capacity.
         ui_reserve = int(re.search(r"^#define UI_CACHE_BYTES (\d+)u$",
                                   (FW / "src" / "resources.c").read_text(), re.M)[1])
         cache_audio = 28672 - ui_reserve

@@ -47,18 +47,18 @@ static void persistence(void){
     power_on();memset(nor,255,sizeof nor);persist_boot();settings_init();
     for(uint32_t i=0;i<NENG_SHOWN;i++){
         power_on();host_preset(TSEL,ENGINE_ORDER[i],1);tick();TSEL->user=384;TSEL->mpc_octave=-2;
-        TSEL->p[P_FXTYPE]=FX_PHASER;TSEL->p[P_FXMIX]=51;song.g[G_MFXTYPE]=FX_ROOM;song.g[G_MFXMIX]=70;
+        TSEL->p[P_SPRD]=51;song.g[G_SWING]=20;
         song.g[G_BPM]=137;song.g[G_ROUTE]=11;song.g[G_DRUMCH]=7;song.octave=2;
         synth_state_t expected,actual;state_capture(&expected);assert(state_autosave());uint32_t before=erases;assert(state_autosave() && before==erases);
         power_on();syn_saved=0;state_boot();state_capture(&actual);assert(!memcmp(&expected,&actual,sizeof actual));
     }
-    TSEL->p[P_FXMIX]=63;erase_error=1;assert(!state_autosave() && syn_retry);erase_error=0;assert(state_autosave() && !syn_retry);
-    uint32_t saved=syn_saved;TSEL->p[P_FXMIX]=71;fail_after=1;assert(!state_autosave());fail_after=-1;
-    power_on();state_boot();assert(TSEL->p[P_FXMIX]==63 && syn_saved==saved);
+    TSEL->p[P_SPRD]=63;erase_error=1;assert(!state_autosave() && syn_retry);erase_error=0;assert(state_autosave() && !syn_retry);
+    uint32_t saved=syn_saved;TSEL->p[P_SPRD]=71;fail_after=1;assert(!state_autosave());fail_after=-1;
+    power_on();state_boot();assert(TSEL->p[P_SPRD]==63 && syn_saved==saved);
     synth_state_t bad;state_capture(&bad);bad.engine=ENGI_DRUM;bad.sum=syn_hash(&bad,sizeof bad-4u);assert(!state_valid(&bad));
-    bootguard.failed=1;power_on();state_boot();assert(TSEL->p[P_FXMIX]!=63);bootguard.failed=0;
+    bootguard.failed=1;power_on();state_boot();assert(TSEL->p[P_SPRD]!=63);bootguard.failed=0;
     for(uint32_t b=0;b<UP_BANKS;b++)for(uint32_t c=0;c<2;c++)assert(st_sector(up_obj(b),c)!=st_sector(OBJ_SYNTH,0) && st_sector(up_obj(b),c)!=st_sector(OBJ_SYNTH,1));
-    puts("STATE: four engines, slot 384, FX/MIDI settings, unchanged saves, failed writes and boot-loop recovery passed");
+    puts("STATE: four engines, slot 384, track/MIDI settings, unchanged saves, failed writes and boot-loop recovery passed");
 }
 static void editor(void){
     power_on();memset(nor,255,sizeof nor);persist_boot();settings_init();request(ED_INFO,0,0);assert(wire_n>12);
@@ -67,12 +67,12 @@ static void editor(void){
     for(uint32_t i=0;i<sizeof removed/sizeof *removed;i++){request(removed[i],args,sizeof args);assert(!wire_n);}
     uint8_t library[]={3,127,2,0,'L','A','S','T'};request(ED_LIBRARY,library,sizeof library);assert(wire_n && wire[8]==0 && up_used(383));assert(!up_used(127));
     up_ui_named(3,383,"LAST384");char label[20];up_name(383,label);assert(str_eq(label,"LAST384"));
-    TSEL->p[P_FXMIX]=51;assert(state_autosave());assert(!ed_bk_capture());assert(ED_BK_N==24 && ed_bk_supported(32) && ed_bk_supported(28));assert(!ed_bk_supported(0) && !ed_bk_supported(2));
+    TSEL->p[P_SPRD]=51;assert(state_autosave());assert(!ed_bk_capture());assert(ED_BK_N==24 && ed_bk_supported(32) && ed_bk_supported(28));assert(!ed_bk_supported(0) && !ed_bk_supported(2));
     uint32_t len;const uint8_t *bytes=ed_bk_object(32,&len);assert(len==sizeof(synth_state_t) && state_valid((const synth_state_t *)bytes));
     save_file("build/host/synth-state.bin",bytes,len);save_file("build/host/synth-settings.bin",&set_rec,ed_bk_set_len);
     for(uint32_t i=0;i<ED_BK_N;i++){uint32_t n,id=ED_BK_IDS[i];const uint8_t *p=ed_bk_object(id,&n);char path[80];snprintf(path,sizeof path,"build/host/archive-%u.bin",id);save_file(path,p,n);}
     synth_state_t state;state_capture(&state);memcpy(ED_BK_RAW,&state,sizeof state);ed_bk_id=32;ed_bk_len=ed_bk_pos=sizeof state;ed_bk_crc=st_crc32(ED_BK_RAW,ed_bk_len);
-    TSEL->p[P_FXMIX]=7;assert(!ed_bk_commit_inner() && TSEL->p[P_FXMIX]==51);ED_BK_RAW[0]^=1;assert(ed_bk_commit_inner()==2);
+    TSEL->p[P_SPRD]=7;assert(!ed_bk_commit_inner() && TSEL->p[P_SPRD]==51);ED_BK_RAW[0]^=1;assert(ed_bk_commit_inner()==2);
     uint8_t put[12]={0,2};request(ED_BACKUP_PUT,put,sizeof put);assert(wire[7]==1);
     puts("EDITOR: removed commands, shared slot 384, distinct synth/preset archives and corrupt-restore rejection passed");
 }

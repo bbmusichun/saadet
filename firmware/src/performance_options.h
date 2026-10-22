@@ -20,9 +20,6 @@
 #ifndef MELODEE_MIX_FAST
 #define MELODEE_MIX_FAST 1
 #endif
-#ifndef MELODEE_FX_DORMANT
-#define MELODEE_FX_DORMANT 1
-#endif
 #ifndef MELODEE_RECORD_INDEX
 #define MELODEE_RECORD_INDEX 1
 #endif
