@@ -2,6 +2,8 @@
 
 A local, single-part synthesizer fork of Melodee for the Felucca FM-1.
 
+New to Saadet? Start with [the quick start](QUICKSTART.md).
+
 Saadet starts at Melodee `nightly` commit
 `b5148ba` (the committed upstream tip fetched on 22 October 2026). The original
 checkout and its uncommitted work are separate. `upstream` is read-only locally;
