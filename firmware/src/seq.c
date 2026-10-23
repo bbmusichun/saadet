@@ -471,7 +471,8 @@ static void chord_strum_tick(uint32_t n)
 static track_t *midi_track(uint32_t ch) { return !song.g[G_ROUTE] || ch + 1u == (uint32_t)song.g[G_ROUTE] ? TSEL : 0; }
 static track_t *midi_note_track(uint32_t ch, uint32_t note) { (void)note; return midi_track(ch); }
 
-#include "midi_control.c"
+#include "midi_param.c"
+#include "midi_input.c"
 #include "midi_clock.c"
 
 static void clock_advance(uint32_t n)
@@ -503,9 +504,7 @@ static void events_block(uint32_t n)
     panic_req = 0;
     if (midi_in_overflow) {                            /* a lost note-off must never leave a held note */
         mi_r = mi_w;
-        memset(midi_sel_on, 0, sizeof midi_sel_on);
-        memset(midi_ch, 0, sizeof midi_ch);
-        memset(midi_owners, 0, sizeof midi_owners);
+        midi_input_reset();
         memset(mchord, 0, sizeof mchord);
         pr |= (1u << NTRK) - 1u;
         RING_PUBLISH();

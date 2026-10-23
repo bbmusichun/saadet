@@ -708,17 +708,24 @@ static __attribute__((noinline)) void spread_sum(int32_t *out)
 }
 
 /* render one block of a part into out (cleared here); returns the voices rendered */
-/* Channel bend is live performance state, outside projects/presets. Q8 semitones. */
-static int32_t midi_bend_q8[NTRK], midi_bend_target[NTRK];
-static __attribute__((noinline)) void p5_update_bend(track_t *t)
+/* MIDI pitch bend per track, Q8 semitones: the target seq.c's MIDI input (midi_input.c) and the Prophet's block set,
+ * and the smoothed value the voices play (track_render_audio moves it to the target, a step each block) */
+static int32_t midi_bend_target[NTRK], midi_bend_q8[NTRK];
+/* a 14-bit bend (-8192..8191) at range (Q8 semitones) -> Q8 semitones, rounded. Each side is scaled by its own full
+ * scale: the centre is 0, the ends exactly +-range */
+static int32_t midi_bend_scale(int32_t raw, int32_t range)
 {
-#if MELODEE_CONTROL_FAST
-    /* A centered wheel has an exact zero target at every native bend range.
-     * Smoothing still advances above p5_block, including on silent tracks. */
-    if(!t->bend_raw){midi_bend_target[(uint32_t)(t-trk)]=0;return;}
-#endif
-    uint32_t ti=(uint32_t)(t-trk);int32_t range=(clamp(p5_patch_of(t)->raw[P5_BEND],0,11)+1)*256;
-    midi_bend_target[ti]=t->bend_raw*range/(t->bend_raw<0?8192:8191);
+    return raw < 0 ? (raw * range - 4096) / 8192 : (raw * range + 4095) / 8191;
+}
+/* the Prophet's bend target (p5_block, every block): its patch's own range, BEND 0..11 = 1..12 semitones */
+static void p5_update_bend(track_t *t)
+{
+    uint32_t ti = (uint32_t)(t - trk);
+    if (MELODEE_CONTROL_FAST && !t->bend_raw) {         /* the wheel at rest: no patch to read */
+        midi_bend_target[ti] = 0;
+        return;
+    }
+    midi_bend_target[ti] = midi_bend_scale(t->bend_raw, (clamp(p5_patch_of(t)->raw[P5_BEND], 0, 11) + 1) * 256);
 }
 static struct { int16_t cents; uint8_t valid; int32_t pitch, fine; } tune_cache;
 static __attribute__((noinline)) void tune_cache_update(void)
@@ -758,14 +765,12 @@ static __attribute__((noinline)) uint32_t track_render_audio(track_t *t, int32_t
     const int16_t *p = t->p;
     uint32_t i;
     int32_t lfo = mulq15(t->lfo_val, t->lfo_fade);
-    int32_t tune, tune_fine;
-    int32_t bend, bend16, bend_fine;
+    int32_t tune, tune_fine, bend, bend_fine;
     uint32_t ti = (uint32_t)(t - trk);
-    {
-        int32_t d = midi_bend_target[ti] - midi_bend_q8[ti];
-        /* ~6 ms smoothing, with an exact landing (no permanent small offset). */
-        midi_bend_q8[ti] += d > 0 ? (d < 4 ? d : (d + 3) / 4) : (d > -4 ? d : (d - 3) / 4);
-    }
+    /* the MIDI bend, every block (a part without voices too): a quarter of the way to its target (~2.5 ms), at least
+     * one unit, so it lands exactly (the whole +-24 semitones in ~20 ms) */
+    int32_t bd = midi_bend_target[ti] - midi_bend_q8[ti];
+    midi_bend_q8[ti] += bd / 4 + (bd > 0) - (bd < 0);
     uint32_t nr = 0, fade = t->xf_on && t->xf;
     uint32_t live=0;
     for (i=0;i<NVOICE;i++) if(t->v[i].active){live=1;break;}
@@ -792,9 +797,9 @@ static __attribute__((noinline)) uint32_t track_render_audio(track_t *t, int32_t
     }
     if(!tune_cache.valid || tune_cache.cents!=song.g[G_TUNE])tune_cache_update();
     tune=tune_cache.pitch;tune_fine=tune_cache.fine;
-    bend = midi_bend_q8[ti];
-    bend16 = bend >= 0 ? bend / 16 : -((-bend + 15) / 16);
-    bend_fine = (bend - bend16 * 16) * 2367 / 2560;
+    /* the bend as TUNE: whole 1/16 semitones (rounded down, so a negative bend's rest is positive too) and the rest,
+     * 0..15 Q8 units of 100/256 cent, in 1/4096 (2.367 a cent) */
+    bend=midi_bend_q8[ti]>>4;bend_fine=((midi_bend_q8[ti]&15)*2367+1280)/2560;
     for (i = 0; i < NVOICE; i++) {
         voice_t *v = &t->v[i];
         vmod_t m;
@@ -836,7 +841,7 @@ static __attribute__((noinline)) uint32_t track_render_audio(track_t *t, int32_t
         }
         if (!env && !m.amp0 && v->stage == 2 && !e->sampled)
             continue;                                   /* held at a silent sustain (SUS 0): nothing to render */
-        pitch = v->pitch_cur + tune + bend16 + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((m.envq15 * p[P_ED_PIT] * 3) >> 15);
+        pitch = v->pitch_cur + tune + bend + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((m.envq15 * p[P_ED_PIT] * 3) >> 15);
         m.pitch16 = clamp(pitch, 0, 2047);
         m.inc = tuned_pitch_inc(m.pitch16);
         m.fine = v->fine + v->scale_fine + tune_fine + bend_fine;
@@ -854,7 +859,7 @@ static __attribute__((noinline)) uint32_t track_render_audio(track_t *t, int32_t
             AP_START(mod_start);mod_voice(t,v,&m,m.fine);AP_END(AP_MODULATION,mod_start);
         }
         /* 1/16 st and 1/4096 -> Q24 octaves: the voice's own offset (the matrix's pitch too), without TUNE and bend */
-        m.plog = (m.pitch16 - tune - bend16 - (int32_t)v->note * 16) * 87381 + (m.fine - tune_fine - bend_fine) * 5909;
+        m.plog = (m.pitch16 - tune - bend - (int32_t)v->note * 16) * 87381 + (m.fine - tune_fine - bend_fine) * 5909;
         engine_render(t,v,e,spread_on>v->side?spread_buf:out,n,&m);
         nr++;
     }

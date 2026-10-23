@@ -19,11 +19,13 @@ static uint64_t instructions(void)
 #endif
     return 0;
 }
+/* The specification's bend mapping (docs/cleanroom/midi-input-spec.md 4.5), in floating point: each side scaled by
+ * its own full-scale value. Implementations may round differently, by less than one Q8 unit. */
+static double spec_bend(int32_t raw, int32_t range) { return raw < 0 ? (double)raw * range / 8192.0 : (double)raw * range / 8191.0; }
 static __attribute__((noinline)) void reference(track_t *t)
 {
     uint32_t ti=(uint32_t)(t-trk);
-    int32_t range=(clamp(p5_patch_of(t)->raw[P5_BEND],0,11)+1)*256;
-    midi_bend_target[ti]=t->bend_raw*range/(t->bend_raw<0?8192:8191);
+    midi_bend_target[ti]=(int32_t)spec_bend(t->bend_raw,(clamp(p5_patch_of(t)->raw[P5_BEND],0,11)+1)*256);
 }
 static __attribute__((noinline)) void candidate(track_t *t) { p5_update_bend(t); }
 static void parity(void)
@@ -31,13 +33,21 @@ static void parity(void)
     host_tracks_init();
     for(uint32_t ti=0;ti<NTRK;ti++){
         track_t *t=&trk[ti];host_preset(t,ENGI_PROPHET,0);
-        for(uint32_t range=0;range<128;range++)for(int32_t raw=-8192;raw<=8191;raw++){
-            p5_patch_of(t)->raw[P5_BEND]=(uint8_t)range;t->bend_raw=(int16_t)raw;
-            int32_t expected=raw*((clamp((int32_t)range,0,11)+1)*256)/(raw<0?8192:8191);
-            midi_bend_target[ti]=123456;p5_update_bend(t);assert(midi_bend_target[ti]==expected);
+        for(uint32_t range=0;range<128;range++){
+            int32_t r=(clamp((int32_t)range,0,11)+1)*256,last=-1000000;
+            for(int32_t raw=-8192;raw<=8191;raw++){
+                p5_patch_of(t)->raw[P5_BEND]=(uint8_t)range;t->bend_raw=(int16_t)raw;
+                midi_bend_target[ti]=123456;p5_update_bend(t);
+                int32_t got=midi_bend_target[ti];double exact=spec_bend(raw,r);
+                assert(got-exact<1.0 && exact-got<1.0 && got>=last);
+                if(raw==0)assert(got==0);
+                if(raw==8191)assert(got==r);
+                if(raw==-8192)assert(got==-r);
+                last=got;
+            }
         }
     }
-    puts("control preparation: exact 14-bit bend at every native byte range, all tracks");
+    puts("control preparation: exact ends, centre and linear 14-bit bend at every native byte range, all tracks");
 }
 static volatile uint32_t checksum;
 static void benchmark(void)

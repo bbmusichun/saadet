@@ -143,8 +143,7 @@ void saadet_init(void)
     fm1_ms=sd_ms();dsp_tables_init();
     mi_w=mi_r=0;midi_in_overflow=0;
     memset(sd_midi_keys,0,sizeof sd_midi_keys);memset(sd_midi_pedal,0,sizeof sd_midi_pedal);
-    memset(midi_ch,0,sizeof midi_ch);memset(midi_sel_on,0,sizeof midi_sel_on);
-    memset(midi_owners,0,sizeof midi_owners);memset(mchord,0,sizeof mchord);sd_ble_was_up=sd_thru_was=0;
+    midi_input_reset();memset(mchord,0,sizeof mchord);sd_ble_was_up=sd_thru_was=0;
     memset(trk,0,sizeof trk);memset(&song,0,sizeof song);eng_state_reset();
     memset(&ui,0,sizeof ui);memset(&uix,0,sizeof uix);uix.held=PL_N;uix.hot=4;uix.eng=255;
     panel=PANEL_DEFAULT;settings_init();persist_boot();panel_init();settings_init();sd_panel_set(panel.btn,panel.enc,panel.dir);
@@ -191,7 +190,7 @@ int saadet_sysex(const uint8_t *p,uint32_t n)
 int saadet_expect(const char *s,int *v)
 {
     if(str_eq(s,"engine")){*v=TSEL->eng_req;return 1;}
-    if(str_eq(s,"held")){*v=(int)(midi_owners[0]+TSEL->nheld);return 1;}
+    if(str_eq(s,"held")){*v=(int)(midi_held_count(0)+TSEL->nheld);return 1;}
     if(str_eq(s,"clock_source")){*v=song.g[G_CLOCK];return 1;}
     if(str_eq(s,"clock")){*v=midi_clock.mode;return 1;}
     if(str_eq(s,"playing")){*v=song.playing;return 1;}

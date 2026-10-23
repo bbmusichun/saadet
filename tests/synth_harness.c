@@ -90,7 +90,7 @@ static struct { uint32_t stage; } melodee_dbg;
 static void power_on(void)
 {
     memset(trk, 0, sizeof trk); memset(&song, 0, sizeof song); memset(&ui, 0, sizeof ui);
-    memset(&midi_clock, 0, sizeof midi_clock); midi_forget_track(0);
+    memset(&midi_clock, 0, sizeof midi_clock); midi_input_reset(); midi_forget_track(0);
     up_cache_reset(); native_cache_reset();
     cz_init();
     for (uint32_t i = 0; i < G_COUNT; i++) song.g[i] = GP[i].def;
