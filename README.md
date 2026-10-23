@@ -1,6 +1,6 @@
 # Saadet
 
-A local, single-part synthesizer fork of Melodee for the Felucca FM-1.
+A single-part synthesizer fork of Melodee for the M-VAVE FM-1, with Bluetooth MIDI.
 
 New to Saadet? Start with [the quick start](QUICKSTART.md).
 
@@ -27,14 +27,18 @@ library. The FX button opens LIBRARY, where K3 SEND exports a sound over USB
 in its native format; insert effects are removed. User sounds can be deleted with K4 DELETE
 and an FX confirmation. GLOBAL's last page can erase all saved data after arming
 K1 and holding GLO for three seconds. See [the panel guide](docs/UI.md) for the
-controls and cancellation gestures. Startup maintenance, update mode (OCT- and
-OCT+ held for five seconds), and the crash report retain their own screens.
+controls and cancellation gestures. The installer enters update mode automatically. With m-bootloader
+installed, hold PLAY at power-on for its recovery menu, or REC for USB download mode.
 
 Build and test instructions are in [BUILDING.md](BUILDING.md). Serve the repository
 locally and open [the editor](web/editor.html) for Sound, FM6, Library and Settings.
 The [manual](web/manual/index.html) describes the instrument. [The web installer](web/install/index.html)
 installs a release from Chrome or Edge, with m-bootloader as an option; `tools/make_site.py`
 builds its release site (see BUILDING.md).
+
+The 0.1.0 release preparation workflow is in BUILDING.md; changes and the final hardware acceptance steps
+are in [RELEASE_NOTES.md](RELEASE_NOTES.md). Prepared bundles include the matching firmware source and licence
+notices, so users do not need access to this checkout's Git remote to obtain the source.
 
 ## Storage and compatibility
 

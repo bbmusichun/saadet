@@ -25,6 +25,7 @@ node "$BASE/tests/installer_boot_test.mjs" platform/build/bootloader/fm1-uboot-1
 # Saadet's web installer against the simulated FM-1 (background-tab throttling, resume), and its release site.
 node web/test_install.mjs
 "$PYTHON" tests/site_test.py
+"$PYTHON" tests/release_support_test.py
 "${CC:-cc}" -O1 -g -w -DAUDIO_FRAC_BITS=0 -fsanitize=address,undefined -fno-sanitize=shift,alignment -Ibuild/gen -Ifirmware/src tests/ui_ble_test.c -lm -pthread -o build/base-ui-ble-test
 mkdir -p build/base-ui-ble
 UI_PNG=build/base-ui-ble build/base-ui-ble-test

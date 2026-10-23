@@ -11,9 +11,11 @@
   firmware/saadet-VERSION.fwsc  the package; also the download
   firmware/m-bootloader-X.Y.fwsc, m-bootloader-LICENSE.txt   the pinned m-bootloader (MIT), offered by the installer
   firmware/SHA256SUMS           every file under firmware/
+  firmware/saadet-VERSION-source.zip, SOURCES.txt, LICENSE, LICENSING.md, LICENSES/   matching source and notices
   editor.html, fm1backup.js, fukiai.ttf, FUKIAI-LICENSE.txt, manual/   the editor and the manual, as in web/
 
-  tools/make_site.py platform/build/saadet-1.0.fwsc 1.0 build/site
+  tools/prepare_public_release.py 0.1.0    (build and prepare all public artifacts)
+  tools/make_site.py PACKAGE VERSION SITE --source SOURCE.zip --build-info BUILD_INFO.json
   tools/make_site.py --dev platform/build/saadet.fwsc dev build/site     (a development package, for testing)
 
 A release package comes from ./build.sh --release X.Y[.Z]: its identity is FM-1_9 and XXYYZZ, which the page
@@ -24,6 +26,7 @@ from the pinned release. Publishing the BLE build is a separate decision: see do
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import html
 import json
 from pathlib import Path
 import re
@@ -35,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from base_bootloader import ARTIFACTS, HASHES, PACKAGE as BOOT_PACKAGE, VERSION as BOOT_VERSION, checked_files  # noqa: E402
 from fm1_install import product_of  # noqa: E402
+from release_support import validate_build, validate_source_archive  # noqa: E402
 
 INSTALL = ROOT / "web/install"
 # the installer's modules, each after those it imports; fakefm1.js stays a file of its own (the demo's)
@@ -90,12 +94,31 @@ def bundle(names):
     return text
 
 
+def copy_licences(destination, base):
+    """Keep application, dependency and font notices alongside the downloads."""
+    for name in ("LICENSE", "LICENSING.md"):
+        shutil.copyfile(ROOT / name, destination / name)
+    shutil.copytree(ROOT / "LICENSES", destination / "LICENSES")
+    for label, directory in (("fm1-base", base), ("felucca-bsp", base / "bsp")):
+        target = destination / "LICENSES/upstream" / label
+        target.mkdir(parents=True)
+        for name in ("LICENSE", "LICENSING.md", "NOTICE"):
+            if (directory / name).is_file():
+                shutil.copyfile(directory / name, target / name)
+        if (directory / "LICENSES").is_dir():
+            shutil.copytree(directory / "LICENSES", target / "LICENSES")
+    for name in ("Barlow-OFL.txt", "Terminus-LICENSE.txt"):
+        shutil.copyfile(base / "assets/fonts" / name, destination / "LICENSES/upstream/fm1-base" / name)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("package", type=Path)
     ap.add_argument("version")
     ap.add_argument("out", type=Path)
     ap.add_argument("--dev", action="store_true", help="accept a development package (FM-1_900), for testing only")
+    ap.add_argument("--source", type=Path, help="matching source ZIP (required for public releases)")
+    ap.add_argument("--build-info", type=Path, help="firmware build receipt; defaults to PACKAGE.build.json")
     a = ap.parse_args(argv)
 
     raw = a.package.read_bytes()
@@ -114,6 +137,13 @@ def main(argv=None):
     if product_of(boot) != "FM-1_099":
         raise SystemExit("m-bootloader: wrong package identity")
 
+    source_info = None
+    if not a.dev:
+        receipt = validate_build(ROOT, a.package, a.version, a.build_info)
+        if not a.source:
+            raise SystemExit("A public release needs --source with its matching source archive.")
+        source_info = validate_source_archive(a.source, a.version, receipt)
+
     out = a.out
     if out.exists():
         if not (out / "install/release.json").exists():
@@ -127,8 +157,20 @@ def main(argv=None):
     (out / "firmware" / fw).write_bytes(raw)
     (out / "firmware" / bootname).write_bytes(boot)
     shutil.copyfile(ARTIFACTS / "LICENSE", out / "firmware/m-bootloader-LICENSE.txt")
+    copy_licences(out / "firmware", base.parent)
+    source_name = f"saadet-{a.version}-source.zip"
+    if source_info:
+        shutil.copyfile(a.source, out / "firmware" / source_name)
+        source_notice = (f"Saadet {a.version}\nFirmware source: {source_name}\n"
+                         f"Application commit: {source_info['commit']}\nSource SHA-256: {source_info['sha256']}\n"
+                         "The ZIP includes matching Saadet, fm1-base and felucca-bsp source.\n"
+                         "MPL-covered files are available under MPL-2.0; other files retain their own terms.\n")
+    else:
+        source_notice = "Development preview. Public releases include a matching source ZIP here.\n"
+    (out / "firmware/SOURCES.txt").write_text(source_notice + "Read LICENSE, LICENSING.md and LICENSES/.\n")
     (out / "firmware/SHA256SUMS").write_text("".join(
-        f"{sha256(p.read_bytes())}  {p.name}\n" for p in sorted((out / "firmware").iterdir()) if p.name != "SHA256SUMS"))
+        f"{sha256(p.read_bytes())}  {p.relative_to(out / 'firmware').as_posix()}\n"
+        for p in sorted((out / "firmware").rglob("*")) if p.is_file() and p.name != "SHA256SUMS"))
 
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     dirty = bool(subprocess.run(["git", "status", "--porcelain", "--", "firmware", "platform", "web", "tools"],
@@ -141,12 +183,19 @@ def main(argv=None):
         "commit": commit + ("+dirty" if dirty else ""), "base": rev,
         "built": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
     }
+    if source_info:
+        meta["source"] = {**source_info, "zip": f"../firmware/{source_name}"}
+    meta["licences"] = "../firmware/LICENSING.md"
     (out / "install/release.json").write_text(json.dumps(meta, indent=2) + "\n")
 
     page = (INSTALL / "index.html").read_text(encoding="utf-8")
     tag = '<script type="module" src="installer.js"></script>'
     if page.count(tag) != 1:
         raise SystemExit(f"web/install/index.html must load installer.js once: {tag}")
+    downloads = '<p><a href="../firmware/LICENSING.md">Licences</a> · <a href="../firmware/SOURCES.txt">Source information</a>'
+    if source_info:
+        downloads += f' · <a href="../firmware/{html.escape(source_name, quote=True)}" download>Download source</a>'
+    page = page.replace("<!-- RELEASE_DOWNLOADS -->", downloads + "</p>")
     (out / "install/index.html").write_text(page.replace(tag, f'<script type="module">\n{bundle(MODULES)}</script>'),
                                             encoding="utf-8")
     for name in ("fakefm1.js", "fm1ota.js"):

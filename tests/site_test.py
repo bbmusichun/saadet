@@ -34,7 +34,11 @@ class SiteTest(unittest.TestCase):
     def test_files_and_checksums(self):
         o, m = self.out, self.meta
         for f in ("index.html", "editor.html", "manual/index.html", "install/fakefm1.js", "install/fm1ota.js",
-                  "firmware/m-bootloader-LICENSE.txt", "firmware/SHA256SUMS"):
+                  "firmware/m-bootloader-LICENSE.txt", "firmware/SHA256SUMS", "firmware/LICENSE",
+                  "firmware/LICENSING.md", "firmware/SOURCES.txt", "firmware/LICENSES/MPL-2.0.txt",
+                  "firmware/LICENSES/GPL-3.0-only.txt", "firmware/LICENSES/upstream/fm1-base/LICENSE",
+                  "firmware/LICENSES/upstream/fm1-base/Barlow-OFL.txt",
+                  "firmware/LICENSES/upstream/felucca-bsp/NOTICE"):
             self.assertTrue((o / f).is_file(), f)
         fw = (o / "install" / m["pkg"]).resolve().read_bytes()
         boot = (o / "install" / m["boot"]["pkg"]).resolve().read_bytes()
@@ -43,13 +47,18 @@ class SiteTest(unittest.TestCase):
         self.assertEqual(hashlib.sha256(boot).hexdigest(), m["boot"]["sha256"])
         self.assertEqual((m["product"], m["dev"], m["boot"]["version"]), ("FM-1_900", True, "1.2"))
         sums = (o / "firmware/SHA256SUMS").read_text()
-        for p in (o / "firmware").iterdir():
-            if p.name != "SHA256SUMS":
-                self.assertIn(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}", sums)
+        for p in (o / "firmware").rglob("*"):
+            if p.is_file() and p.name != "SHA256SUMS":
+                self.assertIn(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(o / 'firmware').as_posix()}", sums)
+        self.assertEqual((o / "firmware/LICENSE").read_bytes(), (ROOT / "LICENSE").read_bytes())
+        self.assertEqual((o / "firmware/LICENSING.md").read_bytes(), (ROOT / "LICENSING.md").read_bytes())
 
     def test_page_is_one_bundled_module(self):
         page = (self.out / "install/index.html").read_text()
         self.assertNotIn('src="installer.js"', page)
+        self.assertIn('href="../firmware/LICENSING.md"', page)
+        self.assertIn('href="../firmware/SOURCES.txt"', page)
+        self.assertIn("Firmware: MPL-2.0", page)
         scripts = re.findall(r'<script type="module">\n(.*?)</script>', page, re.S)
         self.assertEqual(len(scripts), 1)
         for name in S.MODULES:
@@ -73,6 +82,7 @@ class SiteTest(unittest.TestCase):
     def test_release_identity(self):
         self.assertEqual(S.release_product("1.0"), "FM-1_9010000")
         self.assertEqual(S.release_product("1.2.3-rc1"), "FM-1_9010203")
+        self.assertEqual(S.release_product("0.1.0"), "FM-1_9000100")
 
 
 if __name__ == "__main__":

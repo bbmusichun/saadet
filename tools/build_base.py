@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from release_support import source_state, record_build
 
 if "--legacy" in sys.argv:
     raise SystemExit("The legacy platform is retired; only fm1-base targets are available.")
@@ -43,6 +44,7 @@ generate()
 env=os.environ.copy()
 env.setdefault("JIELI_TOOLCHAIN",str(Path.home()/".jieli/toolchain"))
 env.setdefault("AC79_SDK",str(Path.home()/"fw-AC79_AIoT_SDK"))
+before = source_state(ROOT)
 run([sys.executable,work/"tools/build.py",ROOT/"platform",*sys.argv[1:]],env=env,cwd=ROOT)
 
 if "--host" not in sys.argv and "--web" not in sys.argv:
@@ -50,3 +52,10 @@ if "--host" not in sys.argv and "--web" not in sys.argv:
     if "--release" in sys.argv:
         stem+="-"+sys.argv[sys.argv.index("--release")+1]
     run([sys.executable,ROOT/"tools/check_base.py",ROOT/"platform/build"/(stem+".fwsc")])
+    version = sys.argv[sys.argv.index("--release")+1] if "--release" in sys.argv else None
+    if version and ("SAADET v" + version.upper()).encode() not in (ROOT/"platform/build/saadet.bin").read_bytes():
+        raise SystemExit("The release image does not advertise its requested version in editor INFO.")
+    from fm1_install import product_of
+    package = ROOT/"platform/build"/(stem+".fwsc")
+    record_build(ROOT, package, before, version, product_of(package.read_bytes()), "--no-ble" not in sys.argv,
+                 REV, BSP_REV)

@@ -127,7 +127,7 @@ const TEXT = {
     mBrick2: "Without it, the FM-1's USB recovery route can put a firmware back from a computer:",
     mBrickLink: "felucca-bsp recovery tools",
     credits: "Saadet by Kerem Kilic (Ellic Studio). Built on fm1-base by Charles Vestal and felucca-bsp, from Felucca by Leo Kuroshita (@kurogedelic), Hügelton Instruments. m-bootloader by Julius Vitkauskas.",
-    legal: "GPL-3.0-only, without warranty. M-VAVE and FM-1 are trademarks of their respective owners.",
+    legal: "Firmware: MPL-2.0. Editor: GPL-3.0-only. Third-party terms apply. Without warranty. M-VAVE and FM-1 are trademarks of their respective owners.",
     details: "Details", sec: "{n} s", min: "{n} min",
   },
   ja: {
@@ -232,7 +232,7 @@ const TEXT = {
     mBrick2: "ない場合は、FM-1 の USB リカバリー手順でパソコンからファームウェアを書き戻せます：",
     mBrickLink: "felucca-bsp のリカバリーツール（英語）",
     credits: "Saadet：Kerem Kilic（Ellic Studio）。Charles Vestal の fm1-base と felucca-bsp を基盤に、Leo Kuroshita（@kurogedelic）、Hügelton Instruments の Felucca から。m-bootloader：Julius Vitkauskas。",
-    legal: "GPL-3.0-only、無保証。M-VAVE および FM-1 は各所有者の商標です。",
+    legal: "ファームウェア：MPL-2.0。エディター：GPL-3.0-only。第三者の利用条件も適用されます。無保証。M-VAVE および FM-1 は各所有者の商標です。",
     details: "詳細", sec: "{n} 秒", min: "{n} 分",
   },
 };

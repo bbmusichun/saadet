@@ -22,7 +22,11 @@
 #define panel sd_instrument_panel
 #define settings sd_instrument_settings
 #define bootguard sd_instrument_bootguard
+#ifdef APP_VERSION
+#define MELODEE_VERSION "v" APP_VERSION
+#else
 #define MELODEE_VERSION "v0.1.0-base-dev"
+#endif
 #define FM1_TICKS_PER_US 24u
 #ifndef PLAT_HOST
 #define FM1_IRQ_TARGET 1

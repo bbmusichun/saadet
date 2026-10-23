@@ -127,17 +127,27 @@ The distribution/provenance audit and physical checks are tracked in
 
 ## Release site and web installer
 
-`tools/make_site.py` turns a release package into a static site: the installer
-(`install/`), the package and pinned m-bootloader with `SHA256SUMS`
-(`firmware/`), the editor and the manual.
+`tools/prepare_public_release.py` builds a versioned BLE package and prepares its matching source archive,
+licence bundle, checksums and static installer site. Commit the complete source tree first. Its build receipt
+records the source file hashes and pinned dependency revisions; changed firmware, dirty source or a mismatched
+source archive is refused. The source ZIP includes the exact fm1-base and felucca-bsp source copies as well.
 
 ```sh
-PYTHON="$PWD/build/venv/bin/python" ./build.sh --release 1.0
-python3 tools/make_site.py platform/build/saadet-1.0.fwsc 1.0 build/site
-python3 -m http.server 8846 --bind 127.0.0.1 --directory build/site
+build/venv/bin/python tools/prepare_public_release.py 0.1.0
+python3 -m http.server 8846 --bind 127.0.0.1 --directory build/releases/0.1.0/site
 ```
 
-The release identity must be `FM-1_9` and XXYYZZ for the given version; the
+The output directory contains the firmware, source ZIP, uploadable site ZIP, release notes, licences,
+BUILD_INFO.json and SHA256SUMS. `--no-build` reuses an existing versioned package only when its build receipt
+still matches. `--checks FILE.json` carries completed automated check results as VERIFICATION.json. Existing
+release directories are preserved; select a new `--out` to prepare again.
+
+Preparation is local: it does not flash, tag, push or publish. Perform the hardware acceptance steps in
+RELEASE_NOTES.md on the exact package before publishing the site ZIP. Extract that ZIP as the web root; the
+install/ page links to firmware, source and licence downloads. An unmodified source ZIP can be rebuilt without
+Git history; its SOURCE_INFO.json supplies provenance, while the wrapper fetches the pinned dependencies.
+
+The release identity must be `FM-1_9` and XXYYZZ for the given version (0.1.0: `FM-1_9000100`); the
 installer checks the downloaded package's SHA-256 and identity, and the FM-1's
 report after the install. `--dev` accepts the development package for local
 testing. The site's installer page is one file: its modules (`web/install/`)
@@ -171,7 +181,7 @@ make an install hard to break from the browser:
 resumes an install, and installs m-bootloader after it; `tests/site_test.py`
 checks the site. Both are in `tests/run_base_tests.sh`. They do not replace an
 install on an FM-1 in Chrome and Edge, including with the tab in the background.
-`web/install/fm1ota.js` and `fm1pkg.js` are fm1-base's, byte for byte; the test
-and the site builder compare them with the pinned revision. Publishing the BLE
-build remains subject to the licensing boundary in `docs/BLE_MIGRATION.md`.
+`web/install/fm1ota.js` and `fm1pkg.js` are fm1-base's, byte for byte; the test and site builder compare them
+with the pinned revision. Public sites also include the firmware and editor licence texts, upstream notices,
+and matching source download. Hardware validation remains recorded separately in `docs/BLE_MIGRATION.md`.
 

@@ -56,7 +56,8 @@ Kerem Kilic (Ellic Studio). The earlier implementations remain GPL-3.0-only in h
 not been relicensed by this replacement. The specification, separation rules, compatibility checks and verification
 are recorded in [docs/cleanroom/preferences-process.md](docs/cleanroom/preferences-process.md).
 
-The base build's 96 repository source dependencies now pass the MPL/permissive check with no GPL exceptions.
+The base build's 97 repository source dependencies now pass the MPL/permissive check with no GPL exceptions,
+including the subsequently added BLE reconnect policy.
 The dependency and binary-library licensing information remains in [docs/BLE_MIGRATION.md](docs/BLE_MIGRATION.md);
 factory sound data and other third-party material retain the separate terms below.
 
@@ -163,9 +164,10 @@ They are licensed under the Apache License, Version 2.0 (`LICENSES/Apache-2.0.tx
 the GPL, and their copyright stays with JieLi Technology. The SDK has no NOTICE file. Apache-2.0
 files may be distributed together with Saadet's MPL-2.0 and GPL-3.0-only code.
 
-Release distributions need the applicable licence texts and source-availability information. The current
-`tools/make_site.py` copies m-bootloader's MIT text but does not yet copy Saadet's licence bundle or provide
-its source-download notice. Those release-packaging steps remain outstanding before publication.
+`tools/prepare_public_release.py` prepares a versioned firmware package, matching source ZIP and installer
+site. `tools/make_site.py` includes Saadet's licence texts, dependency/font notices and a source-download
+notice alongside the packages. Public sites require a clean source tree and a matching build receipt/source
+archive. The ZIP supplies MPL-covered source under MPL-2.0; other files retain their own terms and notices.
 
 ## Standalone ROM recovery tool
 
@@ -226,13 +228,13 @@ adaptations identify their retained Saadet/Felucca provenance.
 This target excludes the retired ChoralRoot boot stub/update transaction and `firmware/src/ota.c`.
 The contributed MIDI input and the last four GPL app modules have independent MPL-2.0 replacements;
 the MIDI clock credit was corrected from source history. The compiler-dependency check now finds all
-96 repository source files MPL/permissive, with no GPL exceptions. The app manifest declares MPL-2.0.
+97 repository source files MPL/permissive, with no GPL exceptions. The app manifest declares MPL-2.0.
 See the clean-room records under `docs/cleanroom/` for provenance and verification.
 
 JieLi's linked Bluetooth libraries retain their own terms and notices, recorded in the pinned fm1-base
 dependency's `LICENSING.md`. The vendors' factory sound data remains separate from the source-code licence;
 this project does not grant rights to that data. Completing source relicensing does not establish hardware
-release qualification or supply the outstanding release-site licence/source bundle described above.
+release qualification; the preparation tools supply the release-site licence/source bundle described above.
 
 The optional recovery bootloader is **m-bootloader 1.2** by Julius Vitkauskas
 (<https://github.com/jvitkauskas/m-bootloader>), under MIT. The pinned fm1-base
