@@ -163,9 +163,9 @@ They are licensed under the Apache License, Version 2.0 (`LICENSES/Apache-2.0.tx
 the GPL, and their copyright stays with JieLi Technology. The SDK has no NOTICE file. Apache-2.0
 files may be distributed together with Saadet's MPL-2.0 and GPL-3.0-only code.
 
-Every distribution of a package carries the licence texts with it: the release folder
-(`./build.sh --release`) and the site (`tools/make_site.py`, next to the package in
-`firmware/`).
+Release distributions need the applicable licence texts and source-availability information. The current
+`tools/make_site.py` copies m-bootloader's MIT text but does not yet copy Saadet's licence bundle or provide
+its source-download notice. Those release-packaging steps remain outstanding before publication.
 
 ## Standalone ROM recovery tool
 
@@ -210,10 +210,11 @@ SID/reSID code, its measured waveform assets and generators, and PHASE/CrispyZeb
 
 ## Radio
 
-Melodee never enables the Bluetooth / Wi-Fi radio of the hardware.
+Saadet's default fm1-base target enables Bluetooth MIDI, including the peripheral and central roles.
+`./build.sh --no-ble` produces the USB-only target. Wi-Fi is not enabled.
 
 
-## Experimental base target (23 October 2026)
+## fm1-base target (updated 23 October 2026)
 
 `platform/`, `tools/build_base.py` and `tools/base_overlay.py` create a separate
 local fm1-base/felucca-bsp build. Dependency revisions and retained notices are
@@ -222,13 +223,16 @@ licences and Kerem Kilic (Ellic Studio) attribution; included legacy modules
 keep their actual licences and contributor notices. CPU1 and overload policy
 adaptations identify their retained Saadet/Felucca provenance.
 
-This target excludes the legacy ChoralRoot boot stub/update transaction and
-`firmware/src/ota.c`. It still includes GPL app modules, including MIDI control
-and clock code with ChanceTheMaker contributions. No complete source/assets
-clearance or permission from those other contributors has been established.
-The linked JieLi BLE SDK does not make that enclosing application MPL. The
-experimental package is a private validation artifact, with distribution and
-relicensing unresolved.
+This target excludes the retired ChoralRoot boot stub/update transaction and `firmware/src/ota.c`.
+The contributed MIDI input and the last four GPL app modules have independent MPL-2.0 replacements;
+the MIDI clock credit was corrected from source history. The compiler-dependency check now finds all
+96 repository source files MPL/permissive, with no GPL exceptions. The app manifest declares MPL-2.0.
+See the clean-room records under `docs/cleanroom/` for provenance and verification.
+
+JieLi's linked Bluetooth libraries retain their own terms and notices, recorded in the pinned fm1-base
+dependency's `LICENSING.md`. The vendors' factory sound data remains separate from the source-code licence;
+this project does not grant rights to that data. Completing source relicensing does not establish hardware
+release qualification or supply the outstanding release-site licence/source bundle described above.
 
 The optional recovery bootloader is **m-bootloader 1.2** by Julius Vitkauskas
 (<https://github.com/jvitkauskas/m-bootloader>), under MIT. The pinned fm1-base

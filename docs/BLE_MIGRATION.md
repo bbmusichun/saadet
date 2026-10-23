@@ -5,8 +5,9 @@ Saadet on pinned fm1-base/felucca-bsp with the Bluetooth MIDI SDK linked.
 It is an experimental local build. The first authorized flash wrote completely
 but failed to return over MIDI. A startup-order fix was installed through
 RP2040 recovery with complete flash readback verification. The device now
-boots Saadet, answers USB MIDI/editor requests and reports BLE advertising;
-pairing and physical audio/control validation remain pending.
+boots Saadet, answers USB MIDI/editor requests and reports BLE advertising. A prior build also achieved
+displayed-code iPhone pairing and a confirmed MIDI subscription. Actual BLE notes/audio, sustained links,
+reconnects and bond persistence across reboot still need physical qualification on the release candidate.
 See `docs/VALIDATION.md` for hardware validation. The later source-licensing audit and independent
 replacements are recorded in `LICENSING.md` and `docs/cleanroom/preferences-process.md`; the base build's
 repository sources now pass the MPL/permissive check without GPL exceptions. Third-party libraries and

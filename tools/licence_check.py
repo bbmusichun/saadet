@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / "build/fm1-base-platform"
@@ -76,12 +77,20 @@ def problems(files, licence=spdx):
 def check():
     files = compiled()
     bad, known = problems(files)
+    bad.extend(manifest_problems())
     if bad:
         raise SystemExit("licence check:\n  " + "\n  ".join(bad))
     message = f"licence check: {len(files)} files, all MPL-2.0 or permissive"
     if known:
         message += f" except {len(known)} known GPL-3.0-only: " + ", ".join(Path(f).name for f in known)
     print(message)
+
+
+def manifest_problems():
+    """The app's declared licence must agree with the completed source migration."""
+    with (ROOT / "platform/fm1.toml").open("rb") as source:
+        licence = tomllib.load(source).get("licence")
+    return [] if licence == "MPL-2.0" else [f"platform/fm1.toml: app licence is {licence!r}, expected MPL-2.0"]
 
 
 if __name__ == "__main__":

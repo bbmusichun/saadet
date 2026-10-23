@@ -11,8 +11,8 @@ ble = true
 ble_central = true
 usb_audio_in = true
 usb_audio_out = true
-licence = "GPL-3.0-only"
-# The port remains private and under audit; no distribution/relicensing claim.
+licence = "MPL-2.0"
+# Repository firmware sources are MPL/permissive; third-party terms are in LICENSING.md.
 
 # The base explicitly supports separate app-owned CPU1 hardware glue.
 vendored = ["hardware/"]

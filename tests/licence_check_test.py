@@ -45,6 +45,11 @@ class LicenceCheckTest(unittest.TestCase):
     def test_mixed_third_party_licence(self):
         self.assertEqual(L.spdx(ROOT / "firmware/src/fm6_core.c"), "MPL-2.0 AND Apache-2.0")
 
+    def test_manifest_agrees_with_source_licences(self):
+        self.assertEqual(L.manifest_problems(), [])
+        with patch.object(L.tomllib, "load", return_value={"licence": "GPL-3.0-only"}):
+            self.assertEqual(len(L.manifest_problems()), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
