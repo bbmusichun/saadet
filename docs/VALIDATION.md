@@ -44,6 +44,13 @@ JUNO-106 voice, block, post and stereo stages.
 | `./build.sh --no-ble` | `platform/build/saadet-usb.fwsc` | 414,392 B | 45,720 B | 83,664 B | 145,952 B | `31fb963c…71f6` |
 | `./build.sh --legacy` | `build/saadet.fwsc` | 284,140 B | 37,272 B | — | — | `4ab985b1…0bb3` |
 
+Installed on the user's request: `tools/flash.sh --no-build --port FM-1` wrote
+`platform/build/saadet.fwsc` (SHA-256 `21fe1a3f…629b`, commit `dfa0322`) over the
+running `FM-1_900` with the base installer: 100 % written, restarted, `FM-1_900`
+returned. Its editor INFO then reported `SAADET v0.1.0-base-dev`, engines
+PROPHET, FM6, CZ-1 and JUNO-106, and the `4A 01 15 16 60 1A` tag. Log:
+`build/j106-flash.log`. Playing the engine on the device was not checked.
+
 Unmeasured: the engine's sound against a Juno-106, its CPU cost on the FM-1
 (the 2-unit voice charge and the batch cost reuse estimates), chorus/HPF
 calibration, and SysEx from a real instrument. TRS MIDI input drops SysEx, so
