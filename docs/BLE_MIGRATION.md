@@ -161,8 +161,12 @@ connection/disconnect helpers with controlled IO under address/undefined
 behavior sanitizers. The UI fixture checks all displayed states and text
 layout. The host scenario exercises the actual platform bridge, link-only
 recovery, disabling/re-enabling, reconnecting and release of BLE-held notes.
-These are software checks; this repair has not been installed or verified over
-a physical BLE link. Receipts and package hash are in `VALIDATION.md`.
+These are software checks. The repair was subsequently committed as
+`dd9d0f8` and installed on the FM-1. Its running identity returned, the current
+boot reports advertising as Saadet with no recorded crash, and the missing
+`sys_timer` warning no longer appears after the latest startup marker. A
+physical BLE connection remains unverified. Installation receipts and the
+package hash are in `VALIDATION.md`.
 
 ## Licensing boundary still outstanding
 

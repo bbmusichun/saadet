@@ -32,11 +32,26 @@ Screen fixtures are in `build/base-ui-ble/` and the platform host screenshots
 in `build/base-ble-connect/`. The target build runs last so its shared sidecar
 files describe the BLE package rather than the USB comparison.
 
-This repair has **not been installed**. A Mac/iPhone/iPad connection, host
-pairing/bond persistence, actual MIDI traffic, timing and physical audio remain
-unverified. The observed missing callback is repaired in software, but its
-causal role in the reported physical connection failure is not yet established.
-The installation receipts below refer to the earlier firmware.
+All outstanding source changes were committed as `dd9d0f8` on `ui-reset`,
+then the exact BLE package above was installed through the base's normal app
+installer on USB MIDI port `FM-1`. The installer completed its write and
+reported `done: the FM-1 runs FM-1_900`; a separate identity request confirmed
+`FM-1_900 [running]`. The package was reused without rebuilding.
+
+Post-install diagnostics report no recorded crash and `BT ready: advertising
+as Saadet`. The retained log also contains earlier boot history; after the
+latest `BT: starting` marker, no `post: no task sys_timer` warning appears,
+including the subsequent delayed log read. This establishes startup and
+advertising diagnostics, not a physical BLE connection. Receipts:
+`build/base-ble-connect-flash.log`,
+`build/base-ble-connect-after-device-info.log`, and
+`build/base-ble-connect-after-device.log`.
+
+A Mac/iPhone/iPad connection, host pairing/bond persistence, actual BLE MIDI
+traffic, timing and physical audio remain unverified. No saved-state readback
+was performed. The causal role of the missing callback in the user's failed
+physical connection is not yet established. Installation receipts in the next
+sections refer to earlier firmware.
 
 ## m-bootloader integration
 
