@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* FM6 factory voices (PTCH F9..F24): Melodee's own DX7 voices; SEND puts any of them out
  * as a DX7 single-voice dump.

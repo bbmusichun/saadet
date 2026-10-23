@@ -8,7 +8,6 @@ Python requires Pillow with Raqm; the build also needs Node.js for editor tests.
 python3 -m venv build/venv
 build/venv/bin/pip install Pillow
 PYTHON="$PWD/build/venv/bin/python" ./build.sh
-PYTHON="$PWD/build/venv/bin/python" ./build.sh --legacy
 npm ci --prefix web
 PATH="$PWD/build/venv/bin:$PATH" tests/run_tests.sh
 ```
@@ -18,17 +17,10 @@ PATH="$PWD/build/venv/bin:$PATH" tests/run_tests.sh
 builds the USB-only `platform/build/saadet-usb.fwsc` instead, `--host` the
 simulator, and `--release X.Y[.Z]` a release identity.
 
-`./build.sh --legacy` builds the original platform: `build/saadet.fwsc`, also
-`FM-1_900`. Its internal compiler artifacts retain the inherited
-`build/melodee.*` names. `./build.sh --legacy --nightly` produces
-`build/saadet-nightly.fwsc` and includes the source revision in the version.
-The legacy defaults retain USB audio, TRS MIDI, dual-core rendering and the
-upstream worker-failure fallback. The host suite checks this package's update
-layout, so build it before `tests/run_tests.sh`.
-
-The legacy build checks generated tables, MMIO access, audio RAM placement,
-resource capacity, boot/update layout and package structure. Host test logs
-are under `build/host/log`.
+The legacy platform is retired. Its compiler/release commands and local firmware outputs have been removed;
+only fm1-base BLE, USB-only and host targets are available. Host tests need no legacy package. Target checks
+cover resident audio, RAM capacity, boot/update layout and package structure; updater integration is exercised
+by `tests/run_base_tests.sh`. Host test logs are under `build/host/log`.
 
 Serve the editor without publishing:
 
@@ -42,9 +34,7 @@ multi-track simulator. `web/install/?demo` runs the web installer against a
 simulated FM-1 (see "Release site and web installer" below); nothing is written.
 
 Installation is a separate, explicit operation. `tools/flash.sh` builds the
-default package and installs it with the base's installer; `--legacy` builds
-and installs the original platform's package with the retained
-`tools/fm1_install.py`. Recovery is `tools/fm1_recover.py`. Use the actual
+default package and installs it with the base's installer. Recovery is `tools/fm1_recover.py`. Use the actual
 Saadet package and detected FM-1 port. Read the storage note in
 README before switching between Saadet and Melodee. Host and target checks are
 not physical audio/control/deadline validation.
@@ -65,9 +55,7 @@ The `platform/` target uses the pinned fm1-base and felucca-bsp
 revisions in `tools/build_base.py` (fm1-base `6c0b47e4bfc5`, BSP `0f08fcaa6610`).
 `./build.sh` runs that wrapper; it can also run directly. The wrapper fetches
 those revisions if absent, verifies a clean dependency checkout, regenerates
-Saadet's assets and applies the checked overlay to a disposable build copy. It
-leaves the original GPL platform and its package in `build/` available for
-comparison (`./build.sh --legacy`).
+Saadet's assets through `tools/generate_assets.py` and applies the checked overlay to a disposable build copy.
 
 ```sh
 PYTHON="$PWD/build/venv/bin/python" ./build.sh --no-ble
@@ -86,9 +74,8 @@ the two variants share a disposable overlay and compiler outputs.
 The wrapper also checks CPU1's private stacks and resident polling loop,
 resident audio placement, packed image bytes, engine arena and new boot entry.
 Logs for this migration are `build/base-{usb,ble,host}-build.log`,
-`build/base-port-tests.log` and `build/base-legacy-regressions.log`.
-The base's installer is in `build/fm1-base-platform/tools/`; the legacy
-CRSTUB package validator is not the installer for this new package layout.
+`build/base-port-tests.log` and `build/host/log/`.
+The base's installer is in `build/fm1-base-platform/tools/`.
 Neither these build commands nor the tests install firmware.
 
 ### Recovery bootloader and installation order

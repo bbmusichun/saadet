@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* Read-only previous DX7 objects, used only while embedding old sidecars. */
 #define NATIVE_FM_MAGIC 0x314D464Eu

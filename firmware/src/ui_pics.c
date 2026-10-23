@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* The pictures between a page's header and its four values: what the values do, drawn from the sound itself (the
  * envelope's shape, the LFO's wave, the routes, the arp's steps, the scale, the chord, the voices, a filter's curve,

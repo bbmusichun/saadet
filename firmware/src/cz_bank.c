@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* Eight independent 16-tone banks. One main-loop cache; audio reads track copies.
  * Each bank commits through storage.c A/B sectors, never over project data. */

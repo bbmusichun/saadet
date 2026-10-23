@@ -1,103 +1,84 @@
-/* SPDX-License-Identifier: GPL-3.0-only
- * Copyright (C) 2026 Kerem Kilic (Ellic Studio)
- * Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+/* SPDX-License-Identifier: MPL-2.0
+ * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
+
 #define MELODEE_FAVORITES 1
-/* Stable engine/preset references; fixed capacity independent of optional engines.
- * Bytes no engine's presets reach hold other settings, kept with the favorites (settings_persist.c):
- *   row 8  (GRAIN, retired; Felucca 1.0's stars in bits 0..11) 8..15 GLO > WEIGHTS (settings_persist.c),
- *          16..25 the FX key map, 28..31 its tag (below)
- *   row 14 (OBXF, retired; its old stars in 0..15)             16..27 the scale favorites, 28..31 their tag
- *   row 15 (CZ-1: factory tones bits 0..64, native slots 65..192) 26 tagged USB INPUT (settings_persist.c), 27 SCREEN OFF,
- *          28 tagged AUTOSAVE OFF, 29 the PRESETS LIST (browse.c),
- *          30 bit 0 retired, bit 1 KNOB ACCEL OFF (ui.c PREF_BITS), bits 2..4 retired (OVERCLOCK until 1.3.4 / 1.4),
- *          30 bit 5 PICKER OFF, bit 6 FONT PIXEL (ui.c PREF_BITS), bit 7 retired (STAGE EFFECTS OFF, 1.4.0-rc.4),
- *          31 the quick layers seen (ui_layer.c), 25 HOME SELECT (ui.c HOME_SELECT), 24 bits 1..4 GLO SELECT (ui.c
- *          GLO_SELECT), 24 bit 5 UNUSED TRACKS HIDE (ui.c TRACKS_HIDE), 24 bit 6 MIDI THRU (settings_persist.c);
- *          free: 24 bit 7
- *   row 0 bytes 2..27 hold all 201 Prophet factory stars, tagged in bytes 28..31;
- *         bytes 0..1 held retired ANALOG's stars.
- *   row 3 (SID, retired) bytes 0..27 hold the JUNO-106 presets' stars (INIT, Roland's factory patches), tagged
- *         J6F 2 in bytes 28..31; any other row (SID's old stars, J6F 1: Saadet's former starter tones) is cleared
- *         at the first star.
- *   row 1 bytes 24..27 hold tagged FX RATE (FQ + version 1 + quality); 28..31 mark validated Melodee settings (MDS + version 1).
- * Rows 1 (DIGITAL, retired), 4 (SAMPLE) and 13 (SLICE, built with MELODEE_SLICE) may hold Felucca 1.0's stars; 6, 7, 9 are LEGACY_EXTRAS' engines. Native FM6 slots: row 12 bits 24..87. */
+#define J106_STAR_CAP 224u
+#define SCALE_FAV_CAP 96u
+
 typedef struct {
-    uint8_t factory[16][32]; /* engine 0..15, preset 0..255 */
+    uint8_t factory[16][32];
     uint32_t user, filter;
 } favorites_t;
 static favorites_t favorites;
 static uint32_t favorites_user_hi;
-/* Scale favorites use the upper half of retired engine 14's PER5 row. Keep
- * old preset bits 0..127 intact; tagged storage ignores unrecognized bytes.
- * No settings/template layout change. */
-#define SCALE_FAV_CAP 96u
-static int scale_fav_valid(void)
+
+static int p5_favorite_has(uint32_t preset, int factory);
+static int p5_favorite_set(uint32_t preset, int on, int factory);
+
+/* A tagged row can lend just part of its payload to a newer collection. */
+static int star_tag_matches(const uint8_t *row, const uint8_t tag[4])
 {
-    const uint8_t *p = favorites.factory[14];
-    return p[28] == 'S' && p[29] == 'C' && p[30] == 'L' && p[31] == 1;
+    return !memcmp(row + 28, tag, 4);
 }
-static int scale_favorite(uint32_t scale)
+static int star_bit_get(const uint8_t *bits, uint32_t index)
 {
-    return scale < SCALE_FAV_CAP && scale_fav_valid() &&
-        ((favorites.factory[14][16u + scale / 8u] >> (scale % 8u)) & 1u);
+    return !!(bits[index / 8u] & (1u << (index % 8u)));
 }
-static int scale_favorite_set(uint32_t scale, int on)
+static int star_bit_put(uint8_t *bits, uint32_t index, int on)
 {
-    if (scale >= SCALE_FAV_CAP || scale_favorite(scale) == !!on) return 0;
-    uint8_t *p = favorites.factory[14];
-    if (!scale_fav_valid()) {
-        memset(p + 16, 0, 12);
-        p[28] = 'S'; p[29] = 'C'; p[30] = 'L'; p[31] = 1;
+    uint8_t mask = (uint8_t)(1u << (index % 8u));
+    uint8_t *b = bits + index / 8u;
+    if (star_bit_get(bits, index) == on) return 0;
+    *b = on ? (uint8_t)(*b | mask) : (uint8_t)(*b & ~mask);
+    return 1;
+}
+static int star_tagged_get(const uint8_t *row, uint32_t offset, uint32_t cap,
+                           const uint8_t tag[4], uint32_t index)
+{
+    return index < cap && star_tag_matches(row, tag) && star_bit_get(row + offset, index);
+}
+static int star_tagged_put(uint8_t *row, uint32_t offset, uint32_t cap,
+                           const uint8_t tag[4], uint32_t index, int on)
+{
+    if (index >= cap || star_tagged_get(row, offset, cap, tag, index) == on) return 0;
+    if (!star_tag_matches(row, tag)) {
+        memset(row + offset, 0, 28u - offset);
+        memcpy(row + 28, tag, 4);
     }
-    if (on) p[16u + scale / 8u] |= (uint8_t)(1u << (scale % 8u));
-    else p[16u + scale / 8u] &= (uint8_t)~(1u << (scale % 8u));
-    return 1;
+    return star_bit_put(row + offset, index, on);
 }
-static int p5_favorite_has(uint32_t slot,int factory);
-static int p5_favorite_set(uint32_t slot,int on,int factory);
-#define J106_STAR_CAP 224u                       /* row 3 bytes 0..27: room for the JUNO-106 presets */
-static int j106_favorite_valid(void)
+static const uint8_t star_juno_tag[4] = {'J', '6', 'F', 2};
+static const uint8_t star_scale_tag[4] = {'S', 'C', 'L', 1};
+
+static int star_user_namespace(uint32_t engine)
 {
-    const uint8_t *row = favorites.factory[3];
-    return row[28] == 'J' && row[29] == '6' && row[30] == 'F' && row[31] == 2u;
-}
-static int j106_favorite_has(uint32_t k)
-{
-    return k < J106_STAR_CAP && j106_favorite_valid() && (favorites.factory[3][k / 8u] >> (k % 8u) & 1u);
-}
-static int j106_favorite_set(uint32_t k, int on)
-{
-    uint8_t *row = favorites.factory[3];
-    if (k >= J106_STAR_CAP || j106_favorite_has(k) == !!on) return 0;
-    if (!j106_favorite_valid()) { memset(row, 0, 28u); row[28] = 'J'; row[29] = '6'; row[30] = 'F'; row[31] = 2u; }
-    if (on) row[k / 8u] |= (uint8_t)(1u << (k % 8u));
-    else row[k / 8u] &= (uint8_t)~(1u << (k % 8u));
-    return 1;
+    return engine == USER_GENERAL || engine == USER_NATIVE_P5 || engine == USER_NATIVE_FM ||
+           engine == USER_NATIVE_CZ || engine == USER_NATIVE_J106;
 }
 static int favorite_has(uint32_t engine, uint32_t preset)
 {
-    if(engine==ENGI_PROPHET)return p5_favorite_has(preset,1);
-    if(engine==ENGI_J106)return j106_favorite_has(preset);
-    if(engine==USER_NATIVE_P5 || engine==USER_NATIVE_FM || engine==USER_NATIVE_CZ || engine==USER_NATIVE_J106)engine=USER_GENERAL;
-    if (engine == USER_GENERAL)
-        return up_favorite(preset);
+    if (engine == ENGI_PROPHET) return !!p5_favorite_has(preset, 1);
+    if (star_user_namespace(engine)) return preset < UP_SLOTS && !!up_favorite(preset);
+    if (engine == ENGI_J106)
+        return star_tagged_get(favorites.factory[3], 0, J106_STAR_CAP, star_juno_tag, preset);
     return engine < NENGINES && engine < 16u && preset < 256u &&
-        ((favorites.factory[engine][preset / 8u] >> (preset % 8u)) & 1u);
+           star_bit_get(favorites.factory[engine], preset);
 }
 static int favorite_set(uint32_t engine, uint32_t preset, int on)
 {
-    if(engine==ENGI_PROPHET)return p5_favorite_set(preset,on,1);
-    if(engine==ENGI_J106)return j106_favorite_set(preset,on);
-    if(engine==USER_NATIVE_P5 || engine==USER_NATIVE_FM || engine==USER_NATIVE_CZ || engine==USER_NATIVE_J106)engine=USER_GENERAL;
-    if (engine >= NENGINES || (engine == USER_GENERAL ? preset >= UP_SLOTS : engine >= 16u || preset >= 256u))
-        return 0;
-    if (favorite_has(engine, preset) == !!on) return 0;
-    if (engine == USER_GENERAL) {
-        return up_favorite_set(preset,on);
-    } else {
-        uint8_t *b = &favorites.factory[engine][preset / 8u];
-        if (on) *b |= (uint8_t)(1u << (preset % 8u));
-        else *b &= (uint8_t)~(1u << (preset % 8u));
-    }
-    return 1;
+    on = !!on;
+    if (engine == ENGI_PROPHET) return p5_favorite_set(preset, on, 1);
+    if (star_user_namespace(engine)) return preset < UP_SLOTS ? up_favorite_set(preset, on) : 0;
+    if (engine == ENGI_J106)
+        return star_tagged_put(favorites.factory[3], 0, J106_STAR_CAP, star_juno_tag, preset, on);
+    return engine < NENGINES && engine < 16u && preset < 256u ?
+           star_bit_put(favorites.factory[engine], preset, on) : 0;
+}
+static int scale_favorite(uint32_t index)
+{
+    return star_tagged_get(favorites.factory[14], 16, SCALE_FAV_CAP, star_scale_tag, index);
+}
+static int scale_favorite_set(uint32_t index, int on)
+{
+    return star_tagged_put(favorites.factory[14], 16, SCALE_FAV_CAP, star_scale_tag, index, !!on);
 }

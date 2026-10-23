@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* What the screen shows, as a view (ui_vm_t: every string and bar the frame draws), and the drawing of a view. ui.c
  * builds the view every frame and draws it only when it differs from the last one drawn, so a change from anywhere

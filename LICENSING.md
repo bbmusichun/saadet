@@ -1,43 +1,82 @@
-# Saadet / Melodee licensing
+# Saadet licensing
 
-Saadet is a single-synth fork of Melodee. New work is by Kerem Kilic (Ellic Studio); retained upstream and third-party notices below continue to apply.
+Saadet is a single-synth fork of Melodee, which is a modified version of Felucca by Leo Kuroshita (@kurogedelic),
+Hügelton Instruments (<https://github.com/hugelton/Felucca>). New work is by Kerem Kilic (Ellic Studio). Saadet is
+licensed file by file: each source file's `SPDX-License-Identifier` line is authoritative. The licence texts are
+`LICENSE` (MPL-2.0) and the files in `LICENSES/`.
 
-Melodee is a modified version of Felucca by Leo Kuroshita (@kurogedelic), Hügelton Instruments
-(<https://github.com/hugelton/Felucca>), and keeps Felucca's licensing.
+## At a glance
 
-Melodee is free software, licensed under the GNU General Public License, version 3 only
-(`GPL-3.0-only`, full text in `LICENSE`). That covers the code and its own assets. A few
-bundled or ported parts keep their own licences; they are listed below, and their licence
-texts are in `LICENSES/`.
+| What | Licence |
+| --- | --- |
+| The firmware's files in the fm1-base build (`platform/`, and what it compiles from `firmware/`): the app, engines, editor protocol, storage, UI and MIDI | MPL-2.0 (`LICENSE`), with permissive third-party portions. The FM6 files with MSFA portions are `MPL-2.0 AND Apache-2.0`. No GPL exceptions remain in this build. |
+| Retained source of the retired platform (its update loader, boot stub, OTA path and clock/watchdog HAL) | GPL-3.0-only. No legacy firmware build or flash option is available. |
+| The build tools, host tests and web pages, unless a file says otherwise | GPL-3.0-only |
+| Bundled and ported third-party code, fonts and SDK files | Their own licences (Third-party material, below) |
+| Factory sound data (Roland, Sequential, Casio) | The vendors'. No licence is granted by this project. |
 
-Melodee code and modifications: Copyright (C) 2026 Kerem Kilic (Ellic Studio)\
-Retained Felucca portions: Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
+`tools/licence_check.py` runs after every fm1-base build (from `tools/check_base.py`). It lists the repository
+files that build compiles, and fails if one is neither MPL-2.0 nor permissive. Its known-GPL exception list is empty.
 
-Copyright notices follow the code's actual origin. Independently written Melodee files
-credit Kerem Kilic; mixed files also identify the retained Felucca portions. Unchanged
-upstream files and third-party ports retain their original notices. Sharing Felucca's
-GPL licence does not make new Melodee code Hügelton Instruments' work.
+## Why these files can be MPL-2.0
 
-## What is GPL-3.0-only
+- **Kerem Kilic's code** (Saadet and Melodee, including keremimo's Felucca commits) is licensed by its author.
+- **Leo Kuroshita's code.** He gave permission for anyone to use the Felucca code he personally owns under
+  MPL-2.0, in [felucca-bsp issue 4](https://github.com/hugelton/felucca-bsp/issues/4). His notices remain on the
+  files. The permission covers only his own code, not other contributors'.
+- **keremimo's MIDI clock and transport sync and his TRS ring fix** (Felucca `019e2ad` and `57f2aa0`) were granted
+  under MPL-2.0 in felucca-bsp pull request 3.
+- **Charles Vestal's code** comes from fm1-base, which is MPL-2.0.
+- **ChanceTheMaker's MIDI input** (Felucca pull request 8: pitch bend, sustain, RPN and panic handling) has been
+  replaced by a clean-room implementation, recorded in [docs/cleanroom/PROCESS.md](docs/cleanroom/PROCESS.md).
+  `midi_clock.c` contains none of his lines; its earlier credit to him is corrected.
+- **john (@johnskiller)'s system clock work** (pull request 27): his retune code is gone. What remains of his in
+  this build is not expressive: the clock header's include guard, an `#include <stdint.h>`, blank lines, and one
+  diagnostic assignment in `editor.c`. His register findings are credited as facts in `fm1_clock.h`.
+- **Felucca contributors' pull requests checked.** Saadet's history contains Felucca only up to its 1.0 source.
+  The code of every other pull request to Felucca was compared line by line with this build's files. Their authors
+  are mediaworkbench, ordenador, gospodindilly-ops, selenologist, ugai, echoe, JB-Interactive, spinkham,
+  renebohne, ugotworms, jasonpersinger, zednaked and andreahaku. Only generic lines match: language idioms,
+  hardware register writes, and Leo's own code that the pull requests moved. `fm1_core1_stop.h` follows Leo's
+  Felucca 1.6.1 CPU1 hold. Pull request 247, which it mentions, contributed only the hold's two register writes,
+  which are hardware facts.
 
-Every file in this tree that carries an `SPDX-License-Identifier: GPL-3.0-only` header:
+## Independent replacements of the last four base-build GPL files
 
-- the firmware: `firmware/` (app, HAL, update loader)
-- the build script and tools: `build.sh`, `tools/`
-- the web pages (installer, editor) and their tests: `web/` (not the Fukiai font, below)
-- the host tests: `tests/`
+| Replaced file | Earlier contribution replaced |
+| --- | --- |
+| `firmware/src/editor_preferences.c` | ChanceTheMaker's device-preferences and favourites editor commands (Felucca pull requests 10 to 12, through Felucca 1.0) |
+| `firmware/src/favorites.c` | ChanceTheMaker's favourites storage (same pull requests) |
+| `firmware/src/settings_persist.c` | ChanceTheMaker's favourites persistence (same pull requests) |
+| `firmware/src/scratch.h` | Andre Rezemini's shared main-loop scratch, adapted from SLOOP pull request 111 |
 
-Three source files are ports and keep the licence of their originals: `firmware/src/phys_dsp.c`
-(DaisySP, MIT), `firmware/src/phys_symp.c` (Rings, MIT), and `firmware/src/cz_native.c`
-(MAME uPD933, BSD-3-Clause). `firmware/src/fm6_core.c` and
-`firmware/src/eng_fm6.c` retain MSFA (Apache-2.0) synthesis and data in C with native fp32 signal arithmetic (below).
-The new operator and voice-policy files, the JUNO-106 engine files (below) and the imported fm1-base maths keep their per-file MPL/Apache notices.
-This preparation does not relicense the enclosing application; the full provenance and platform migration are still in progress (see `docs/BLE_MIGRATION.md`).
-The firmware built with them is GPL-3.0-only as a whole.
+On 23 October 2026 all four files were independently replaced under MPL-2.0, using a behaviour-only specification
+and a fresh implementer given a tree without the old implementations or Git history. The replacements credit
+Kerem Kilic (Ellic Studio). The earlier implementations remain GPL-3.0-only in history; their authors' code has
+not been relicensed by this replacement. The specification, separation rules, compatibility checks and verification
+are recorded in [docs/cleanroom/preferences-process.md](docs/cleanroom/preferences-process.md).
 
-You may use, study, change and share Melodee under the GPL. If you distribute Melodee, or
-firmware derived from it, you must also give your recipients its complete corresponding
-source under the same licence. That includes devices that ship with modified Melodee inside.
+The base build's 96 repository source dependencies now pass the MPL/permissive check with no GPL exceptions.
+The dependency and binary-library licensing information remains in [docs/BLE_MIGRATION.md](docs/BLE_MIGRATION.md);
+factory sound data and other third-party material retain the separate terms below.
+
+## GPL-3.0-only elsewhere
+
+The retired platform's source keeps parts by other contributors that no MPL-2.0 permission covers:
+the ChoralRoot-derived boot stub and loader, Andre Rezemini's `firmware/src/ota.c`, and john's watchdog read-back
+in `firmware/hal/fm1_sys.h` (see Third-party material, below). The legacy firmware is therefore GPL-3.0-only as a
+whole. Its build/release commands and local firmware outputs have been removed; only fm1-base BLE, USB-only
+and simulator targets are available. Shared files carry their own MPL-2.0 notices. Historical source and
+recovery-format helpers keep their original notices and licences.
+
+You may use, study, change and share the GPL-3.0-only parts under that licence. If you distribute firmware that
+contains them, give your recipients its complete corresponding source under GPL-3.0. That includes devices that
+ship with modified Saadet inside. MPL-2.0 files stay MPL-2.0 file by file: anyone distributing them must keep that
+licence and make their source available as MPL-2.0 requires.
+
+Copyright notices follow the code's actual origin. Independently written files credit Kerem Kilic. Mixed files
+also identify the retained Felucca portions and any other contributor. Unchanged upstream files and third-party
+ports retain their original notices.
 
 ## JUNO-106 engine (MPL-2.0)
 
@@ -70,12 +109,9 @@ The presets are INIT and Roland's 128 factory patches. Those patches are Roland'
 data, kept in `assets/j106-factory/` and generated into a build header; they are
 not part of the MPL-2.0 files and no licence is granted for them (see Third-party
 material below). Patches a user imports remain the user's material. The hooks
-that connect the engine to the existing instrument (engine table, library, state, mixer, panel,
-editor and web editor) are edits to GPL-3.0-only files and stay GPL-3.0-only; the
-legacy firmware built with them is GPL-3.0-only as a whole. MPL-2.0 permits this
-combination (its section 3.3); the JUNO-106 files themselves remain available
-under MPL-2.0, and anyone distributing them must keep that licence and offer
-their source as MPL-2.0 requires.
+that connect the engine to the existing instrument (engine table, library, state, mixer, panel and
+editor) are now MPL-2.0, like the rest of the fm1-base build. The web editor's hooks stay
+GPL-3.0-only with the web editor.
 
 ## Retained Hügelton Instruments material
 
@@ -84,21 +120,21 @@ Melodee's additions and modifications are credited separately in the source file
 
 | What | Licence | Where |
 | --- | --- | --- |
-| Original Felucca portions retained in the firmware, tools, web pages and tests | GPL-3.0-only | Source notices; `LICENSE` |
+| Original Felucca portions retained in the firmware, tools, web pages and tests | MPL-2.0 in the fm1-base build's files (his permission, above); GPL-3.0-only elsewhere | Source notices; `LICENSE`, `LICENSES/GPL-3.0-only.txt` |
 | The Fukiai icon font (<https://github.com/hugelton/Fukiai>): the web editor's icons | MIT | `web/fukiai.ttf`, `LICENSES/MIT-Fukiai.txt`, `web/FUKIAI-LICENSE.txt` |
 
 ## Third-party material
 
 | What | Licence | Where |
 | --- | --- | --- |
-| ChoralRoot FM-1 contributors (<https://github.com/Quixotic7/ChoralRootFM1>, v0.16, commit `9c7445cdd7b767c779741d28654fb59cca3acd97`): boot stub, interrupted-update write ordering, commit-marker/CRC compensation, and recovery tests, adapted for Melodee. The shared `CRSTUB` / `CRBM` format is retained. | GPL-3.0-only | `firmware/stub/`, `firmware/loader/ldr_core.c`, `tools/build.py`, `tools/fm1pkg_make.py`, `tests/boot_stub*`, `tests/loader_powercut_test.c` |
+| ChoralRoot FM-1 contributors (<https://github.com/Quixotic7/ChoralRootFM1>, v0.16, commit `9c7445cdd7b767c779741d28654fb59cca3acd97`): historical boot stub, interrupted-update write ordering, commit-marker/CRC compensation, and recovery tests, adapted for Melodee. The shared `CRSTUB` / `CRBM` format is retained in the retired source and recovery-format helpers. | GPL-3.0-only | `firmware/stub/`, `firmware/loader/ldr_core.c`, `tools/fm1pkg_make.py`, `tests/boot_stub*`, `tests/loader_powercut_test.c` |
 | Andre Rezemini (SLOOP RAM branch): retained update-path contributions, not covered by Leo's own-code permission. This path remains in the existing GPL build and is excluded from the experimental base target. | GPL-3.0-only | `firmware/src/ota.c` |
 | Archivo font by The Archivo Project Authors (<https://github.com/Omnibus-Type/Archivo>): the UI text, rasterised into the firmware at build time (`tools/gen_aa_font.py --preset stage`; the generated tables are not offered as a font, and the font declares no Reserved Font Name) | SIL OFL 1.1 | `assets/fonts/Archivo[wdth,wght].ttf`, `LICENSES/OFL-Archivo.txt` |
 | Rubik font by The Rubik Project Authors (<https://github.com/googlefonts/rubik>): the `rubik` preset of `tools/gen_aa_font.py` (the firmware's text up to the Saadet redesign; the font declares no Reserved Font Name) | SIL OFL 1.1 | `assets/fonts/Rubik[wght].ttf`, `LICENSES/OFL-Rubik.txt` |
 | Inter Tight font by The Inter Project Authors: the `inter-tight` preset of `tools/gen_aa_font.py` (the firmware's text was Inter Tight up to Melodee 0.13) | SIL OFL 1.1 | `assets/fonts/InterTight[wght].ttf`, `LICENSES/OFL-InterTight.txt` (also `assets/fonts/OFL.txt`) |
 | DaisySP by Electrosmith, Corp and Emilie Gillet (<https://github.com/electro-smith/DaisySP>): the PHYS engine's modal and string models and the resonator, ported to fixed point | MIT | `firmware/src/phys_dsp.c`, `LICENSES/MIT-DaisySP.txt` |
 | Rings by Emilie Gillet (<https://github.com/pichenettes/eurorack>): the PHYS engine's sympathetic strings, ported to fixed point | MIT | `firmware/src/phys_symp.c`, `LICENSES/MIT-Rings.txt` |
-| MSFA (Google Inc., Pascal Gauthier, Jean Pierre Cimalando): DX7 synthesis, scaling, envelopes, algorithms, LFO, frequency/sine data, controllers and portamento, from explicitly Apache-2.0 source files. Saadet uses native fp32 operators and its own voice lifecycle. MARK I/OPL renderers and tables and the Dexed-style shadow mono bank have been removed. Sources and exact revisions are in `docs/BLE_MIGRATION.md`; historical GPL notices remain until the enclosing-file audit is complete. | Apache-2.0 upstream portions; current enclosing app GPL-3.0-only; new operator file MPL-2.0 AND Apache-2.0 | `firmware/src/fm6_core.c`, `firmware/src/eng_fm6.c`, `firmware/src/fm6_msfa_ops.h`, `tools/gen_tables.py`, `LICENSES/Apache-2.0-msfa.txt` |
+| MSFA (Google Inc., Pascal Gauthier, Jean Pierre Cimalando): DX7 synthesis, scaling, envelopes, algorithms, LFO, frequency/sine data, controllers and portamento, from explicitly Apache-2.0 source files. Saadet uses native fp32 operators and its own voice lifecycle. MARK I/OPL renderers and tables and the Dexed-style shadow mono bank have been removed. Sources and exact revisions are in `docs/BLE_MIGRATION.md`; Dexed's GPL engine files were never retained. | Apache-2.0 upstream portions, in firmware files that are MPL-2.0 AND Apache-2.0 (`tools/gen_tables.py` stays GPL-3.0-only with the tools) | `firmware/src/fm6_core.c`, `firmware/src/eng_fm6.c`, `firmware/src/fm6_msfa_ops.h`, `tools/gen_tables.py`, `LICENSES/Apache-2.0-msfa.txt` |
 | fm1-base by Charles Vestal: explicitly MPL-licensed single-precision maths, imported at `93bee3fe9def08127dd5dff638df5bd57cebcc80`; Kerem's unsigned exponent-bit adjustment avoids a signed-shift issue. This replaces the earlier GPL copy of the same helper. | MPL-2.0 | `firmware/src/x0x/fastmath.h`, `LICENSES/MPL-2.0.txt` |
 | MAME uPD933 device model by Devin Acker: native CZ phase functions, envelope rate law and logarithmic amplitude adapted to C with native fp32 playback | BSD-3-Clause | `firmware/src/cz_native.c`, `LICENSES/BSD-3-Clause-uPD933.txt` |
 | Casio CZ-1 preset tones A-1..H-8 (Casio Computer Co., Ltd., 1986): the 64 factory sounds as native tone data, combined from the "64 original CZ-1 patches" SysEx (GeoCities CZ-101 page, archived 2009) and Oli Larkin's VirtualCZ conversions of the same presets (LCD names, line levels, velocity). Included as sound data for CZ-1 compatibility; the rights stay with Casio. See `assets/cz1-factory/README.md` | Casio's (no licence granted) | `assets/cz1-factory/cz1-factory.syx`, `tools/make_cz1_factory.py`, `tools/gen_cz1_factory.py` |
@@ -112,8 +148,8 @@ CREDITS, a short list of these authors, licences and source URLs.
 
 ## JieLi SDK files in the packages (Apache-2.0)
 
-A `.fwsc` package made by `tools/build.py` (with `tools/fm1pkg_make.py`; this is the package the
-web installer installs) holds three unmodified files from the JieLi AC79 SDK
+A current `.fwsc` package made by `tools/build_base.py` through the pinned fm1-base packager
+(the package the web installer installs) holds three unmodified files from the JieLi AC79 SDK
 (<https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK>, `cpu/wl82/tools/`). They are read from your SDK
 checkout at build time (see BUILDING.md); those three SDK files are not in this tree.
 
@@ -125,11 +161,11 @@ checkout at build time (see BUILDING.md); those three SDK files are not in this 
 
 They are licensed under the Apache License, Version 2.0 (`LICENSES/Apache-2.0.txt`), not under
 the GPL, and their copyright stays with JieLi Technology. The SDK has no NOTICE file. Apache-2.0
-files may be distributed together with GPL-3.0 code; Melodee itself stays GPL-3.0-only.
+files may be distributed together with Saadet's MPL-2.0 and GPL-3.0-only code.
 
 Every distribution of a package carries the licence texts with it: the release folder
-(`tools/build.py --release`) and the site (`web/make_site.py`, next to the package in
-`firmware/` and linked from the installer page).
+(`./build.sh --release`) and the site (`tools/make_site.py`, next to the package in
+`firmware/`).
 
 ## Standalone ROM recovery tool
 
@@ -156,7 +192,7 @@ never uploaded or redistributed.
 
 ## Contributions
 
-Contributions are welcome under GPL-3.0-only.
+Contributions are welcome under the licence of the file they change. New firmware files are MPL-2.0.
 
 ## Trademarks
 

@@ -1,176 +1,156 @@
-#include "recording_preferences.h"
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
-/* Shared PER5 layout: each feature updates only its own fields, preserving
- * the other feature's saved preferences when either is built independently.
- * PER5 keeps the compatible layout; boot validates the complete object before import. Its ext block:
- * usb_off (the USB audio devices left out, USB AUDIO in the menu), boot (BOOT: 0 OFF, 1..4 the project power-on
- * loads), glo (CLK TUNE MIDI ROUT as last used, GLO_KEPT: restored at power-on, a project's own win), drumch
- * (GLO > SYSTEM DRUM: 0 channel 10, 1..16, 17 OFF), lights (the menu's LIGHTS: 0 MID, else OFF..FULL + 1); every
- * field 0 = the default, so spare words can take new ones. spare[1] holds tagged A4 concert pitch (0 = 440 Hz).
- * A saved template (project.c tmpl_t) follows the record.
- * palette: UI_PAL_TAG + index (any other id: the default).
- * favorites.factory[15][28]: tagged AUTOSAVE OFF; zero/unknown keeps autosave ON.
- * favorites.factory[15][24] bit 6: MIDI THRU ON (a bit no build wrote before: 0 keeps it OFF).
- * bold: no longer used (one font weight); kept as it was saved, unless it holds the HOLD setting (panel.c). */
+#include "recording_preferences.h"
+
+#define PERSIST_MAGIC 0x50455235u
+#define A4_TAG 0x41340000u
+#define AUTOSAVE_OFF_TAG 0xA1u
+#define WORK_BUDGET_TAG 0x57420000u
+#define FX_PREF_ROW 1u
+#define FX_PREF_BYTE 24u
+
 typedef struct {
     uint32_t magic, palette, lowcut, zoom;
     panel_t panel;
     uint32_t bold;
     struct { uint8_t factory[16][32]; uint32_t user, filter; } favorites;
-    struct { uint32_t usb_off, boot; int16_t glo[4]; uint32_t drumch, lights, spare[2]; } ext;   /* drumch: 0 = 10,
-                                                                                                * 17 OFF; lights: 0 MID,
-                                                                                                * else level + 1 */
+    struct {
+        uint32_t usb_off, boot;
+        int16_t glo[4];
+        uint32_t drumch, lights, spare[2];
+    } ext;
 } persist_t;
-#define PERSIST_MAGIC 0x50455235u
-_Static_assert(sizeof(((persist_t *)0)->ext) == 32u, "ext: 8 words, new fields take spare ones");
-_Static_assert(sizeof(persist_t) == 604u, "the record's layout: new settings take spare bytes (favorites.c)");
+_Static_assert(sizeof(persist_t) == 604, "settings record ABI");
+_Static_assert(sizeof(((persist_t *)0)->ext) == 32, "settings extension ABI");
+static int16_t settings_glo[4];
 
-static int16_t settings_glo[4];                     /* ext.glo: project.c GLO_KEPT (glo_restore, glo_poll) */
-#define RECORD_PREF_TAG 0x52500000u /* RP, high half of the old zoom word */
-#define A4_TAG 0x41340000u                          /* "A4": old spare contents are not tuning */
-#define AUTOSAVE_OFF_TAG 0xA1u                     /* CZ row byte 28: only this tag disables autosave */
-#define THRU_ON_BIT 0x40u                          /* CZ row byte 24, past its native slots (bit 0) and GLO SELECT */
-#define WORK_BUDGET_TAG 0x57420000u /* WB: high bits of usb_off; low two bits retain USB mode */
-/* GLO > WEIGHTS in favorites.c row 8 bytes 8..15: 'W', version 1, the five points (0 AUTO, 1..15), bit 0 of the
- * last byte SAFETY OFF. Untagged bytes default to OFF; explicit ON is tagged too. Defaults store zeros. */
-#define VOICE_PREF_ROW 8u
-#define VOICE_PREF_BYTE 8u
-/* Retired DIGITAL row bytes 24..27: B, version 1, full-charge ADC little-endian.
- * Old FQ/untagged records carry no battery reference; the PER5 layout stays fixed. */
-#define FX_PREF_ROW 1u
-#define FX_PREF_BYTE 24u
+static int settings_owned(const persist_t *p)
+{
+    const uint8_t *tag = p->favorites.factory[1] + 28;
+    return tag[0] == 'M' && tag[1] == 'D' && tag[2] == 'S' && tag[3] == 1;
+}
 static uint16_t battery_full_of(const persist_t *p)
 {
     const uint8_t *b = p->favorites.factory[FX_PREF_ROW] + FX_PREF_BYTE;
-    uint32_t raw = (uint32_t)b[2] | (uint32_t)b[3] << 8;
-    return b[0] == 'B' && b[1] == 1u && raw > 0u && raw <= 1023u ? (uint16_t)raw : 0u;
+    uint32_t value = b[2] | (uint32_t)b[3] << 8;
+    return b[0] == 'B' && b[1] == 1 && value > 0 && value <= 1023 ? (uint16_t)value : 0;
 }
-/* Retired DIGITAL row, outside all live preset/settings bits. Kept by older
- * Melodee builds along with the other favorites; no layout or magic change. */
-static const uint8_t SETTINGS_OWNER[4] = {'M', 'D', 'S', 1};
-static int settings_owned(const persist_t *p)
+static int settings_usb_shape(uint32_t word)
 {
-    return !memcmp(p->favorites.factory[1] + 28, SETTINGS_OWNER, sizeof SETTINGS_OWNER);
+    return word <= 3u || (word & ~(0xFF00u | 3u)) == WORK_BUDGET_TAG;
 }
-/* Legacy Melodee has no owner tag. Require its tagged palette and complete
- * schema, then check the optional template in project.c before accepting it. */
+static uint32_t settings_budget_of(uint32_t word)
+{
+    uint32_t value = (word >> 8) & 255u;
+    return (word & 0xFFFF0000u) == WORK_BUDGET_TAG && value >= 8u && value <= 32u ?
+           value : VOICE_BUDGET_DEFAULT;
+}
+static uint32_t settings_usb_word(uint32_t flags, uint32_t budget)
+{
+    return (flags & 3u) | (budget != VOICE_BUDGET_DEFAULT ?
+                            WORK_BUDGET_TAG | budget << 8 : 0u);
+}
 static int settings_legacy_valid(const persist_t *p)
 {
-    uint32_t work = p->ext.usb_off, points = (work >> 8) & 255u;
-    int usb_ok = work <= 3u || ((work & 0xFFFF00FCu) == WORK_BUDGET_TAG && points >= 8u && points <= 32u);
+    uint32_t usb = p->ext.usb_off;
     return p->magic == PERSIST_MAGIC && palette_stored_ok(p->palette) &&
-        p->panel.magic == PANEL_MAGIC && p->lowcut <= 2u && (p->zoom & 0xFFu) <= 1u &&
-        (p->zoom <= 0xFFu || (p->zoom & 0xFFFF0000u) == RECORD_PREF_TAG) &&
-        hold_stored_ok(p->bold) && p->favorites.filter <= 1u && usb_ok &&
-        p->ext.boot <= 4u && p->ext.drumch <= 17u && p->ext.lights <= LIGHTS_N;
+           p->panel.magic == PANEL_MAGIC && p->lowcut <= 2u && (p->zoom & 255u) <= 1u &&
+           (p->zoom <= 255u || (p->zoom >> 16) == 0x5250u) && hold_stored_ok(p->bold) &&
+           p->favorites.filter <= 1u && settings_usb_shape(usb) &&
+           (usb <= 3u || (((usb >> 8) & 255u) >= 8u && ((usb >> 8) & 255u) <= 32u)) &&
+           p->ext.boot <= 4u && p->ext.drumch <= 17u && p->ext.lights <= LIGHTS_N;
 }
-
-/* Normalize in place; 1 = read, 0 = invalid. */
-static int settings_import(persist_t *p, int n)
+static int settings_import(persist_t *p, int length)
 {
-    if (n != (int)sizeof *p || p->magic != PERSIST_MAGIC) return 0;
-    settings_batt_full = battery_full_of(p);
-    uint32_t work=p->ext.usb_off,points=(work>>8)&255u;
-    settings_budget=(int16_t)(((work&0xffff0000u)==WORK_BUDGET_TAG && points>=8u && points<=32u)?points:VOICE_BUDGET_DEFAULT);
-    uint32_t mode = work <= 3u || (work & 0xFFFF00FCu) == WORK_BUDGET_TAG ? work & 3u : 0u;
-    p->ext.usb_off=mode|(settings_budget!=VOICE_BUDGET_DEFAULT?WORK_BUDGET_TAG|((uint32_t)settings_budget<<8):0u);
-    if (p->ext.boot > 4u)
-        p->ext.boot = 0;
-    settings_boot = (uint8_t)p->ext.boot;
-    if (p->ext.drumch > 17u)
-        p->ext.drumch = 0;
-    settings_drumch = (uint8_t)(!p->ext.drumch ? 10u : p->ext.drumch == 17u ? 0u : p->ext.drumch);
-    settings_lights = (uint8_t)(p->ext.lights && p->ext.lights <= LIGHTS_N ? p->ext.lights - 1u : LIGHTS_MID);
-    {
-        uint32_t hz = p->ext.spare[1] & 0xFFFFu;
-        tuning_a4 = (int16_t)((p->ext.spare[1] & 0xFFFF0000u) == A4_TAG && hz >= A4_MIN && hz <= A4_MAX
-                             ? hz : A4_DEFAULT);
-    }
-    memcpy(settings_glo, p->ext.glo, sizeof settings_glo);
-#if MELODEE_USB_AUDIO
-    ua_off = ua_off_want = (uint8_t)p->ext.usb_off;    /* (usb_start, after this, builds the configuration) */
-#endif
-    p->palette = palette_to_stored(palette_from_stored(p->palette));
-    settings_screen=p->favorites.factory[15][27] < 8u ? p->favorites.factory[15][27] : 0u;
-    settings_autosave = p->favorites.factory[15][28] != AUTOSAVE_OFF_TAG;
-    settings_thru = (uint8_t)!!(p->favorites.factory[15][24] & THRU_ON_BIT);
+    if (length != (int)sizeof *p || p->magic != PERSIST_MAGIC) return 0;
     settings.magic = SETTINGS_MAGIC;
     settings.palette = palette_from_stored(p->palette);
+    p->palette = palette_to_stored(settings.palette);
     settings.lowcut = 0;
-    settings.zoom = (p->zoom & 0xFFu) == 1u;
-    uint32_t rp = (p->zoom & 0xFFFF0000u) == RECORD_PREF_TAG ? (p->zoom >> 8) & 0xFFu : 0u;
-    settings_click = (uint8_t)((rp & 3u) < 3u ? rp & 3u : 0u);
-    uint32_t level = (rp >> 2) & 3u;
-    settings_click_level = (uint8_t)(level == 1u ? 0u : level == 2u ? 2u : 1u);
-    settings_countin = (uint8_t)(((rp >> 4) & 3u) < 3u ? (rp >> 4) & 3u : 0u);
-    settings_preview = (uint8_t)((rp >> 6) & 1u);
-    settings_chord_add = (uint8_t)((rp >> 7) & 1u);
-    settings_hold = (uint8_t)hold_from_stored(p->bold);
+    settings.zoom = (p->zoom & 255u) == 1u;
+    uint32_t rec = (p->zoom >> 16) == 0x5250u ? (p->zoom >> 8) & 255u : 0u;
+    settings_click = (rec & 3u) < 3u ? rec & 3u : 0;
+    settings_click_level = ((rec >> 2) & 3u) == 1u ? 0 : ((rec >> 2) & 3u) == 2u ? 2 : 1;
+    settings_countin = ((rec >> 4) & 3u) < 3u ? (rec >> 4) & 3u : 0;
+    settings_preview = !!(rec & 64u);
+    settings_chord_add = !!(rec & 128u);
+    panel = p->panel.magic == PANEL_MAGIC ? p->panel : PANEL_DEFAULT;
+    settings_hold = hold_from_stored(p->bold);
 #ifdef MELODEE_FAVORITES
     memcpy(&favorites, &p->favorites, sizeof favorites);
+    favorites.filter = p->favorites.filter == 1u;
     favorites_user_hi = p->ext.spare[0];
-    favorites.filter = favorites.filter == 1u;
 #endif
-    panel = p->panel.magic == PANEL_MAGIC ? p->panel : PANEL_DEFAULT;
-    {
-        const uint8_t *w = p->favorites.factory[VOICE_PREF_ROW] + VOICE_PREF_BYTE;
-        uint32_t tagged = w[0] == 'W' && w[1] == 1u;
-        for (uint32_t k = 0; k < VOICE_KINDS; k++)
-            settings_vpoints[k] = (int16_t)(tagged && w[2u + k] <= 15u ? w[2u + k] : 0u);
-        settings_safety = (int16_t)(tagged && !(w[7] & 1u));
-    }
+    settings_batt_full = battery_full_of(p);
+    uint32_t flags = settings_usb_shape(p->ext.usb_off) ? p->ext.usb_off & 3u : 0u;
+    settings_budget = (int16_t)settings_budget_of(p->ext.usb_off);
+    p->ext.usb_off = settings_usb_word(flags, (uint32_t)settings_budget);
+#if MELODEE_USB_AUDIO
+    ua_off = ua_off_want = flags;
+#endif
+    if (p->ext.boot > 4u) p->ext.boot = 0;
+    settings_boot = (uint8_t)p->ext.boot;
+    memcpy(settings_glo, p->ext.glo, sizeof settings_glo);
+    if (p->ext.drumch > 17u) p->ext.drumch = 0;
+    settings_drumch = p->ext.drumch == 0 ? 10 : p->ext.drumch == 17u ? 0 : p->ext.drumch;
+    settings_lights = p->ext.lights >= 1u && p->ext.lights <= LIGHTS_N ? p->ext.lights - 1u : LIGHTS_MID;
+    uint32_t a4 = p->ext.spare[1] & 0xFFFFu;
+    tuning_a4 = (p->ext.spare[1] & 0xFFFF0000u) == A4_TAG && a4 >= A4_MIN && a4 <= A4_MAX ? a4 : A4_DEFAULT;
+    settings_screen = p->favorites.factory[15][27] < 8u ? p->favorites.factory[15][27] : 0;
+    settings_autosave = p->favorites.factory[15][28] != AUTOSAVE_OFF_TAG;
+    settings_thru = !!(p->favorites.factory[15][24] & 64u);
+    const uint8_t *costs = p->favorites.factory[8] + 8;
+    int cost_tag = costs[0] == 'W' && costs[1] == 1;
+    for (uint32_t i = 0; i < VOICE_KINDS; ++i)
+        settings_vpoints[i] = cost_tag && costs[2 + i] <= 15u ? costs[2 + i] : 0;
+    settings_safety = cost_tag && !(costs[7] & 1u);
     return 1;
 }
-
-/* Start with the last imported/saved object, including fields owned by a
- * feature absent from this build. Boot only writes for initialization or repair. */
 static void settings_export(persist_t *p)
 {
     p->magic = PERSIST_MAGIC;
     p->palette = palette_to_stored(settings.palette);
     p->lowcut = 0;
-    uint32_t rp = settings_click % 3u | (settings_click_level == 0u ? 1u : settings_click_level == 2u ? 2u : 0u) << 2 |
-                  (settings_countin % 3u) << 4 | (settings_preview != 0u) << 6 | (settings_chord_add != 0u) << 7;
-    p->zoom = (settings.zoom & 0xFFu) | (rp ? RECORD_PREF_TAG | rp << 8 : 0u);
+    uint32_t rec = settings_click % 3u | (settings_countin % 3u) << 4 |
+                   (settings_click_level == 0 ? 1u : settings_click_level == 2 ? 2u : 0u) << 2 |
+                   (uint32_t)!!settings_preview << 6 | (uint32_t)!!settings_chord_add << 7;
+    p->zoom = (settings.zoom & 255u) | (rec ? 0x52500000u | rec << 8 : 0u);
     p->panel = panel;
     p->bold = hold_to_stored(p->bold, settings_hold);
 #ifdef MELODEE_FAVORITES
     memcpy(&p->favorites, &favorites, sizeof favorites);
     p->ext.spare[0] = favorites_user_hi;
 #endif
-    memcpy(p->favorites.factory[1] + 28, SETTINGS_OWNER, sizeof SETTINGS_OWNER);
-    {
-        uint8_t *q = p->favorites.factory[FX_PREF_ROW] + FX_PREF_BYTE;
-        memset(q, 0, 4);
-        if (settings_batt_full > 0u && settings_batt_full <= 1023u) {
-            q[0] = 'B'; q[1] = 1;
-            q[2] = (uint8_t)settings_batt_full; q[3] = (uint8_t)(settings_batt_full >> 8);
-        }
+    uint8_t *owner = p->favorites.factory[1] + 28;
+    owner[0] = 'M'; owner[1] = 'D'; owner[2] = 'S'; owner[3] = 1;
+    uint8_t *batt = p->favorites.factory[FX_PREF_ROW] + FX_PREF_BYTE;
+    memset(batt, 0, 4);
+    if (settings_batt_full > 0 && settings_batt_full <= 1023u) {
+        batt[0] = 'B'; batt[1] = 1;
+        batt[2] = (uint8_t)settings_batt_full; batt[3] = (uint8_t)(settings_batt_full >> 8);
     }
 #if MELODEE_USB_AUDIO
-    p->ext.usb_off = ua_off;
+    uint32_t flags = ua_off;
+#else
+    uint32_t flags = p->ext.usb_off & 3u;
 #endif
-    p->favorites.factory[15][27]=settings_screen;
-    p->favorites.factory[15][28] = settings_autosave ? 0u : AUTOSAVE_OFF_TAG;
-    p->favorites.factory[15][24] = (uint8_t)((p->favorites.factory[15][24] & ~THRU_ON_BIT) |
-                                             (settings_thru ? THRU_ON_BIT : 0u));
-    p->ext.usb_off=(p->ext.usb_off&3u)|(settings_budget!=VOICE_BUDGET_DEFAULT?WORK_BUDGET_TAG|((uint32_t)settings_budget<<8):0u);
+    p->ext.usb_off = settings_usb_word(flags, (uint32_t)settings_budget);
     p->ext.boot = settings_boot;
-    p->ext.drumch = settings_drumch == 10u ? 0u : !settings_drumch ? 17u : settings_drumch;
-    p->ext.lights = settings_lights == LIGHTS_MID ? 0u : settings_lights + 1u;
-    p->ext.spare[1] = tuning_a4 == A4_DEFAULT ? 0u : A4_TAG | (uint32_t)tuning_a4;
     memcpy(p->ext.glo, settings_glo, sizeof settings_glo);
-    {
-        uint8_t *w = p->favorites.factory[VOICE_PREF_ROW] + VOICE_PREF_BYTE;
-        uint32_t custom = settings_safety;
-        for (uint32_t k = 0; k < VOICE_KINDS; k++)
-            custom |= settings_vpoints[k] != 0;
-        memset(w, 0, 8);
-        if (custom) {
-            w[0] = 'W'; w[1] = 1u; w[7] = (uint8_t)!settings_safety;
-            for (uint32_t k = 0; k < VOICE_KINDS; k++)
-                w[2u + k] = (uint8_t)settings_vpoints[k];
-        }
+    p->ext.drumch = settings_drumch == 10 ? 0 : settings_drumch == 0 ? 17 : settings_drumch;
+    p->ext.lights = settings_lights == LIGHTS_MID ? 0 : settings_lights + 1u;
+    p->ext.spare[1] = tuning_a4 == A4_DEFAULT ? 0 : A4_TAG | (uint32_t)tuning_a4;
+    p->favorites.factory[15][27] = settings_screen;
+    p->favorites.factory[15][28] = settings_autosave ? 0 : AUTOSAVE_OFF_TAG;
+    uint8_t *thru = &p->favorites.factory[15][24];
+    *thru = (uint8_t)((*thru & ~64u) | (settings_thru ? 64u : 0u));
+    uint8_t *costs = p->favorites.factory[8] + 8;
+    int custom = !!settings_safety;
+    for (uint32_t i = 0; i < VOICE_KINDS; ++i) custom |= settings_vpoints[i] != 0;
+    memset(costs, 0, 8);
+    if (custom) {
+        costs[0] = 'W'; costs[1] = 1;
+        for (uint32_t i = 0; i < VOICE_KINDS; ++i) costs[2 + i] = (uint8_t)settings_vpoints[i];
+        costs[7] = !settings_safety;
     }
 }

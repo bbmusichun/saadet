@@ -4,8 +4,10 @@
 # Copyright (C) 2026 ChoralRoot FM-1 contributors
 # Marker and CRC compensation adapted from ChoralRoot FM-1 contributors (v0.16).
 # Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
-"""Build a complete FM-1 update package (.fwsc) from scratch, with no vendor
-material in it:
+"""Historical FM-1 package format helpers retained for recovery compatibility.
+
+The legacy package-creation command is retired. Current firmware packages come from the pinned fm1-base.
+The historical layout was:
 
   flash.bin  head [0, 0x4000): flash header (JieLi SDK default values), JLFS
              entries, the SDK SPL (uboot.boot, Apache-2.0), an isd_config blob
@@ -20,12 +22,8 @@ The layout values (offsets, flags, descriptor addresses, header fields) are
 facts of the FM-1 flash layout and the SDK file formats.
 
 The three SDK files (uboot.boot, cfg_tool.bin, eq_cfg_hw.bin) are Apache-2.0, not GPL:
-ship LICENSES/Apache-2.0.txt with every package (LICENSING.md; make_site.py and
-build.py --release do).
-
-  fm1pkg_make.py APP.bin OTA.bin OUT.fwsc [--product FM-1_9XY] [--key 0x980F]
+ship LICENSES/Apache-2.0.txt with every package (LICENSING.md).
 """
-import argparse
 import os
 import re
 import struct
@@ -283,21 +281,5 @@ def ufw(flash, ota, product):
     return bytes(raw)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("app", type=Path)
-    ap.add_argument("ota", type=Path)
-    ap.add_argument("out", type=Path)
-    ap.add_argument("--product", default="FM-1_900")
-    ap.add_argument("--key", type=lambda s: int(s, 0), default=KEY)
-    ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
-    a = ap.parse_args()
-    global SDK
-    SDK = a.sdk
-    pkg = ufw(flash_image(a.app.read_bytes(), a.key), a.ota.read_bytes(), a.product)
-    a.out.write_bytes(pkg)
-    print(f"package {a.out}: {len(pkg)} B, identity {a.product}, chip key {a.key:#06x}")
-
-
 if __name__ == "__main__":
-    main()
+    raise SystemExit("Legacy package creation is retired. Use ./build.sh for fm1-base firmware.")

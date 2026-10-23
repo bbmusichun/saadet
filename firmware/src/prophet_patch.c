@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* Rev-4 wire patches. Sequential's 2025 v1.03 files use ID 0x32 and
  * 19 full packed groups (133 raw bytes). The 1.4 MIDI guide instead says

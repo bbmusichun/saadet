@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* The library (the FX button), SAVE and an import. A list is the sounds of one source: FAVOURITES (the factory sounds
  * starred, the engines in their order, then the user sounds starred), USER (every user slot in use), or one engine's

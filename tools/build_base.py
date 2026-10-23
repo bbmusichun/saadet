@@ -8,6 +8,9 @@ import shutil
 import subprocess
 import sys
 
+if "--legacy" in sys.argv:
+    raise SystemExit("The legacy platform is retired; only fm1-base targets are available.")
+
 ROOT=Path(__file__).resolve().parents[1]
 REV="6c0b47e4bfc56fd3cd5b34463210d0e7e0ce0431"
 BSP_REV="0f08fcaa6610b7cabe8cfdcc5c50d6facdae0e7f"
@@ -34,13 +37,9 @@ from base_overlay import apply
 apply(work)
 from base_bootloader import prepare
 prepare(work, ROOT/"platform/build/bootloader")
-# Generate the same factory banks/fonts as the legacy build, without linking
-# its boot stub, update transaction or packaging implementation.
-import importlib.util
-spec=importlib.util.spec_from_file_location("saadet_assets",ROOT/"tools/build.py")
-assets=importlib.util.module_from_spec(spec)
-spec.loader.exec_module(assets)
-assets.generate()
+# Asset generation is independent of the retired firmware compiler and packager.
+from generate_assets import generate
+generate()
 env=os.environ.copy()
 env.setdefault("JIELI_TOOLCHAIN",str(Path.home()/".jieli/toolchain"))
 env.setdefault("AC79_SDK",str(Path.home()/"fw-AC79_AIoT_SDK"))

@@ -6,7 +6,6 @@
 #   ./build.sh [--no-ble] [--release X.Y[.Z]]   fm1-base with Bluetooth MIDI (default): platform/build/saadet.fwsc;
 #                                               --no-ble: the USB-only platform/build/saadet-usb.fwsc
 #   ./build.sh --host                           the fm1-base host simulator (no toolchain or SDK)
-#   ./build.sh --legacy [--nightly | --release X.Y[.Z]]   the original platform: build/saadet.fwsc
 #   JIELI_TOOLCHAIN  JieLi Linux toolchain (default: ~/.jieli/toolchain)
 #   AC79_SDK         JieLi AC79 SDK checkout (default: ~/fw-AC79_AIoT_SDK)
 set -e
@@ -14,12 +13,13 @@ cd "$(dirname "$0")"
 export JIELI_TOOLCHAIN="${JIELI_TOOLCHAIN:-$HOME/.jieli/toolchain}"
 export AC79_SDK="${AC79_SDK:-$HOME/fw-AC79_AIoT_SDK}"
 PY="${PYTHON:-python3}"
-TOOL=tools/build_base.py TARGET=1
-if [ "$1" = --legacy ]; then
-    TOOL=tools/build.py
-    shift
-fi
-for a in "$@"; do [ "$a" = --host ] && [ "$TOOL" = tools/build_base.py ] && TARGET=0; done
+TARGET=1
+for a in "$@"; do
+    case "$a" in
+        --legacy) echo "build.sh: the legacy platform is retired; use the fm1-base build"; exit 2 ;;
+        --host) TARGET=0 ;;
+    esac
+done
 # Pillow loads Raqm's FriBidi at run time; macOS strips DYLD_* from the environment of /bin/sh, so it is set here
 [ "$(uname -s)" = Darwin ] && export DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib:/usr/local/lib:/usr/lib}"
 
@@ -33,4 +33,4 @@ if [ $TARGET = 1 ]; then
         docker info >/dev/null 2>&1 || { echo "build.sh: Docker is not running"; exit 1; }
     fi
 fi
-exec "$PY" "$TOOL" "$@"
+exec "$PY" tools/build_base.py "$@"

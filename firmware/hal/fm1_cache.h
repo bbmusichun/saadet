@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* AC79 cache RAM, following SDK V1.2.1 sdk_ld_sfc.c / cache_way_config.
  * Keep all 8 instruction ways; retain data way 7 for both cores and DMA.

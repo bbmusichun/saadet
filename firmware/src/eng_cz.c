@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* CZ-1 is a separate engine: native Casio tone data, never PHASE knob conversion.
  * Its state and reset are independent of the retired PHASE engine. */

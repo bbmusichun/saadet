@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* The places the buttons open and what is in them. A place is a row of stops; a stop is one page of one object (an
  * operator, an envelope, the matrix) with the four fields K1..K4 edit. Pressing the place's button again or turning

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* A field: one value a knob edits, wherever it lives (the selected part's parameters, the song's, an engine's own panel:
  * a Prophet's, an FM6 operator's or voice's, a CZ-1 tone's, a JUNO-106 tone's; the device's settings; the library and

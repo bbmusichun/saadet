@@ -5,7 +5,6 @@
 #   tools/flash.sh                    build, then flash platform/build/saadet.fwsc (fm1-base, Bluetooth MIDI)
 #   tools/flash.sh --no-build         flash platform/build/saadet.fwsc as it is
 #   tools/flash.sh PACKAGE.fwsc       flash that fm1-base package (no build)
-#   tools/flash.sh --legacy [...]     the original platform instead: build/saadet.fwsc and tools/fm1_install.py
 #   tools/flash.sh --info             the connected FM-1's identity
 #   --port NAME                       MIDI port (part of its name), passed to the installer
 #   MELODEE_VENV                      Python with Pillow, mido, python-rtmidi, fontTools (default: ~/.cache/melodee-venv,
@@ -16,15 +15,14 @@ VENV="${MELODEE_VENV:-$HOME/.cache/melodee-venv}"
 PY="$VENV/bin/python"
 PKG=platform/build/saadet.fwsc
 INSTALL=build/fm1-base-platform/tools/fm1_install.py   # (fm1-base packages need the base's own installer)
-BUILD=1 INFO=0 PORT= LEGACY=
+BUILD=1 INFO=0 PORT=
 
 while [ $# -gt 0 ]; do
     case "$1" in
         -n|--no-build) BUILD=0 ;;
         --info) INFO=1 BUILD=0 ;;
         --port) [ $# -ge 2 ] || { echo "flash.sh: --port needs a name"; exit 2; }; PORT="$2"; shift ;;
-        --legacy) LEGACY=--legacy; [ "$PKG" = platform/build/saadet.fwsc ] && PKG=build/saadet.fwsc; INSTALL=tools/fm1_install.py ;;
-        -h|--help) sed -n '4,12s/^# \{0,1\}//p' "$0"; exit 0 ;;
+        -h|--help) sed -n '4,11s/^# \{0,1\}//p' "$0"; exit 0 ;;
         -*) echo "flash.sh: unknown option $1 (--help)"; exit 2 ;;
         *) PKG="$1" BUILD=0 ;;
     esac
@@ -49,7 +47,7 @@ fi
 
 if [ $BUILD = 1 ]; then
     echo "== build"
-    PYTHON="$PY" ./build.sh $LEGACY
+    PYTHON="$PY" ./build.sh
 fi
 [ -f "$PKG" ] || { echo "flash.sh: no package $PKG (build first)"; exit 2; }
 [ -f "$INSTALL" ] || { echo "flash.sh: no installer $INSTALL (build first)"; exit 2; }
@@ -59,7 +57,7 @@ IDENT=$("$PY" -c 'import sys; sys.path.insert(0, "tools"); import fm1_install as
 print(f.product_of(open(sys.argv[1], "rb").read()))' "$PKG")
 REV="$(git rev-parse --abbrev-ref HEAD) $(git rev-parse --short HEAD)"
 git diff --quiet HEAD -- firmware platform || REV="$REV + uncommitted firmware changes"
-if [ $BUILD = 0 ] && { [ "$PKG" = build/saadet.fwsc ] || [ "$PKG" = platform/build/saadet.fwsc ]; } &&
+if [ $BUILD = 0 ] && [ "$PKG" = platform/build/saadet.fwsc ] &&
    [ -n "$(find firmware platform -path platform/build -prune -o -type f -newer "$PKG" -print | head -1)" ]; then
     echo "flash.sh: note: firmware/ or platform/ changed since $PKG was built (flash without --no-build to rebuild)"
 fi

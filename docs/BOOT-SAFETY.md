@@ -1,5 +1,8 @@
 # Interrupted firmware updates
 
+Historical record for the retired platform. Its builder, flash option and local firmware outputs have been
+removed. Current Saadet uses the pinned fm1-base updater and m-bootloader described in `BUILDING.md`.
+
 Melodee's boot protection is adapted from [ChoralRoot FM-1 v0.16](https://github.com/Quixotic7/ChoralRootFM1/tree/v0.16),
 commit `9c7445cdd7b767c779741d28654fb59cca3acd97`, under GPL-3.0-only.
 The shared `CRSTUB` entry signature and `CRBM` marker format are retained.

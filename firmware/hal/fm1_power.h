@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* FM-1 supply startup, matching the stock V15 analog setup, and read-only
  * diagnostics for MELODEE_CORE1_TEST builds (editor command 79).

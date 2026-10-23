@@ -13,6 +13,8 @@ build/base-power-test
 "$PYTHON" tests/base_ble_test.py
 "$PYTHON" tests/base_ble_client_test.py
 "$PYTHON" tests/base_bootloader_test.py
+"$PYTHON" tests/licence_check_test.py
+"$PYTHON" tests/build_targets_test.py
 # Exercise the actual pinned updater with Saadet and the boot-only package.
 BASE=build/fm1-base-platform
 "${CC:-cc}" -O1 -g -w -fsanitize=address -o build/base-mboot-ota-test "$BASE/tests/ota_test.c"

@@ -83,8 +83,8 @@ See [LICENSING.md](LICENSING.md), [LICENSE](LICENSE), and [LICENSES](LICENSES/)
 for applicable upstream and third-party terms.
 
 The `platform/` target ports Saadet to **fm1-base + felucca-bsp** with BLE MIDI
-and is the default build (`./build.sh`); the original platform remains
-available with `./build.sh --legacy`. The port is still experimental. It builds
+and is the firmware build (`./build.sh`); the original platform is retired.
+BLE, USB-only and host simulator targets are available. The port is still experimental. It builds
 locally and has simulator coverage. After recovery from a failed first boot, the corrected
 firmware now boots on the FM-1, answers USB MIDI/editor requests and reports
 BLE advertising. Pairing and physical audio/control validation remain pending.

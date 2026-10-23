@@ -9,11 +9,11 @@ import sys
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tools'))
 import audio_ram
-import build
+from jieli_toolchain import tc
 src,dst=map(Path,sys.argv[1:3])
 unit=sys.argv[3] if len(sys.argv)>3 else ''
 optimized=src.with_suffix('.optimized.ll')
-build.tc('cc','-mcpu=r3','-mfprev1','-ffp-contract=off','-fno-builtin','-O2' if unit else '-Os','-S','-emit-llvm',src,'-o',optimized)
+tc('cc','-mcpu=r3','-mfprev1','-ffp-contract=off','-fno-builtin','-O2' if unit else '-Os','-S','-emit-llvm',src,'-o',optimized)
 roots=audio_ram.engine_roots(ROOT/'firmware/src')
 if unit:
     roots|={'saadet_render','saadet_deadline'}

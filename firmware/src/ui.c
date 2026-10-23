@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* The interface. Every button is one place (ui_pages.c) and the screen names it; the four knobs edit the four values at
  * the foot of the screen; pressing the place's button again or turning SELECT turns its page; holding the button lists

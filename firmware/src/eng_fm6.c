@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0 AND Apache-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio)
  * Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Portions derived from the Apache-2.0 MSFA component:
@@ -21,7 +21,7 @@
  * select MARK I or OPL. Voice allocation and mono priority use Saadet's common
  * instrument policy; fm6_voice_policy.h owns retrigger and legato behavior.
  * The synthesis data and controller model retain Apache-2.0 MSFA provenance.
- * The enclosing app remains GPL until the full migration audit is complete. */
+ * This file is MPL-2.0; its MSFA portions stay Apache-2.0 (the notice above). */
 #include "fm6_core.c"
 #include "melodee_fm6.h"         /* tools/gen_fm6_patches.py: FM6_INIT, FM6_FACTORY[FM6_NFACTORY] (F1..F8) */
 

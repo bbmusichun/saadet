@@ -7,8 +7,10 @@ but failed to return over MIDI. A startup-order fix was installed through
 RP2040 recovery with complete flash readback verification. The device now
 boots Saadet, answers USB MIDI/editor requests and reports BLE advertising;
 pairing and physical audio/control validation remain pending.
-See `docs/VALIDATION.md`. No combined firmware has
-been cleared for distribution or relicensed.
+See `docs/VALIDATION.md` for hardware validation. The later source-licensing audit and independent
+replacements are recorded in `LICENSING.md` and `docs/cleanroom/preferences-process.md`; the base build's
+repository sources now pass the MPL/permissive check without GPL exceptions. Third-party libraries and
+factory sound data retain their own terms.
 
 ## Completed engine preparation
 
@@ -67,9 +69,9 @@ licensed source with attribution and independently written instrument policy.
 
 `tools/build_base.py`, which `./build.sh` runs by default, builds the tracked
 `platform/` integration against the pinned dependency revisions. `--no-ble`
-produces a USB-only comparison target; the default includes BLE MIDI. The old
-platform remains available through `./build.sh --legacy`; its boot stub,
-loader and OTA transaction are not linked into the new target. Only its asset generator is reused as a build-time tool.
+produces a USB-only target; the default includes BLE MIDI. The old platform's build and flash paths and local
+firmware outputs have been retired. Its boot stub, loader and OTA transaction are not linked into the target.
+Shared asset generation now lives independently in `tools/generate_assets.py`.
 
 The port includes:
 
@@ -218,12 +220,14 @@ the actual bond-clear guard/API delegation. UI fixtures verify all new screen
 states and scrolling. Real radio interoperability and persistent bond removal
 still require physical peer validation; software tests do not prove those.
 
-## Licensing boundary still outstanding
+## Licensing boundary (updated 23 October 2026)
 
-The enclosing firmware remains GPL-3.0-only. New MPL/Apache files do not
-relicense the rest of it. The new experimental BLE target links JieLi's
-Bluetooth binaries through the base. That local build is not evidence that
-all linked source is licensed for a combined distribution.
+The retired legacy source retains its GPL-3.0-only terms; it has no supported build or flash path.
+The base target's repository sources are now
+MPL-2.0 or permissively licensed, including independent replacements of the contributed MIDI input,
+preferences, favourites, persistence and shared scratch. The process records under `docs/cleanroom/` document
+the replacements; the earlier implementations in history keep their existing licences. The BLE target also
+links JieLi's Bluetooth binaries through the base; those libraries and factory sound data retain separate terms.
 
 Leo's [recorded permission](https://github.com/hugelton/felucca-bsp/issues/4#issuecomment-6216224984)
 says anyone may use Felucca code for which he personally owns the copyright
@@ -232,14 +236,13 @@ Felucca-Engines. It expressly excludes other contributors' code. This record is
 broader than an assumption based only on which files a downstream base copied,
 but is not blanket permission for the entire Felucca/Melodee tree.
 
-Known work remaining before a distributable BLE firmware:
+Audit outcome and remaining release validation:
 
-1. Audit every linked app file, tool and asset against history and original
-   sources. In particular `midi_control.c` and `midi_clock.c` retain
-   ChanceTheMaker contributions under their existing GPL notices; Leo's grant
-   does not cover those contributions. Factory preset data and all other
-   contributor boundaries still need explicit decisions. Do not relabel
-   enclosing headers in bulk.
+1. The source audit covered all 96 repository files compiled by the base target. ChanceTheMaker's MIDI input
+   was independently replaced in `637cbbd`; the credit in `midi_clock.c` was corrected using source history.
+   The last four GPL exceptions were independently replaced subsequently. `tools/licence_check.py` checks
+   actual compiler dependencies on every base target build and now permits no GPL exceptions. See
+   `LICENSING.md` for provenance, third-party material and factory-data terms.
 2. Measure the move from the legacy CRSTUB/update layout to the base's entry
    at `0x02000120`, including interrupted updates, reboot/recovery and saved
    library/state retention. The old ChoralRoot-derived loader and Andre
@@ -248,11 +251,10 @@ Known work remaining before a distributable BLE firmware:
    USB/TRS/BLE traffic, physical keys/LEDs/display, native SysEx/editor/backup,
    USB host-volume and format changes, sustained polyphony and DMA deadlines.
    Simulator output and linked footprint cannot establish these properties.
-4. Finish the editor audio-diagnostics integration and any issues found during
-   those hardware checks. The original platform remains the comparison build.
+4. Finish the editor audio-diagnostics integration and any issues found during those hardware checks.
 
 The subsequent user-authorized flash attempt and startup repair are recorded
-in `docs/VALIDATION.md`. No publication or repository commit has been performed.
+in `docs/VALIDATION.md`. These source and build checks do not establish the remaining hardware properties.
 
 ## Validation
 

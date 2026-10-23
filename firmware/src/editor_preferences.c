@@ -1,9 +1,10 @@
-/* SPDX-License-Identifier: GPL-3.0-only
- * Copyright (C) 2026 Kerem Kilic (Ellic Studio)
- * Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Optional device preferences, advertised in INFO. No preset format changes. The font weight
- * (ED_UI_FONT) is gone: one weight; UI_SET of it answers rc 2 (not supported), UI_STATE 127. */
-enum { ED_UI_PALETTE = 1, ED_UI_FONT = 2, ED_UI_MONITOR = 4, ED_UI_FAVORITES = 8, ED_UI_RECORDING = 16, ED_UI_PERFORMANCE = 32 };
+/* SPDX-License-Identifier: MPL-2.0
+ * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
+
+enum {
+    ED_UI_PALETTE = 1u, ED_UI_FONT = 2u, ED_UI_MONITOR = 4u,
+    ED_UI_FAVORITES = 8u, ED_UI_RECORDING = 16u, ED_UI_PERFORMANCE = 32u
+};
 static uint32_t ed_ui_caps(void)
 {
     uint32_t caps = ED_UI_PALETTE | ED_UI_PERFORMANCE;
@@ -15,16 +16,27 @@ static uint32_t ed_ui_caps(void)
 #endif
     return caps;
 }
-static void ed_u28(uint32_t n)
+static void prefs_unsigned28(uint32_t value)
 {
-    for (uint32_t i = 0; i < 4; i++) ed_b((n >> (i * 7)) & 127u);
+    for (uint32_t i = 0; i < 4u; ++i) ed_b(value >> (7u * i));
 }
-static void ed_ui_state(void)
+static uint32_t prefs_signature(void)
 {
-    uint32_t sig = 0;
+    uint32_t hash = 0;
+#ifdef MELODEE_FAVORITES
+    hash = 2166136261u;
+    const uint8_t *bytes = (const uint8_t *)&favorites;
+    for (uint32_t i = 0; i < sizeof favorites; ++i) hash = (hash ^ bytes[i]) * 16777619u;
+    bytes = (const uint8_t *)&favorites_user_hi;
+    for (uint32_t i = 0; i < sizeof favorites_user_hi; ++i) hash = (hash ^ bytes[i]) * 16777619u;
+#endif
+    return (hash ^ up_gen) * 16777619u;
+}
+static void prefs_state(void)
+{
     ed_b(ed_ui_caps());
     ed_b(settings.palette);
-    ed_b(127);                                         /* font: not supported */
+    ed_b(127);
 #ifdef MELODEE_MONITOR
     ed_b(settings.monitor);
 #else
@@ -32,156 +44,178 @@ static void ed_ui_state(void)
 #endif
 #ifdef MELODEE_FAVORITES
     ed_b(favorites.filter);
-    sig = fnv(fnv(2166136261u, &favorites, sizeof favorites),
-              &favorites_user_hi, sizeof favorites_user_hi);
 #else
     ed_b(127);
 #endif
-    sig=(sig^up_gen)*16777619u;
-    ed_u28(sig);
-    ed_u28(up_gen);
-    ed_b(settings_click);ed_b(settings_click_level);ed_b(settings_countin);ed_b(settings_preview);ed_b(settings_chord_add);
-    ed_b(127); ed_b(scr_get());
+    prefs_unsigned28(prefs_signature());
+    prefs_unsigned28(up_gen);
+    ed_b(settings_click); ed_b(settings_click_level); ed_b(settings_countin);
+    ed_b(settings_preview); ed_b(settings_chord_add); ed_b(127); ed_b(scr_get());
 }
-/* Writes use the same flash path as the panel. rc 3 means applied in RAM,
- * but not saved (absent flash or a failed write); rc 4 means queued until STOP.
- * Repeated unchanged writes
- * do not wear flash. */
-static uint32_t ed_ui_save(void)
+
+/* settings_save owns transport deferral, old-record protection and retry timing. */
+static uint32_t prefs_save_status(void)
 {
     settings_save();
 #if MELODEE_FLASH
     if (!flash_ok || persist_pending == 2u) return 3;
     if (persist_pending == 1u) return 4;
-    persist_t current;settings_export(&current);if(current.zoom!=persist_saved.zoom)return 3;
-    if (palette_from_stored(persist_saved.palette) != settings.palette) return 3;
-#ifdef MELODEE_MONITOR
-    if (persist_saved.monitor != settings.monitor) return 3;
-#endif
+    persist_t expected = persist_saved;
+    settings_export(&expected);
+    if (expected.zoom != persist_saved.zoom ||
+        palette_from_stored(expected.palette) != palette_from_stored(persist_saved.palette)) return 3;
 #ifdef MELODEE_FAVORITES
-    if (memcmp(&persist_saved.favorites, &current.favorites, sizeof favorites)) return 3;
+    if (memcmp(&expected.favorites, &persist_saved.favorites, sizeof expected.favorites)) return 3;
 #endif
     return 0;
 #else
     return 3;
 #endif
 }
-/* A raw sample and an independently stored full reference. No percentage is
- * inferred until an empty reference is measured as well. */
-static void ed_battery(const uint8_t *a, uint32_t n)
+static uint32_t prefs_set(uint32_t id, uint32_t value, uint32_t count)
 {
-    uint32_t rc = 0;
+    if (count != 2u || id > 10u) return 1;
+    uint32_t required = id < 4u ? 1u << id : id < 9u ? ED_UI_RECORDING : ED_UI_PERFORMANCE;
+    if (!(ed_ui_caps() & required)) return 2;
+    uint32_t limit = id == 0u ? NPALETTES : id == 2u || (id >= 4u && id <= 6u) ? 3u :
+                     id == 10u ? 5u : 2u;
+    if (value >= limit) return 1;
+    switch (id) {
+    case 0: settings.palette = value; palette_set(value); break;
+#ifdef MELODEE_MONITOR
+    case 2:
+        fm1_irq_off();
+        settings.monitor = value;
+        monitor_mode = value;
+        monitor_event.valid = 0;
+        fm1_irq_on();
+        break;
+#endif
+#ifdef MELODEE_FAVORITES
+    case 3: favorites.filter = value; break;
+#endif
+    case 10: scr_put(value); break;
+    default: return 2;
+    }
+    ui.force = 1;
+    return prefs_save_status();
+}
+
+#ifdef MELODEE_FAVORITES
+/* The protocol's user namespaces map onto native-engine slot limits. */
+static uint32_t prefs_native_engine(uint32_t space)
+{
+    switch (space) {
+    case USER_NATIVE_P5: return ENGI_PROPHET;
+    case USER_NATIVE_FM: return ENGI_FM6;
+    case USER_NATIVE_CZ: return ENGI_CZ;
+    case USER_NATIVE_J106: return ENGI_J106;
+    default: return NENGINES;
+    }
+}
+static uint32_t prefs_capacity(uint32_t space)
+{
+    if (space > USER_NATIVE_J106) return 0;
+    if (space == USER_GENERAL) return UP_SLOTS;
+    uint32_t engine = prefs_native_engine(space);
+    if (engine != NENGINES) return native_limit(engine);
+    return space < NENGINES ? ENGINES[space]->npresets : 0;
+}
+static void prefs_fav_get(const uint8_t *args, uint32_t count)
+{
+    if (count != 4u) { ed_b(1); return; }
+    uint32_t space = args[0], size = args[3], cap = prefs_capacity(space);
+    int32_t start = ed_rv(args + 1);
+    if (start < 0 || size < 1u || size > 32u || (uint32_t)start >= cap || size > cap - (uint32_t)start) {
+        ed_b(1); return;
+    }
+    ed_b(0); ed_b(space); ed_v(start); ed_b(size);
+    for (uint32_t i = 0; i < size; ++i) ed_b(favorite_has(space, (uint32_t)start + i));
+}
+static void prefs_fav_set(const uint8_t *args, uint32_t count)
+{
+    if (count != 4u) { ed_b(1); return; }
+    uint32_t space = args[0], on = args[3], cap = prefs_capacity(space);
+    int32_t index = ed_rv(args + 1);
+    uint32_t engine = prefs_native_engine(space);
+    if (index < 0 || (uint32_t)index >= cap || on > 1u ||
+        (on && ((space == USER_GENERAL && !up_used((uint32_t)index)) ||
+                (engine != NENGINES && !native_used(engine, (uint32_t)index))))) {
+        ed_b(1); return;
+    }
+    int before = favorite_has(space, (uint32_t)index);
+    int changed = favorite_set(space, (uint32_t)index, on);
+    int separate_store = space == ENGI_PROPHET || space == ENGI_J106 ||
+                         engine == ENGI_PROPHET || engine == ENGI_J106;
+    uint32_t status;
+    if (separate_store && !changed && before != (int)on) {
+        status = transport_busy() ? 4u : 3u;
+        on = (uint32_t)before;
+    } else {
+        ui.force = 1;
+        status = engine == ENGI_PROPHET || engine == ENGI_J106 ? 0u : prefs_save_status();
+    }
+    ed_b(status); ed_b(space); ed_v(index); ed_b(on);
+}
+#endif
+
+static void prefs_battery(const uint8_t *args, uint32_t count)
+{
+    /* Capture once before a save can stall the main loop. */
 #ifdef FM1_IRQ_TARGET
     int32_t raw = fm1_adc_read(FM1_ADC_BATT);
 #else
     int32_t raw = song.batt_raw;
 #endif
-    if (n) {
-        uint32_t full = n == 3u ? (uint32_t)a[1] | (uint32_t)a[2] << 7 : 0u;
-        if (n != 3u || a[0] != 1u || !full || full > 1023u) rc = 1;
-        else if (transport_busy() || template_old()) rc = 2;
+    uint32_t status = 0;
+    if (count) {
+        uint32_t full = count == 3u ? args[1] | (uint32_t)args[2] << 7 : 0;
+        if (count != 3u || args[0] != 1u || full < 1u || full > 1023u) status = 1;
+        else if (transport_busy() || template_old()) status = 2;
         else {
             settings_batt_full = (uint16_t)full;
-            rc = ed_ui_save();
+            status = prefs_save_status();
 #if MELODEE_FLASH
-            if (!rc && battery_full_of(&persist_saved) != full) rc = 3;
+            if (!status && battery_full_of(&persist_saved) != settings_batt_full) status = 3;
 #endif
         }
     }
-    if (raw <= 0 || raw > 1023) { raw = 0; if (!rc) rc = 2; }
-    ed_b(1); ed_b(rc);
-    ed_b((uint32_t)raw); ed_b((uint32_t)raw >> 7);
+    if (raw <= 0 || raw > 1023) {
+        raw = 0;
+        if (!status) status = 2;
+    }
+    ed_b(1); ed_b(status); ed_b((uint32_t)raw); ed_b((uint32_t)raw >> 7);
     ed_b(settings_batt_full); ed_b(settings_batt_full >> 7);
 }
-static uint32_t ed_ui_set(const uint8_t *a, uint32_t n)
+static int ed_ui_handle(uint32_t cmd, const uint8_t *args, uint32_t count)
 {
-    if (n != 2u || a[0] > 10u) return 1;
-    if (!(ed_ui_caps() & (a[0]>=9u?ED_UI_PERFORMANCE:a[0]>=4u?ED_UI_RECORDING:1u << a[0]))) return 2;
-    if (a[1] >= (a[0] == 0 ? NPALETTES : a[0]==10u ? 5u : a[0] == 2 || (a[0]>=4 && a[0]<=6) ? 3u : 2u)) return 1;
-    switch (a[0]) {
-    case 9:return 2; /* retired preference */
-    case 10:scr_put(a[1]);break;
-    case 4:settings_click=a[1];break;
-    case 5:settings_click_level=a[1];break;
-    case 6:settings_countin=a[1];break;
-    case 7:settings_preview=a[1];break;
-    case 8:settings_chord_add=a[1];break;
-    case 0:
-        settings.palette = a[1]; palette_set(a[1]); break;
-#ifdef MELODEE_MONITOR
-    case 2:
-        fm1_irq_off();
-        settings.monitor = a[1]; monitor_mode = a[1]; monitor_event.valid = 0;
-        fm1_irq_on();
-        break;
-#endif
-#ifdef MELODEE_FAVORITES
-    case 3:
-        favorites.filter = a[1]; break;
-#endif
-    }
-    ui.force = 1;
-    return ed_ui_save();
-}
-/* a favourites namespace of native user slots -> its engine; NENGINES: not one */
-static uint32_t ed_fav_native(uint32_t ns)
-{
-    return ns == USER_NATIVE_P5 ? ENGI_PROPHET : ns == USER_NATIVE_FM ? ENGI_FM6 : ns == USER_NATIVE_CZ ? ENGI_CZ :
-           ns == USER_NATIVE_J106 ? ENGI_J106 : NENGINES;
-}
-static int ed_ui_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
-{
-    if (cmd == ED_BATTERY) { ed_battery(a, n); return 1; }
     switch (cmd) {
-    case ED_UI_STATE:
-        ed_ui_state(); return 1;
-    case ED_UI_SET:
-        ed_b(ed_ui_set(a, n));
-        ed_b(n ? a[0] : 127u); ed_b(n > 1u ? a[1] : 127u);
-        ed_ui_state(); return 1;
+    case ED_UI_STATE: prefs_state(); break;
     case ED_UI_PALETTES:
         ed_b(NPALETTES);
-        for (uint32_t i = 0; i < NPALETTES; i++) ed_str(UI_PALETTES[i].name, 12);
-        return 1;
+        for (uint32_t i = 0; i < NPALETTES; ++i) ed_str(UI_PALETTES[i].name, 12);
+        break;
+    case ED_UI_SET: {
+        uint32_t id = count ? args[0] : 127u, value = count > 1u ? args[1] : 127u;
+        ed_b(prefs_set(id, value, count)); ed_b(id); ed_b(value); prefs_state();
+        break;
+    }
     case ED_FAV_GET:
 #ifdef MELODEE_FAVORITES
-        if (n == 4u && a[0] <= USER_NATIVE_J106) {
-            int32_t start = ed_rv(a + 1);
-            uint32_t limit = ed_fav_native(a[0]) < NENGINES ? native_limit(ed_fav_native(a[0])) : a[0] == USER_GENERAL ? UP_SLOTS : ENGINES[a[0]]->npresets;
-            if (start >= 0 && a[3] && a[3] <= 32u && (uint32_t)start + a[3] <= limit) {
-                ed_b(0); ed_b(a[0]); ed_v(start); ed_b(a[3]);
-                for (uint32_t i = 0; i < a[3]; i++) ed_b(favorite_has(a[0], (uint32_t)start + i));
-                return 1;
-            }
-        }
-        ed_b(1);
+        prefs_fav_get(args, count);
 #else
         ed_b(2);
 #endif
-        return 1;
+        break;
     case ED_FAV_SET:
 #ifdef MELODEE_FAVORITES
-        if (n == 4u && a[0] <= USER_NATIVE_J106 && a[3] <= 1u) {
-            int32_t preset = ed_rv(a + 1);
-            uint32_t limit = ed_fav_native(a[0]) < NENGINES ? native_limit(ed_fav_native(a[0])) : a[0] == USER_GENERAL ? UP_SLOTS : ENGINES[a[0]]->npresets;
-            if (preset >= 0 && (uint32_t)preset < limit &&
-                (a[0] != USER_GENERAL || !a[3] || up_used((uint32_t)preset)) &&
-                (ed_fav_native(a[0]) >= NENGINES || !a[3] || native_used(ed_fav_native(a[0]),(uint32_t)preset))) {
-                /* (stars a tagged row or a record holds: an unchanged result is a refusal) */
-                int p5=a[0]==ENGI_PROPHET || a[0]==USER_NATIVE_P5 || a[0]==ENGI_J106 || a[0]==USER_NATIVE_J106;
-                int before=favorite_has(a[0],(uint32_t)preset);
-                int changed=favorite_set(a[0], (uint32_t)preset, a[3]);
-                if(p5 && !changed && before!=a[3]){ed_b(transport_busy()?4u:3u);ed_b(a[0]);ed_v(preset);ed_b(before);return 1;}
-                ui.force = 1;
-                ed_b(p5 && (a[0]==USER_NATIVE_P5 || a[0]==USER_NATIVE_J106) ? 0u : ed_ui_save()); ed_b(a[0]); ed_v(preset); ed_b(a[3]);
-                return 1;
-            }
-        }
-        ed_b(1);
+        prefs_fav_set(args, count);
 #else
         ed_b(2);
 #endif
-        return 1;
+        break;
+    case ED_BATTERY: prefs_battery(args, count); break;
     default: return 0;
     }
+    return 1;
 }

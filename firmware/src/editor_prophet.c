@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* 95: operation, track, payload. 0 exact GET, 1 native-frame PUT (without
  * F0/F7), 2 field edit (offset,value), 3 printable name, 4 native dump send. */

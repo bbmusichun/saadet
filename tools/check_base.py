@@ -67,3 +67,7 @@ report={'app_bytes':len(image),'low_ram_bytes':sym('_bss_end')-0x1c08000,
 (OUT/(package.stem+'-validation.json')).write_text(json.dumps(report,indent=2)+'\n')
 print('Saadet target checks passed: CPU1, bootstrap PC guards, SRAM code, packed image, arena, boot layout')
 print(json.dumps(report))
+# Licences: every repository file compiled into this build must be MPL-2.0 or permissive; no GPL exceptions.
+sys.path.insert(0,str(ROOT/'tools'))
+from licence_check import check as licence_check
+licence_check()
