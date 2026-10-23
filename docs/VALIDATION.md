@@ -34,6 +34,20 @@ Validation on 23 October 2026:
 
 Logs: `build/base-ble-central-{host-build,build,usb-build,tests,unit-tests,devices-test,ui-regression,erase-regression}.log`.
 Screens are in `build/base-ui-ble/` and `build/base-ble-devices/`.
+The source update was committed as `472b60c` on `ui-reset`, then the exact
+BLE package above was installed on USB MIDI port `FM-1` without rebuilding.
+The installer completed and reported `done: the FM-1 runs FM-1_900`; an
+independent request confirmed `FM-1_900 [running]`. The new boot's log reports
+`le_config:2 1 1 1`, advertising as Saadet, heap peak 11,280 of 24,576 bytes,
+and no recorded crash. Remote panel commands opened GLOBAL > DEV and waited
+before another log read; no crash was reported. These diagnostics confirm
+startup, not real peer interoperability. No physical forget operation was
+invoked and no saved-state readback was performed.
+
+Receipts: `build/base-ble-central-flash.log`,
+`build/base-ble-central-after-device-info.log`,
+`build/base-ble-central-after-device.log`, and
+`build/base-ble-central-scan-device.log`.
 Real peer connection, simultaneous RF/MIDI operation and persistent bond
 removal across a reboot remain pending hardware validation.
 
