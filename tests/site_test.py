@@ -33,7 +33,7 @@ class SiteTest(unittest.TestCase):
 
     def test_files_and_checksums(self):
         o, m = self.out, self.meta
-        for f in ("index.html", "editor.html", "manual/index.html", "install/fakefm1.js", "install/fm1ota.js",
+        for f in (".nojekyll", "index.html", "editor.html", "manual/index.html", "install/fakefm1.js", "install/fm1ota.js",
                   "firmware/m-bootloader-LICENSE.txt", "firmware/SHA256SUMS", "firmware/LICENSE",
                   "firmware/LICENSING.md", "firmware/SOURCES.txt", "firmware/LICENSES/MPL-2.0.txt",
                   "firmware/LICENSES/GPL-3.0-only.txt", "firmware/LICENSES/upstream/fm1-base/LICENSE",
@@ -52,6 +52,9 @@ class SiteTest(unittest.TestCase):
                 self.assertIn(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(o / 'firmware').as_posix()}", sums)
         self.assertEqual((o / "firmware/LICENSE").read_bytes(), (ROOT / "LICENSE").read_bytes())
         self.assertEqual((o / "firmware/LICENSING.md").read_bytes(), (ROOT / "LICENSING.md").read_bytes())
+        manual = (o / "manual/index.html").read_text()
+        self.assertNotIn("../../docs/UI.md", manual)
+        self.assertIn("https://github.com/keremimo/saadet/blob/", manual)
 
     def test_page_is_one_bundled_module(self):
         page = (self.out / "install/index.html").read_text()

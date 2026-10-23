@@ -143,8 +143,8 @@ BUILD_INFO.json and SHA256SUMS. `--no-build` reuses an existing versioned packag
 still matches. `--checks FILE.json` carries completed automated check results as VERIFICATION.json. Existing
 release directories are preserved; select a new `--out` to prepare again.
 
-Preparation is local: it does not flash, tag, push or publish. Perform the hardware acceptance steps in
-RELEASE_NOTES.md on the exact package before publishing the site ZIP. Extract that ZIP as the web root; the
+Preparation is local: it does not flash, tag, push or publish. RELEASE_NOTES.md tracks the outstanding
+hardware acceptance steps for the exact package. Extract the site ZIP as the web root; the
 install/ page links to firmware, source and licence downloads. An unmodified source ZIP can be rebuilt without
 Git history; its SOURCE_INFO.json supplies provenance, while the wrapper fetches the pinned dependencies.
 

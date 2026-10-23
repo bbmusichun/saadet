@@ -6,8 +6,12 @@ New to Saadet? Start with [the quick start](QUICKSTART.md).
 
 Saadet starts at Melodee `nightly` commit
 `b5148ba` (the committed upstream tip fetched on 22 October 2026). The original
-checkout and its uncommitted work are separate. `upstream` is read-only locally;
-this repository has no publishing remote.
+checkout and its uncommitted work are separate. `upstream` is read-only locally.
+Saadet's public repository is [keremimo/saadet](https://github.com/keremimo/saadet).
+
+[Install Saadet](https://keremimo.github.io/saadet/install/) ·
+[Releases and downloads](https://github.com/keremimo/saadet/releases) ·
+[Web editor](https://keremimo.github.io/saadet/editor.html)
 
 - One polyphonic synth part: Prophet, FM6, CZ-1 or JUNO-106.
 - Arpeggiator, HOLD, chords, strum, scales, microtonal tuning, modulation and MIDI performance.

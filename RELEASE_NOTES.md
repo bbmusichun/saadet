@@ -1,6 +1,7 @@
 # Saadet 0.1.0
 
-First public-release package prepared for the M-VAVE FM-1, with Bluetooth MIDI enabled.
+First public release for the M-VAVE FM-1, with Bluetooth MIDI enabled.
+This is an experimental release; the outstanding hardware checks are listed below.
 
 ## Included
 
@@ -21,7 +22,7 @@ fm1-base/felucca-bsp source; vendor factory sound data keeps its own attribution
 
 ## Installation
 
-Open the supplied install/ page in Chrome or Edge on a supported computer, connect the FM-1 by USB and follow
+Open [the installer](https://keremimo.github.io/saadet/install/) in Chrome or Edge on a supported computer, connect the FM-1 by USB and follow
 the installer. Back up any sounds you want to keep. m-bootloader is optional and off by default. If selected,
 it is written after Saadet; keep USB and power connected until completion. See BUILDING.md for recovery.
 
@@ -37,7 +38,7 @@ Automated checks cover native engines/audio, MIDI, storage, UI, BLE protocol and
 transfer/resume, bootloader handling, source/package consistency and licence notices. Hardware records include
 successful displayed-code iPhone pairing and a MIDI subscription on an earlier build.
 
-Final acceptance of this exact 0.1.0 package on an FM-1 remains to be recorded before publication:
+Final acceptance of this exact 0.1.0 package on an FM-1 remains to be recorded:
 
 1. Install and confirm the release identity FM-1_9000100 and the on-screen version.
 2. Play and receive BLE notes, sustain and pitch bend; check that disconnect leaves no stuck notes.

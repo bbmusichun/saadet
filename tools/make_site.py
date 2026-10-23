@@ -204,6 +204,12 @@ def main(argv=None):
     for name in WEB:
         shutil.copyfile(ROOT / "web" / name, out / name)
     shutil.copytree(ROOT / "web/manual", out / "manual")
+    # The manual moves from web/manual/ to manual/ in the published site.
+    # Link to the matching public source instead of a repository-relative path.
+    manual = out / "manual/index.html"
+    manual.write_text(manual.read_text().replace("../../docs/UI.md",
+                      f"https://github.com/keremimo/saadet/blob/{commit or 'main'}/docs/UI.md"))
+    (out / ".nojekyll").touch()
     (out / "index.html").write_text('<!doctype html><meta charset="utf-8"><title>Saadet</title>'
                                     '<meta http-equiv="refresh" content="0; url=install/">'
                                     '<a href="install/">Install Saadet</a>\n')
