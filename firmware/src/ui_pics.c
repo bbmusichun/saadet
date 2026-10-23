@@ -101,6 +101,13 @@ static void pic_build(ui_vm_t *v, const ui_stop_t *st)
         if(state>=2&&state<=4){
             str_cpy(v->ps[1],sd_ble_device_name(),sizeof v->ps[1]);
             str_cpy(v->line[0],"SAVE: DISCONNECT",sizeof v->line[0]);
+            int32_t code=state==3?sd_ble_pairing_code():-1;
+            if(code>=0&&code<=999999){
+                str_cpy(v->ps[0],"PAIRING CODE",sizeof v->ps[0]);
+                for(int i=5;i>=0;i--){v->ps[1][i]=(char)('0'+code%10);code/=10;}
+                v->ps[1][6]=0;
+                str_cpy(v->ps[2],"Enter on other device",sizeof v->ps[2]);
+            }
         }else{
             int first=pick>1?pick-1:0;
             if(first+3>n)first=n>3?n-3:0;
@@ -509,7 +516,10 @@ static void pic_draw(const ui_vm_t *v)
     case PIC_BTDEV:
         cv_text_c(120,40,TY_HD,v->ps[0],T_TEXT,T_BG);
         if(v->pv[2]>=2&&v->pv[2]<=4){
-            cv_text_fit(10,88,TY_RW,v->ps[1],T_TEXT,T_BG,220);
+            if(v->ps[2][0]){
+                cv_text_c(120,77,TY_NM,v->ps[1],T_TEXT,T_BG);
+                cv_text_c(120,122,TY_TX,v->ps[2],T_MID,T_BG);
+            }else cv_text_fit(10,88,TY_RW,v->ps[1],T_TEXT,T_BG,220);
         }else for(int i=0;i<3;i++){
             int y=73+24*i,on=v->pv[0]==v->pv[3]+i;
             if(!v->ps[i+1][0])continue;

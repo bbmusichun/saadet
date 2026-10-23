@@ -1,5 +1,89 @@
 # Saadet validation — 23 October 2026
 
+## Panel SysEx send and native live editing (built, not installed)
+
+J106 3.4.2 lists Saadet's USB MIDI endpoints as `FM-1`. After the user selected
+them, sending the current tone through existing editor command 96/op 4 made
+J106's receiver show `A11`. This confirms a real outbound tone was received
+by that app on the installed firmware. It does not validate the new panel
+control or new incoming live-edit behavior below. The app's
+[connection guide](https://www.jarvik7.net/juno-106/) describes individual tone
+reception rather than automatically retrieving the instrument's whole library.
+
+Every nonempty LIBRARY list now exposes K3 SEND. Turning it clockwise exports
+the selected factory or user sound in its manufacturer's native format. The
+playing selection includes its current native edits. Sending does not load
+a selection or write a user slot; disconnected USB and transfer errors have
+explicit feedback. The new sender uses the existing native encoders and
+retains each engine's INIT/factory ordering and the configured output channel.
+
+Validated single Prophet, DX7, CZ-1 and JUNO-106 messages now select their engine
+and update its RAM tone immediately. Repeated native buffers preserve held
+notes for ordinary parameter edits and retain the chosen SAVE destination.
+DX7 voice-parameter and JUNO-106 single-control updates also refresh a pending
+single-tone import, so SAVE keeps the latest edit. Banks remain staged without
+replacing the playing tone; user slots are written only by explicit storage.
+Normal idle last-sound recall remains enabled. J106's published manual-buffer
+framing and Roland's MIDI implementation were consulted for protocol facts;
+no external synthesis code was used.
+
+The ASan/UBSan base SysEx fixture passes actual USB packet paths, exports and
+round-trip reception for every engine's first/last factory sounds and INIT,
+edited current sounds, stored user sounds, channel selection, empty lists and
+offline feedback. It also renders held notes through every native edit-buffer
+path and verifies J106-style repeated manual buffers, single-control edits,
+destination retention and saving the final edit. The SEND view passes layout
+lint and visual inspection (`build/j106-send-ui/library_send.png`).
+
+Host simulator, legacy target and BLE target builds pass. The full host and
+base suites end with **ALL HOST TESTS PASSED** and **ALL BASE PORT TESTS PASSED**.
+Logs: `build/j106-live-{host-build,legacy-build,target-build,host-tests,base-tests}.log`.
+The source/test snapshot `build/j106-live-source.json` has no drift through
+completion. It includes the concurrent JUNO-106 audio changes in this checkout,
+alongside the existing local BLE and USB receive fixes, at `ui-reset` / `9db8c66`.
+
+BLE package: `platform/build/saadet.fwsc`, identity `FM-1_900`, SHA-256
+`6a677f9f3fc25555a2873982c9d36239f0e4628eaf5965c6308cc75cd1595b2a`.
+App 566,240 B; low RAM 93,564 B; resident audio 83,920 B; POOL 222,944 B;
+engine arena 121,120 B. CPU1, bootstrap, resident-code, packed-image, arena
+and boot-layout checks pass. No installation was performed; physical K3 SEND
+and live edits from J106 and other librarians require this candidate and retesting.
+
+## USB SysEx patch reception (built, not installed)
+
+The user reported that the DX7II web librarian transferred patches to Melodee
+but not Saadet. Comparison with Melodee found a missing USB receive branch:
+the fm1-base receiver accepted CIN 4–7 SysEx packets but discarded CIN F
+single-byte data and treated single-byte F0/F7 as interruption statuses.
+The checked overlay now sends those bytes through the existing native and
+framed collectors, while preserving realtime messages and interruption checks.
+The matching Melodee fix is `998ca1a3040ed0ca05e25c95a7e10a8bffa791d2`,
+authored by Kerem Kilic; retained dependency notices remain intact.
+
+`tests/base_sysex_test.py` executes the actual overlaid USB routines and
+Saadet's dispatcher with the production native parsers, import UI and NOR
+storage model. The old receiver passes normal packetization, then fails on
+the single-byte DX7 voice fixture (`build/base-sysex-regression.log`). With
+the correction, DX7 single voices and 32-voice banks pass normal, all-single-
+byte and mixed packetization with interleaved realtime clocks. Patches appear
+in SAVE, do not write flash before confirmation, and retain their exact native
+bytes after saving and cache-reset readback. CZ-1, Prophet, JUNO-106 and generic
+preset imports also pass; bad checksums, interruptions, recovery, cancellation
+and stray data are covered under ASan/UBSan. This test is in the base suite.
+
+The host simulator and BLE target build pass. `tests/run_base_tests.sh` ends
+with **ALL BASE PORT TESTS PASSED**; `tests/run_tests.sh` ends with
+**ALL HOST TESTS PASSED**. Target CPU1, bootstrap PC guards, SRAM code, packed
+image, arena and boot-layout checks pass. Logs:
+`build/sysex-fix-{host-build,target-build,base-tests,host-tests}.log`.
+
+Package: `platform/build/saadet.fwsc`, identity `FM-1_900`, SHA-256
+`767a5de6c4ea980d90a7370119d79e63fb2cc65b3f8cc5dddc28a2f820f7878b`.
+App 557,824 B; low RAM 93,564 B; resident audio 83,888 B; POOL 222,912 B;
+engine arena 121,152 B. Source is `ui-reset` at `9db8c66` plus the existing
+local BLE corrections and this SysEx fix. No firmware was installed in this
+step; physical retransmission from the user's librarian remains pending.
+
 ## Melodee CPU startup and fp32 safeguards
 
 The BLE base port armed `FM1_GUARD_PC` in `fm1_cstart`, before
@@ -338,6 +422,230 @@ Receipts: `build/base-ble-central-flash.log`,
 `build/base-ble-central-scan-device.log`.
 Real peer connection, simultaneous RF/MIDI operation and persistent bond
 removal across a reboot remain pending hardware validation.
+
+### iOS peripheral handshake correction (installed, 23 October 2026)
+
+The user connected from GLOBAL > DEV to midimittr advertising as `iOS`.
+Saadet displayed CONNECTED while midimittr's Advertise status remained
+`Now discoverable as iOS`. A live USB diagnostic read showed repeated
+`central: MIDI ready` and disconnect events, without a recorded crash.
+These observations do not identify the exact ATT/security failure.
+
+Source inspection found that the client set READY immediately after queuing
+a notification request, ignored the request's result, assumed the CCC handle
+was the MIDI value handle plus one, and omitted the initial MIDI read. The
+checked overlay now uses the discovered CCC descriptor and SDK per-operation
+GATT callbacks: read MIDI, request notifications, then set READY only after a
+successful subscription acknowledgement. Explicit ATT authentication/key-size/
+encryption errors permit one Just Works pairing attempt, a 30-second wait for
+the peer's user, and another handshake after successful encryption. Other
+errors, cancellation and timeouts cannot mark the link ready. Profile search
+and GATT setup remain on separate main-loop turns. Upstream notices remain
+in the dependency; the new independent handshake helper carries Kerem's credit.
+
+The host and BLE target builds pass. Target checks pass for CPU1, bootstrap
+PC guards, SRAM code, packed image, arena and boot layout. The package is
+`platform/build/saadet.fwsc`, SHA-256
+`e572e548e2def23f57e64c38021beb4ff9d89c7968c494a5cdc38948b0f24ba1`.
+App: 556,688 B; low RAM: 93,516 B; resident audio: 83,856 B;
+POOL: 222,880 B; engine arena: 121,184 B.
+
+`tests/run_base_tests.sh` reports ALL BASE PORT TESTS PASSED, including new
+sanitized target-helper tests for delayed/failed read and subscription
+acknowledgements, a nonadjacent CCC descriptor, peer-specific security errors
+at either handshake step, encryption failure, pairing refusal, bounded
+retries, cancellation, stale/malformed events and setup/pairing timeouts.
+Logs: `build/base-ble-ios-{host-build,build,tests}.log`.
+The user then requested installation. The exact tested package above was
+installed without rebuilding from `ui-reset` at `9db8c66` plus the uncommitted
+handshake correction. The installer completed with `done: the FM-1 runs
+FM-1_900`; a separate identity request confirmed `FM-1_900 [running]` on
+USB-MIDI port `FM-1`. The new startup reports advertising as Saadet, heap peak
+11,280 of 24,576 bytes and no recorded crash. Old connection messages precede
+the new `BT: starting` marker and do not validate the updated client.
+
+Receipts: `build/base-ble-ios-flash.log`,
+`build/base-ble-ios-after-device-info.log`, and
+`build/base-ble-ios-after-device.log`. iOS pairing, MIDI port publication,
+actual notes in both directions and compatibility with non-pairing hardware
+still require physical retesting with this installed build.
+
+### Encryption event handoff follow-up (23 October 2026)
+
+With the first correction installed, the user saw an iPhone pairing request
+and accepted it, but Saadet stayed on FINDING MIDI and timed out. The captured
+`build/base-ble-ios-pair-failure-device.log` reports encryption status 0 and
+subsequent setup timeouts, without the expected MIDI restart or a crash.
+
+Inspection of the linked SDK's `le_hci_emit_event` and its callers in the
+target disassembly established a callback convention mismatch: the SDK
+reports HCI payload length plus one, so a complete six-byte encryption event
+arrives with size 5. The first helper required size 6 and discarded it. GATT
+operation callbacks use the complete event length. The overlay now normalizes
+this SDK convention at the client's encryption event boundary; the helper
+retains its bounds check. The client also tracks encryption when it precedes
+an outstanding ATT authentication-error callback, allowing one MIDI retry
+without starting a redundant pairing request on an already encrypted link.
+Explicit pairing and security retries remain bounded. New phase/queue logs
+distinguish discovery, read, subscription and encryption stalls.
+
+The regression fixture now executes the shipping encryption event branch and
+both-role router with the SDK's size 5, standard size 6, truncated events,
+and encryption arriving before or after the ATT error/main-loop pairing
+request. The earlier fixture called the helper directly with size 6 and did
+not cover the SDK boundary. Sanitized helper checks, host/target builds and
+`tests/run_base_tests.sh` pass (ALL BASE PORT TESTS PASSED).
+
+Installed BLE package: `platform/build/saadet.fwsc`, SHA-256
+`bbb8219e7cdde129d8f5ddb47e2a5fb14061bd0a8b8025b8f11f3125674addbe`.
+App 557,024 B; low RAM 93,532 B; resident audio 83,856 B; POOL 222,880 B;
+engine arena 121,184 B. Target CPU1, bootstrap, SRAM, packed-image, arena and
+boot-layout checks pass. Logs: `build/base-ble-ios-encryption-{host-build,unit-tests,build,tests}.log`.
+Installation and a separate identity request confirmed `FM-1_900 [running]`;
+startup advertised as Saadet with no recorded crash. Receipts:
+`build/base-ble-ios-encryption-{flash,after-device-info,after-device}.log`.
+The user then reported a brief screen flash and a return to the unconnected
+list. `build/base-ble-ios-encryption-retry-device.log` showed encryption
+succeeding followed by MIDI setup rejection. The base folds consecutive log
+lines sharing their first five characters and truncates folded lines at 26
+characters, so the `central:` prefixes hid the error code.
+
+A diagnostic-only logging revision used distinct short prefixes with error
+codes first. Its target and sanitized client checks passed and it was
+installed as package SHA-256
+`399010f3684cff0396737f5bbd94fc697463f9ec3b14503fcea8b18416f11fab`.
+Receipts: `build/base-ble-ios-diagnostic-{build,unit-tests,flash,after-device-info,after-device}.log`.
+The user's subsequent failed retry is captured in
+`build/base-ble-ios-diagnostic-retry-device.log`: MIDI value handle `0x40`,
+CCC `0x42`, initial ATT error 5, successful pairing/encryption, another read
+returning ATT error 5, then `pairing 10` (SDK bond-key storage complete).
+This motivated testing whether waiting for bond completion would help:
+the helper disconnected before the later bond-complete event could be used.
+The following physical retest shows that waiting alone was insufficient.
+
+### Bond completion settling (23 October 2026)
+
+An authentication rejection on an encrypted link now waits for the SDK's
+`SM_EVENT_PAIR_SUB_ADD_LIST_SUCCESS` (0x10), then retries MIDI. A 200 ms retry
+also supports peers that do not store a bond or report that event. At most
+five such retries occur per link, and none issues another pairing request.
+The original per-operation timeout and subscription acknowledgement guard
+remain. A late bond event cannot restart cancelled setup or another link.
+
+The sanitized regression executes the actual shipping SM callback, HCI
+encryption branch and both-role router. It reproduces the observed
+encryption → ATT 5 → bond-complete order and verifies successful completion;
+it also covers timer fallback without a bond event, persistent rejection at
+the retry limit, foreign-handle bond events and cancellation. Host and target
+builds pass; `tests/run_base_tests.sh` reports ALL BASE PORT TESTS PASSED.
+Logs: `build/base-ble-ios-bond-{host-build,unit-tests,build,tests}.log`.
+
+Package `platform/build/saadet.fwsc`, SHA-256
+`975c3629cb7578db79e3c4cc1e59c5ea3e50251c5e20f9bb978cfcf632679d20`.
+App 557,088 B; low RAM 93,532 B; resident audio 83,856 B; POOL 222,880 B;
+engine arena 121,184 B. Target layout/CPU1 checks pass. The exact tested
+package was installed without rebuilding on `ui-reset` at `9db8c66` plus
+the local BLE corrections. The installer completed; a separate request
+confirmed `FM-1_900 [running]` on `FM-1`. The new boot advertises as Saadet
+and reports no recorded crash. Receipts:
+`build/base-ble-ios-bond-{flash,after-device-info,after-device}.log`.
+The user reported another failed physical iPhone retest. The captured log
+`build/base-ble-ios-bond-retry-device.log` shows encryption enabled, five
+200 ms retries returning ATT 0x05, then failure. A later attempt timed out
+in discovery. Bond settling alone did not fix iOS connectivity.
+
+### Initial-read compatibility fallback (23 October 2026)
+
+The iPhone reports its pairing peer as Saadet and runs current iOS (exact
+version not supplied). The persistent failure occurs on the initial MIDI
+characteristic read, before any CCC write. Android's BluetoothMidiDevice
+proceeds from its initial read callback to acknowledged CCC writing regardless
+of read status:
+https://chromium.googlesource.com/android_tools/+/HEAD/sdk/sources/android-25/com/android/bluetoothmidiservice/BluetoothMidiDevice.java
+
+Saadet now tries the discovered CCC after bounded encrypted read security
+rejections, or read-not-permitted/request-not-supported errors. It still
+requires a successful CCC acknowledgement before READY. A rejected CCC fails
+closed; subscription security errors retain the existing pairing/settling
+path. Tests replay persistent ATT 0x05 on the read followed by accepted and
+rejected CCC writes, all three security errors, unsupported reads, and a CCC
+that first requires pairing. These are controlled protocol fixtures, not
+physical evidence that the iPhone accepts the fallback.
+
+A temporary Secure Connections flag experiment was built but never installed
+and has been removed. Inspection of the pinned SDK's `btstack.a` `sm.c.o`
+(bitcode decoded by its own toolchain) found `sm_setup_tk` always clearing
+`sm_use_secure_connections`; the compiled setup uses the legacy association
+table and has no SC public-key/DH-key implementation. Merely enabling the
+runtime configuration flag is insufficient. The SDK checkout was unchanged.
+
+Host and target builds pass. The sanitizer protocol fixture and full base
+suite pass (`ALL BASE PORT TESTS PASSED`). Logs:
+`build/base-ble-ios-read-fallback-{host-build,unit-tests,build,tests}.log`.
+Package `platform/build/saadet.fwsc`, SHA-256
+`67d2d0fca98cff89e7380e071ae68985c172f996be3e1174a1d0568acbe2ec8a`.
+App 557,072 B; low RAM 93,532 B; resident audio 83,856 B; POOL 222,880 B;
+engine arena 121,184 B. Target layout/CPU1 checks pass. The exact tested
+package was installed on `ui-reset`, `9db8c66` plus local BLE corrections;
+the installer completed and a separate query confirmed `FM-1_900 [running]`
+on `FM-1`. Startup advertises Saadet and reports no recorded crash. Receipts:
+`build/base-ble-ios-read-fallback-{flash,after-device-info,after-device}.log`.
+The user reported another failure. Captured hardware log
+`build/base-ble-ios-read-fallback-retry-device.log` confirms that the fallback
+was executed (`MCRSK read 5, try CCC`, `MCSBQ handle 42`) and the iPhone also
+rejected that CCC with ATT 0x05. Other attempts hit stale-bond encryption
+status 6 or discovery timeouts. This rules out the initial read alone as the
+cause; no physical subscription acknowledgement or MIDI traffic succeeded.
+
+
+### Displayed passkey pairing (23 October 2026)
+
+The previous helper advertised no input/output capabilities and ignored
+`SM_EVENT_PASSKEY_DISPLAY_NUMBER`. Saadet has a display: the outgoing/master
+role now advertises DISPLAY_ONLY and requests BONDING | MITM_PROTECTION when
+pairing is required. It does not proactively force pairing on MIDI devices
+that permit unpaired access; the incoming/peripheral role keeps its existing
+Just Works policy. This is authenticated legacy pairing, not LE Secure
+Connections support. Whether iOS accepts this association method for its MIDI
+service remains a hardware question.
+
+GLO → DEV shows the SDK-generated six-digit code (including leading zeros)
+and asks the user to enter it on the other device. No fixed PIN is used and
+the PIN is not logged. Events from another connection and malformed/out-of-
+range codes are ignored. Encryption completion, display cancellation, setup
+failure, user disconnect and timeout clear the code. Displaying a code allows
+30 seconds for user input; no CONNECTED status appears without CCC success.
+An ATT rejection while the user is entering a code waits for encryption
+without issuing a duplicate pairing request. Setup timeout now resets the
+helper immediately so late events cannot revive its pending operation.
+
+The sanitizer regression executes the shipping SM callback for generated
+codes, leading zeros, valid zero/max code, malformed/foreign events,
+cancellation, completion, timeout, and ATT during passkey entry. UI layout
+checks and rendered inspection cover the code and instructions without
+overlap; images are in `build/base-ui-ble/ble_device_pairing*.png`.
+
+Host and target builds and the full base suite pass (`ALL BASE PORT TESTS
+PASSED`). The focused protocol regression was rerun after the final invalid-
+code handling adjustment; it passes under ASan/UBSan. Logs:
+`build/base-ble-ios-passkey-{host-build,build,unit-tests,ui-tests,tests}.log`.
+Package `platform/build/saadet.fwsc`, SHA-256
+`eb0f1731c28e1b70769966b3750299d3e454cd895555110507dd3d670335a215`.
+App 557,792 B; low RAM 93,564 B; resident audio 83,856 B; POOL 222,880 B;
+engine arena 121,184 B. Target layout/CPU1 checks pass. The exact package
+was installed on `ui-reset` at `9db8c66` plus these local corrections. The
+installer completed, a separate query verified `FM-1_900 [running]` on `FM-1`,
+and startup advertises Saadet with no recorded crash. Receipts:
+`build/base-ble-ios-passkey-{flash,after-device-info,after-device}.log`.
+The user confirmed a fresh pairing displayed a code and then connected.
+The hardware trace `build/base-ble-ios-passkey-retry-device.log` independently
+confirms the complete path: MIDI value 0x40 / CCC 0x42, initial ATT 0x05,
+`MCPIN enter code on peer`, successful encryption, successful read and CCC
+write, SDK bond-complete 0x10, then `MCOK MIDI subscription confirmed`.
+This establishes actual iPhone MIDI subscription setup using displayed-code
+authentication. The read fallback was not needed in this successful attempt.
+Actual MIDI notes/audio, sustained connection, disconnect/reconnect and
+bond persistence across reboot have not been physically validated.
 
 ## Computer/phone BLE connection repair
 

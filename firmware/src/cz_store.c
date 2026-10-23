@@ -29,6 +29,7 @@ static int cz_sx_import(uint32_t tr,const uint8_t *b,uint32_t n)
     for(uint32_t j=0;j<n/2;j++)data[j]=(uint8_t)(b[j*2]|b[j*2+1]<<4);
     if(n==256){static const uint8_t kw[]={0,31,44,57,70,83,96,111,146,255};for(uint32_t l=0;l<2;l++){uint32_t o=l*57u;if((data[18+o]&15)>9)return 0;data[16+o]&=15;data[19+o]=kw[data[18+o]&15];for(uint32_t j=20;j<=54;j+=17)data[j+o]|=240;}}
     if(!cz_patch_valid(data))return 0;
+    sysex_native_apply(ENGI_CZ,data);
     return sysex_stage(ENGI_CZ,data,1,CZ_BYTES);
 }
 static void cz_service(void)

@@ -43,7 +43,11 @@ played on Saadet go to both connected destinations. USB remains available.
 **GLOBAL > DEV** scans while that page is open. Put the external keyboard,
 controller or synth in its Bluetooth MIDI pairing/advertising mode. K1 DEVICE
 selects a discovered device; SAVE or a clockwise turn of K4 LINK connects it.
-The page shows CONNECTING, FINDING MIDI, then CONNECTED. SAVE/K4 disconnects
+The page shows CONNECTING, FINDING MIDI, then CONNECTED after the peer
+acknowledges its MIDI notification subscription. If the peer requires pairing,
+accept its pairing prompt within 30 seconds. If PAIRING CODE appears, enter
+that six-digit code on the other device; leading zeros are part of the code.
+The page stays on FINDING MIDI or PAIRING CODE until setup succeeds. SAVE/K4 disconnects
 an active or pending connection. Leaving the page stops scanning, but keeps an
 established connection. Up to eight discoveries can be selected, with three
 visible rows that scroll with the choice. This is BLE MIDI only, not Bluetooth
@@ -65,17 +69,51 @@ to cancel before confirmation. FORGET FAILED means the operation did not
 complete; PAIRINGS CLEARED means the SDK accepted the clear. Forget Saadet on
 the other device as well if it still remembers the old bond, then reconnect.
 
-Saadet accepts optional Just Works pairing. Like Charles's CTL firmware, its
-outgoing MIDI client does not force a PIN/pairing request on devices that do
-not require one. It does not automatically reconnect an external device at
-boot; select and connect it from DEV.
+Saadet accepts optional Just Works pairing for incoming connections. Its
+outgoing MIDI client supports a displayed code for authenticated pairing and requests
+pairing when a MIDI read or subscription returns an authentication/encryption
+error, without forcing it on devices that do not require it. It does not automatically reconnect an external device at
+boot; select and connect it from DEV. The initial MIDI read is attempted first; if it is unsupported, or still
+rejected after encrypted security retries, setup tries the actual notification
+subscription. Only the peer's subscription acknowledgement shows CONNECTED.
+
+Fresh displayed-code pairing with midimittr advertising on iPhone has been
+confirmed on hardware. When replacing an earlier Just Works bond, forget
+Saadet on the phone (if listed) and clear Saadet's saved pairings from the
+BLE page before pairing again. This clears all saved BLE peers on Saadet.
 
 ## Importing SysEx
 
-Send a dump to Saadet over USB-MIDI: a DX7 voice or a 32-voice bank, a CZ-1 tone, a Prophet-5 program, or a Saadet
+Send a dump to Saadet over USB-MIDI: a DX7 voice or a 32-voice bank, a CZ-1 tone, a Prophet-5 program, a JUNO-106 tone, or a Saadet
 user preset. Saadet opens SAVE and shows the sounds and the slots they will go into. Turn K1 to pick the first slot,
-then press SAVE to import. If you import a single sound, it starts playing right away. Opening another place discards
-the import. Nothing is written until you press SAVE.
+then press SAVE to import. Single native tones also select their engine and
+play immediately from RAM, so a librarian can audition and edit without a
+save. Repeated native dumps update that sound and retain the chosen SAVE
+destination. DX7 voice-parameter and JUNO-106 single-control messages edit
+their active engine directly, including the pending tone in SAVE.
+
+Banks wait for import and do not replace the playing sound. A Saadet preset
+starts playing after import. Opening another place cancels the pending import;
+an auditioned native tone keeps playing. User library slots are written only
+when you press SAVE. Normal idle recall still remembers the playing state.
+
+## Sending SysEx
+
+In any LIBRARY list, select a sound with K1 and turn **K3 SEND clockwise**.
+`SOUND SENT` confirms that its SysEx was sent over USB-MIDI. The selected
+sound uses its native Prophet, DX7, CZ-1 or JUNO-106 format; a saved sound
+without native data uses Saadet's preset format. When the selected sound is
+the one playing, the dump includes its current native edits. Sending does
+not save or load a sound. Empty lists have no SEND control.
+
+For J106, select **FM-1** for both MIDI input and output in the app, and match
+its channel to Saadet's GLOBAL > MIDI OUT CH. Open LIBRARY's J106 list,
+select a tone, then turn K3 SEND. J106 receives one tone at a time; its SAVE
+button keeps the received tone in its own library. Opening J106 does not
+automatically retrieve Saadet's factory or user library.
+
+Native edits are MIDI-compatible tone data; Saadet's additional modulation,
+scale and performance settings are controlled through its own editor protocol.
 
 ## Removed
 

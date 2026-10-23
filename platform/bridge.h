@@ -52,6 +52,7 @@ int sd_ble_enabled(void);
 void sd_ble_enable(int on);
 void sd_ble_reconnect(void);
 int sd_ble_device_state(void);
+int32_t sd_ble_pairing_code(void);
 int sd_ble_device_count(void);
 int sd_ble_device_pick(void);
 int sd_ble_device_found(int i,char *name,int *rssi);

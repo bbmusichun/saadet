@@ -2,6 +2,7 @@
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 #include <assert.h>
 #include <stdio.h>
+#include <stdint.h>
 #define SAADET_FM1_BASE 1
 static int radio_available=1,radio_on=1,radio_state=2,radio_link,radio_midi,retries;
 static int sd_ble_available(void){return radio_available;}
@@ -12,6 +13,8 @@ static int sd_ble_connected(void){return radio_midi;}
 static void sd_ble_enable(int on){radio_on=on;radio_state=on?2:0;if(!on)radio_link=radio_midi=0;}
 static void sd_ble_reconnect(void){retries++;sd_ble_enable(0);sd_ble_enable(1);}
 static int device_state,device_pick,device_count,forget_state;
+static int32_t pair_code=-1;
+static int32_t sd_ble_pairing_code(void){return pair_code;}
 static int sd_ble_device_state(void){return device_state;}
 static int sd_ble_device_count(void){return device_count;}
 static int sd_ble_device_pick(void){return device_pick;}
@@ -63,7 +66,13 @@ int main(void){
     press(B_SAVE);assert(device_state==2&&uix.place==PL_GLO);
     screen_check("CONNECTING","ble_device_connecting");
     device_state=3;screen_check("FINDING MIDI","ble_device_searching");
-    device_state=4;screen_check("CONNECTED","ble_device_connected");
+    pair_code=123;screen_check("PAIRING CODE","ble_device_pairing");
+    assert(lint_has("000123")&&lint_has("Enter on other device"));
+    pair_code=0;screen_check("000000","ble_device_pairing_zero");
+    pair_code=999999;screen_check("999999","ble_device_pairing_max");
+    pair_code=-1;screen_check("FINDING MIDI","ble_device_pairing_done");
+    device_state=4;pair_code=123;screen_check("CONNECTED","ble_device_connected");
+    assert(!lint_has("PAIRING CODE"));pair_code=-1;
     press(B_SAVE);assert(device_state==0&&uix.place==PL_GLO);
     device_state=4;turn(EN_K4,1);assert(device_state==0);
     device_count=0;screen_check("LOOKING FOR DEVICES","ble_devices_empty");

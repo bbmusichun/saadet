@@ -27,14 +27,14 @@ typedef struct { const char *name; const ui_stop_t *stop; uint8_t n; } ui_place_
 
 /* the library's lists (ui_lib.c); its fields, SAVE's and an import's */
 enum { LIB_FAV, LIB_USER, LIB_P5, LIB_FM6, LIB_CZ, LIB_J106, LIB_N };
-enum { LF_SOUND, LF_FAV, LF_SLOT, LF_CURSOR, LF_LETTER, LF_SFAV, LF_FIRST, LF_DELETE, LF_ERASE, LF_N };
+enum { LF_SOUND, LF_FAV, LF_SLOT, LF_CURSOR, LF_LETTER, LF_SFAV, LF_FIRST, LF_DELETE, LF_ERASE, LF_SEND, LF_N };
 static const ui_stop_t ST_LIB[LIB_N] = {
-    {"", "FAVOURITES", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), F0, FL(LF_DELETE, "DELETE")}},
-    {"", "USER", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), F0, FL(LF_DELETE, "DELETE")}},
-    {"", "P5", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), F0, FL(LF_DELETE, "DELETE")}},
-    {"", "FM6", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), F0, FL(LF_DELETE, "DELETE")}},
-    {"", "CZ-1", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), F0, FL(LF_DELETE, "DELETE")}},
-    {"", "J106", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), F0, FL(LF_DELETE, "DELETE")}},
+    {"", "FAVOURITES", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), FL(LF_SEND, "SEND"), FL(LF_DELETE, "DELETE")}},
+    {"", "USER", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), FL(LF_SEND, "SEND"), FL(LF_DELETE, "DELETE")}},
+    {"", "P5", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), FL(LF_SEND, "SEND"), FL(LF_DELETE, "DELETE")}},
+    {"", "FM6", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), FL(LF_SEND, "SEND"), FL(LF_DELETE, "DELETE")}},
+    {"", "CZ-1", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), FL(LF_SEND, "SEND"), FL(LF_DELETE, "DELETE")}},
+    {"", "J106", PIC_LIB, {FL(LF_SOUND, "SOUND"), FL(LF_FAV, "FAV"), FL(LF_SEND, "SEND"), FL(LF_DELETE, "DELETE")}},
 };
 static const ui_stop_t ST_SAVE[] = {
     {"", "SAVE", PIC_NONE, {FL(LF_SLOT, "SLOT"), FL(LF_CURSOR, "CURSOR"), FL(LF_LETTER, "LETTER"), FL(LF_SFAV, "FAV")}},

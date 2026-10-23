@@ -16,6 +16,7 @@ static void up_ui_named(uint32_t op, uint32_t k, const char *name);
 static int up_old(uint32_t k);
 static void sx_name(uint32_t i, char *b);                 /* shared_presets.c */
 static int sx_commit(uint32_t first, uint32_t *saved);
+static int library_sysex_send(uint32_t engine, uint32_t index, int user, int live);
 
 typedef struct { uint8_t user, eng; uint16_t idx; } lib_item_t;   /* a factory sound (eng, preset idx), or user slot idx */
 #define LIB_ROWS 5u
@@ -248,6 +249,9 @@ static const param_desc_t *lib_desc(uint32_t id)
     case LF_CURSOR: d.label = "CURSOR"; d.max = 11; break;
     case LF_LETTER: d.label = "LETTER"; d.max = (int16_t)(sizeof LIB_CHARS - 2u); break;
     case LF_FIRST: d.label = "FIRST"; d.max = (int16_t)(UP_SLOTS - (sx_stage.count ? sx_stage.count : 1u)); break;
+    case LF_SEND:
+        if (!lib_item(ui_stop(PL_LIB), lib.at[ui_stop(PL_LIB)], &it)) return 0;
+        d.label = "SEND"; break;
     case LF_DELETE:
         if (!lib_deletable(&it)) return 0;
         d.label = "DELETE"; d.max = 1; break;
@@ -306,6 +310,12 @@ static void lib_step(uint32_t id, int32_t s)
     }
     case LF_SFAV: lib.star = s > 0; break;
     case LF_FIRST: lib.first = (uint16_t)clamp((int32_t)lib.first + s, 0, lib_desc(LF_FIRST)->max); break;
+    case LF_SEND:
+        if (s <= 0 || !lib_item(src, lib.at[src], &it)) break;
+        if (!usb.config) { ui_message("CONNECT USB TO SEND"); break; }
+        ui_message(library_sysex_send(it.eng, it.idx, it.user, lib_item_now(&it)) ?
+                   "SYSEX SEND ERROR" : "SOUND SENT");
+        break;
     case LF_DELETE:
         lib.deleting = (uint8_t)(s > 0 && lib_deletable(&it));
         if (lib.deleting) {
@@ -338,6 +348,7 @@ static void lib_text(uint32_t id, char *val, char *unit)
         break;
     }
     case LF_FIRST: up_slot_label(val, lib.first); break;
+    case LF_SEND: str_cpy(val, "+", 2); break;
     case LF_DELETE: str_cpy(val, lib.deleting ? "ON" : "\x96", 4); break;
     case LF_ERASE: str_cpy(val, lib.erase ? "ON" : "\x96", 4); break;
     }

@@ -720,4 +720,5 @@ static int general_sysex_frame(const uint8_t *body,uint32_t n)
     sysex_stage(r.engine,(const uint8_t *)&r,1,sizeof r);return 1;
 }
 
+#include "sysex_send.c"
 #endif

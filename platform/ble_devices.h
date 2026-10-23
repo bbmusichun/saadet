@@ -11,6 +11,14 @@ int sd_ble_linked(void){return plat_ble_linked();}
 int sd_ble_available(void){return FM1B_BLE;}
 int sd_ble_enabled(void){return FM1B_BLE&&sd_radio_on;}
 int sd_ble_device_state(void){return plat_ble_device();}
+int32_t sd_ble_pairing_code(void){
+#if FM1B_BLE && !defined(PLAT_HOST)
+    extern int32_t ble_midi_pairing_code(void);
+    return ble_midi_pairing_code();
+#else
+    return -1;
+#endif
+}
 int sd_ble_device_count(void){return btdev_count();}
 int sd_ble_device_pick(void){return btdev_pick();}
 int sd_ble_device_found(int i,char *name,int *rssi){return btdev_found(i,name,rssi);}

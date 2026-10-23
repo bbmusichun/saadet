@@ -42,6 +42,7 @@ static int sd_ble_linked(void) { return 0; }
 static int sd_ble_connected(void) { return 0; }
 static void sd_ble_enable(int on) { (void)on; }
 static void sd_ble_reconnect(void) {}
+static int32_t sd_ble_pairing_code(void){return -1;}
 static int sd_ble_device_state(void) { return 0; }
 static int sd_ble_device_count(void) { return 0; }
 static int sd_ble_device_pick(void) { return 0; }

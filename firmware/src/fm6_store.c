@@ -84,6 +84,7 @@ static void fm6_sysex(const uint8_t *b, uint32_t n)
     if (n == 163u && st == 0x00u && b[3] == 0x00 && b[4] == 0x01 && b[5] == 0x1B &&
         fm6_chk(b + 6, 155) == b[161]) {                 /* one voice */
         uint8_t packed[FM6_PACKED]; fm6_pack(b + 6, packed);
+        sysex_native_apply(ENGI_FM6, packed);
         sysex_stage(ENGI_FM6, packed, 1, FM6_PACKED);
     } else if (n == FM6_RX && st == 0x00u && b[3] == 0x09 && b[4] == 0x20 && b[5] == 0x00 &&
                fm6_chk(b + 6, 4096) == b[4102]) {
@@ -98,6 +99,7 @@ static void fm6_sysex(const uint8_t *b, uint32_t n)
         } else if (k == 155u) {
             fm6_on[tr] = b[5] & FM6_ON_ALL;              /* bit 0 OP6 .. bit 5 OP1, as fm6_on */
         }
+        sysex_native_refresh(ENGI_FM6);
         ui.force = 1;
     } else if (n == 7u && st == 0x10u && b[3] == 0x08u && tr >= 0) {   /* a function parameter: the track's */
         uint32_t v = b[5], f = (uint32_t)tr;

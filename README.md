@@ -19,8 +19,10 @@ sequencer, patterns, songs, recording, motion automation, send buses, punch effe
 MPC bank-to-track routing or USB stems.
 
 The on-device interface provides engine editing, envelopes, modulation, scales,
-chords, arp, library, favourites, saving and SysEx import. The FX button opens
-LIBRARY; insert effects are removed. User sounds can be deleted with K4 DELETE
+chords, arp, library, favourites, saving and SysEx import. Single native SysEx
+tones audition immediately and support live editing; SAVE keeps them in the
+library. The FX button opens LIBRARY, where K3 SEND exports a sound over USB
+in its native format; insert effects are removed. User sounds can be deleted with K4 DELETE
 and an FX confirmation. GLOBAL's last page can erase all saved data after arming
 K1 and holding GLO for three seconds. See [the panel guide](docs/UI.md) for the
 controls and cancellation gestures. Startup maintenance, update mode (OCT- and

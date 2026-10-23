@@ -122,7 +122,8 @@ static uint8_t sx_checksum(const uint8_t *p,uint32_t n)
 }
 /* An incoming dump (FM6: one voice or a bank of 32, a CZ-1 tone, a Prophet program, a user preset) waits here for the
  * player to choose its user slots: SAVE shows it and a press stores it (ui_lib.c, shared_presets.c sx_commit); a newer
- * dump takes its place, and nothing is written before that press. 0: not staged (too large) */
+ * dump takes its place, and no user slot is written before that press. Single
+ * native tones also audition in RAM. 0: not staged (too large) */
 #define SX_STAGE_MAX 4096u
 static struct { uint8_t on, arrived, e; uint16_t count, size; uint8_t raw[SX_STAGE_MAX]; } sx_stage;
 static int sx_staged(void) { return sx_stage.on; }
@@ -131,11 +132,13 @@ static int sysex_stage(uint32_t e, const uint8_t *raw, uint32_t count, uint32_t 
 {
     if (!count || !size || count * size > SX_STAGE_MAX)
         return 0;
+    uint32_t refresh = sx_stage.on && sx_stage.e == e && sx_stage.count == count && sx_stage.size == size;
     memcpy(sx_stage.raw, raw, count * size);
     sx_stage.e = (uint8_t)e;
     sx_stage.count = (uint16_t)count;
     sx_stage.size = (uint16_t)size;
-    sx_stage.on = sx_stage.arrived = 1;                /* (the interface opens SAVE on it once: arrived) */
+    sx_stage.on = 1;
+    if (!refresh) sx_stage.arrived = 1;          /* live updates retain the chosen import destination */
     return 1;
 }
 

@@ -247,11 +247,13 @@ int plat_ble_connect(int i){(void)i;device=BLE_DEV_CONNECTING;return 0;}
 void plat_ble_disconnect(void){device=0;}
 void ble_midi_drop_host(void){computer=0;}
 void ble_midi_reconnect(void){computer=0;}
+int32_t ble_midi_pairing_code(void){return 123;}
 int ble_midi_can_forget(void){return can_clear;}
 int ble_midi_forget_all(void){clear_calls++;return clear_ok;}
 #include "btdev.c"
 #include "ble_devices.h"
 int main(void){
+    assert(sd_ble_pairing_code()==123);
     bd.pick=7;sd_ble_page(0,1);assert(!btdev_pick()); /* a shorter rescan clamps the old choice */
     sd_ble_forget_confirm();assert(!clear_calls&&state==BLE_READY);
     sd_ble_forget_arm(1);assert(sd_ble_forget_state()==1);

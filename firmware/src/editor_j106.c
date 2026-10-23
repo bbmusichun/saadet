@@ -3,8 +3,8 @@
 /* Command 96, shaped as the Prophet's 95: operation, track, payload. 0 GET
  * (the patch message, the program's name), 1 PUT a patch message without
  * F0/F7, 2 field edit (field, value), 3 printable name, 4 send the patch
- * message. Patch messages from an instrument or a file wait in SAVE, as other
- * native dumps do; single-control messages (41 32) edit the part's tone. */
+ * message. Patch messages audition in RAM and wait in SAVE for explicit user
+ * storage; single-control messages (41 32) edit the part's tone. */
 #define ED_J106 96u
 static void j106_accept_patch(uint32_t tr, const j106_patch_t *patch)
 {
@@ -73,7 +73,7 @@ static int ed_j106_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
     return 1;
 }
 /* Roland frames (41 ...) without F0/F7: a patch or manual-mode message (30,
- * 31) waits in SAVE; a single control (32) edits the selected part's tone
+ * 31) auditions and waits in SAVE; a single control (32) edits the selected part's tone
  * when it plays JUNO-106. 0: not one of these. */
 static int j106_native_frame(const uint8_t *body, uint32_t n)
 {
@@ -82,6 +82,7 @@ static int j106_native_frame(const uint8_t *body, uint32_t n)
         uint32_t tr = song.sel % NTRK;
         if (n == 5u && body[2] <= 15u && body[3] < J106_RAW && body[4] <= 127u && trk[tr].eng_req == ENGI_J106) {
             fm1_irq_off(); j106_patch_of(&trk[tr])->raw[body[3]] = body[4]; fm1_irq_on();
+            sysex_native_refresh(ENGI_J106);
             ui.force = 1;
         }
         return 1;
@@ -91,6 +92,7 @@ static int j106_native_frame(const uint8_t *body, uint32_t n)
     if (n + 2u == J106_FRAME) {
         frame[0] = 0xF0u; memcpy(frame + 1, body, n); frame[J106_FRAME - 1u] = 0xF7u;
         if (j106_patch_decode(&patch, frame, J106_FRAME)) {
+            sysex_native_apply(ENGI_J106, (const uint8_t *)&patch);
             sysex_stage(ENGI_J106, (const uint8_t *)&patch, 1, sizeof patch);
             return 1;
         }

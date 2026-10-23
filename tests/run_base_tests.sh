@@ -6,10 +6,12 @@ set -eu
 cd "$(dirname "$0")/.."
 PYTHON=${PYTHON:-build/venv/bin/python}
 "$PYTHON" tests/base_port_test.py
+"$PYTHON" tests/base_sysex_test.py
 "$PYTHON" tests/base_cpu_test.py
 "${CC:-cc}" -O1 -g -fsanitize=address,undefined tests/power_test.c -o build/base-power-test
 build/base-power-test
 "$PYTHON" tests/base_ble_test.py
+"$PYTHON" tests/base_ble_client_test.py
 "$PYTHON" tests/base_bootloader_test.py
 # Exercise the actual pinned updater with Saadet and the boot-only package.
 BASE=build/fm1-base-platform

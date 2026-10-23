@@ -135,6 +135,14 @@ static void sd_pcm_write(uint8_t *p,uint32_t width,int32_t v)
     # Raw streams reach the existing bounded native-bank parsers even when too
     # large for the base's app/editor frame collector. Real-time bytes survive.
     s = replace(s, 'static void sysex_byte(uint8_t b)\n{', 'static void sysex_byte(uint8_t b)\n{\n#ifndef FELUCCA_LOADER\n    saadet_sysex_byte(b);\n#endif')
+    # Match Melodee's USB receive fix (998ca1a3, by Kerem Kilic): hosts can
+    # deliver any SysEx byte as CIN F, including at a USB packet-list boundary.
+    # Route those through both collectors before status handling can cancel F0/F7.
+    s=replace(s,'    if (st >= 0x80u && st < 0xF8u) {', '''    if (cin == 0xFu && st < 0xF8u && (usb.sx_on || st == 0xF0u)) {
+        sysex_byte((uint8_t)st);
+        return;
+    }
+    if (st >= 0x80u && st < 0xF8u) {''')
     s=replace(s,'    if (st >= 0x80u && st < 0xF8u) {','    if (st >= 0x80u && st < 0xF8u) {\n#ifndef FELUCCA_LOADER\n        saadet_sysex_byte((uint8_t)st); /* cancel an interrupted native bank */\n#endif')
     return s
 
@@ -247,6 +255,61 @@ def apply(work):
         bt_ble_adv_enable(1);
     }
 }''')
+    # A successful profile search does not prove the peer accepted MIDI. Use
+    # the SDK's per-operation GATT callbacks to confirm read/subscription and
+    # request security only when the peer explicitly requires it.
+    client_header=Path(__file__).resolve().parents[1]/'platform/ble_client.h'
+    (work/'ble/midi/saadet_client.h').write_text(client_header.read_text())
+    s=replace(s,'void ble_midi_disconnect(void)\n{',
+        'static void sd_mc_reset(void);\nvoid ble_midi_disconnect(void)\n{\n    sd_mc_reset();')
+    s=replace(s,'void ble_midi_poll(void)\n{',
+        '#include "saadet_client.h"\n\nvoid ble_midi_poll(void)\n{\n    sd_mc_poll();')
+    s=replace(s,'mc_state == BLE_MC_SEARCHING && mc_handle && shim_ms() - mc_t0 > 5000u',
+        'mc_state == BLE_MC_SEARCHING && mc_handle && shim_ms() - mc_t0 > sd_mc_timeout()')
+    s=replace(s,'printf("central: search timed out\\n");',
+        'printf("MCTMO phase %u\\n", sd_mc_phase);\n        sd_mc_reset();')
+    s=function(s,'void user_client_report_search_result(search_result_t *r)',
+        'void user_client_report_search_result(search_result_t *r) { sd_mc_search(r); }')
+    s=function(s,'void user_client_report_descriptor_result(charact_descriptor_t *d)',
+        'void user_client_report_descriptor_result(charact_descriptor_t *d) { sd_mc_descriptor(d); }')
+    s=replace(s,'            mc_value = 0;\n            printf("central: connected %x\\n", mc_handle);',
+        '            mc_value = 0;\n            sd_mc_reset();\n            sd_mc_phase = SD_MC_DISCOVER;\n            printf("central: connected %x\\n", mc_handle);')
+    s=replace(s,'        mc_handle = 0;\n        mc_value = 0;',
+        '        mc_handle = 0;\n        mc_value = 0;\n        sd_mc_reset();')
+    start=s.index('static void client_packet_handler(')
+    end=s.index('/* one HCI handler for both roles:',start)
+    s=s[:start]+replace(s[start:end],'    case ATT_EVENT_MTU_EXCHANGE_COMPLETE:',
+        '''    case HCI_EVENT_ENCRYPTION_CHANGE:
+        /* The pinned SDK's le_hci_emit_event reports payload length + 1,
+         * excluding the event-type byte. Its complete event is length + 2.
+         * Normalize that convention here; GATT callbacks already use + 2. */
+        sd_mc_encryption(packet, size == (u16)packet[1] + 1u ? size + 1u : size);
+        break;
+    case ATT_EVENT_MTU_EXCHANGE_COMPLETE:''')+s[end:]
+    s=replace(s,'        printf("pairing %x on %x\\n", e->data[0], e->con_handle);',
+        '''        printf("pairing %x on %x\\n", e->data[0], e->con_handle);
+#if BLE_MIDI_CENTRAL
+        sd_mc_bond_event(e->con_handle, e->data[0]);
+#endif''')
+    s=replace(s,'    case SM_EVENT_PASSKEY_DISPLAY_NUMBER:\n    case SM_EVENT_PASSKEY_DISPLAY_CANCEL:',
+        '''    case SM_EVENT_PASSKEY_DISPLAY_NUMBER:
+#if BLE_MIDI_CENTRAL
+        sd_mc_passkey(packet, size, 1);
+#endif
+        break;
+    case SM_EVENT_PASSKEY_DISPLAY_CANCEL:
+#if BLE_MIDI_CENTRAL
+        sd_mc_passkey(packet, size, 0);
+#endif
+        break;''')
+    s=replace(s,'''    /* as a central: no pairing asked for (BLE MIDI needs none; an OXI E16 refuses it, and the service search did
+     * not survive the attempt); Just Works if a device asks, and again when it remembers a bond we lost */''',
+        '    /* Outgoing security stays on demand; retry a bond if the peer lost it. */')
+    s=replace(s,'    sm_set_master_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);',
+        '''    /* Saadet can display the SDK's random code for authenticated pairing.
+     * This changes only outgoing connections; pairing remains on demand. */
+    sm_set_master_io_capabilities(IO_CAPABILITY_DISPLAY_ONLY);
+    sm_set_master_authentication_requirements(SM_AUTHREQ_BONDING | SM_AUTHREQ_MITM_PROTECTION);''')
     s=replace(s,'static const char gap_device_name[] = "FM-1";', 'static const char gap_device_name[] = "Saadet";')
     # A fresh link must negotiate its own subscription, MTU and parameters.
     s=replace(s,'    set_ble_work_state(BLE_ST_CONNECT);', '''    CCC_SET(handle, H_CCC, 0);
