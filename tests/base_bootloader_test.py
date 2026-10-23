@@ -79,6 +79,10 @@ class BootloaderTest(unittest.TestCase):
         self.assertTrue(dev.link.closed)
         self.assertEqual(dev.link.sent.count(I.UPGRADE), 1)
 
+    def test_release_identity_is_accepted(self):
+        release = "FM-1_9010000"
+        self.assertEqual(self.run_install(dev=device(product=release), back=device(product=release)), release)
+
     def test_old_firmware_refusal(self):
         with self.assertRaisesRegex(ValueError, "staging did not complete"):
             self.run_install("refuse")
@@ -104,7 +108,7 @@ class BootloaderTest(unittest.TestCase):
         self.assertEqual(caught.exception.code, "noreturn")
 
     def test_wrong_starting_firmware_or_loader_never_upgrades(self):
-        for dev in (device(product="FM-1_015"), device(loader=True)):
+        for dev in (device(product="FM-1_015"), device(product="FM-1_6000900"), device(loader=True)):
             with self.assertRaisesRegex(ValueError, "requires running Saadet"):
                 self.run_install(dev=dev)
             self.assertFalse(dev.link.sent)

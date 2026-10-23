@@ -12,6 +12,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import shutil
 import sys
 import time
@@ -22,6 +23,8 @@ BASE = ROOT / "build/fm1-base-platform"
 VERSION = "1.2"
 PACKAGE = "fm1-uboot-1.2.fwsc"
 BOOT = "fm1-uboot-1.2.boot"
+# Saadet's identities: the development build and releases (fm1-base: id_prefix FM-1_9, then XXYYZZ).
+SAADET = re.compile(r"FM-1_9(00|\d{6})")
 # Match both fm1-base's vendored files and jvitkauskas/m-bootloader v1.2.
 HASHES = {
     PACKAGE: "0e89141f52d1f2d62198d4f69147a2c15c8360806e64d48002990a6fdab6d6dd",
@@ -72,9 +75,10 @@ def install_bootloader(api, up, dev, image, say=print):
     Updater.install() would incorrectly wait for that loader and FM-1_099.
     """
     product = dev.id.text
-    if dev.id.loader or dev.id.open or product != "FM-1_900":
+    if dev.id.loader or dev.id.open or not SAADET.fullmatch(product):
         dev.link.close()
-        raise ValueError("Bootloader installation requires running Saadet FM-1_900; update Saadet first")
+        raise ValueError(f"Bootloader installation requires running Saadet (FM-1_900 or a release), not {product}; "
+                         "update Saadet first")
     say("Staging m-bootloader 1.2. Keep the FM-1 powered and connected.")
     try:
         if not dev.link.send(api.UPGRADE):

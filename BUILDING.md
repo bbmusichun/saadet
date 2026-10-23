@@ -38,7 +38,8 @@ python3 -m http.server 8846 --bind 127.0.0.1
 
 Open `http://127.0.0.1:8846/web/editor.html`. Web MIDI requires a browser that
 supports it and user-granted SysEx permission. The local editor contains no
-multi-track simulator or Melodee release installer.
+multi-track simulator. `web/install/?demo` runs the web installer against a
+simulated FM-1 (see "Release site and web installer" below); nothing is written.
 
 Installation is a separate, explicit operation. `tools/flash.sh` builds the
 default package and installs it with the base's installer; `--legacy` builds
@@ -110,8 +111,8 @@ build/venv/bin/python tools/base_bootloader.py --install --port FM-1
 
 The last command writes the boot area and asks for confirmation (`--yes` skips
 the prompt for an already authorized install). Keep power and USB connected.
-It serves only the pinned FM-1 package, requires a running `FM-1_900` app and
-checks that the same app returns. It does not use the normal two-stage app
+It serves only the pinned FM-1 package, requires running Saadet (`FM-1_900` or a
+release identity) and checks that the same app returns. It does not use the normal two-stage app
 installer, which would wait for an update loader that m-bootloader's installer
 does not provide. A return to Saadet alone does not prove bootloader contents:
 switch off, hold **PLAY**, and switch on to verify the recovery menu. Hold
@@ -132,3 +133,54 @@ GLOBAL > DEV provides discovery/connect/disconnect; GLOBAL > BLE manages the
 phone link and can forget all BLE bonds. The existing editor and native bank imports continue over USB.
 The distribution/provenance audit and physical checks are tracked in
 `docs/BLE_MIGRATION.md`.
+
+## Release site and web installer
+
+`tools/make_site.py` turns a release package into a static site: the installer
+(`install/`), the package and pinned m-bootloader with `SHA256SUMS`
+(`firmware/`), the editor and the manual.
+
+```sh
+PYTHON="$PWD/build/venv/bin/python" ./build.sh --release 1.0
+python3 tools/make_site.py platform/build/saadet-1.0.fwsc 1.0 build/site
+python3 -m http.server 8846 --bind 127.0.0.1 --directory build/site
+```
+
+The release identity must be `FM-1_9` and XXYYZZ for the given version; the
+installer checks the downloaded package's SHA-256 and identity, and the FM-1's
+report after the install. `--dev` accepts the development package for local
+testing. The site's installer page is one file: its modules (`web/install/`)
+are bundled into it, so a cached page never mixes two releases' code.
+
+The installer follows fm1-base's: m-bootloader is optional, off by default, is
+offered only when its package matches the pinned SHA-256, and is written after
+the firmware, so a refused bootloader leaves the new firmware installed. It can
+also be added later to an FM-1 already running the release. Saadet's additions
+make an install hard to break from the browser:
+
+- Every answer to the FM-1's read requests is sent from the MIDI event itself,
+  with the protocol's 10 ms gap as the MIDI send timestamp
+  (`web/install/transfer.js`). fm1-base's loop waits on a page timer for each
+  answer; a background tab clamps those to a second, then a minute, which
+  stalled installs when the tab was switched.
+- Before writing, a dialog asks the player to keep the tab open and in front,
+  keep the cable and power connected, and confirm a backup. The install then
+  takes the whole window with that warning on top; switching away changes the
+  tab's title, and coming back says whether the transfer kept going.
+- While writing, the page holds a Web Lock (one install per browser), a screen
+  wake lock, a leave confirmation, and routes the protocol's waits through a
+  worker's timers (`web/install/keepalive.js`).
+- An install interrupted after the FM-1 entered update mode is resumable. The
+  update record survives a power cycle (felucca-bsp loader), the page detects
+  the update-mode identity, and a mark in local storage recalls it on the next
+  visit.
+
+`node web/test_install.mjs` runs the transfer against a simulated FM-1
+(`web/install/fakefm1.js`) with the page's timers throttled, interrupts and
+resumes an install, and installs m-bootloader after it; `tests/site_test.py`
+checks the site. Both are in `tests/run_base_tests.sh`. They do not replace an
+install on an FM-1 in Chrome and Edge, including with the tab in the background.
+`web/install/fm1ota.js` and `fm1pkg.js` are fm1-base's, byte for byte; the test
+and the site builder compare them with the pinned revision. Publishing the BLE
+build remains subject to the licensing boundary in `docs/BLE_MIGRATION.md`.
+

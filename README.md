@@ -30,7 +30,9 @@ OCT+ held for five seconds), and the crash report retain their own screens.
 
 Build and test instructions are in [BUILDING.md](BUILDING.md). Serve the repository
 locally and open [the editor](web/editor.html) for Sound, FM6, Library and Settings.
-The [manual](web/manual/index.html) describes the instrument.
+The [manual](web/manual/index.html) describes the instrument. [The web installer](web/install/index.html)
+installs a release from Chrome or Edge, with m-bootloader as an option; `tools/make_site.py`
+builds its release site (see BUILDING.md).
 
 ## Storage and compatibility
 

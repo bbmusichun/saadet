@@ -1,0 +1,388 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MPL-2.0
+     Copyright (C) 2026 Kerem Kilic (Ellic Studio)
+     Portions Copyright (C) 2026 Charles Vestal
+     Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
+     Saadet's web installer: connect, choose, install, with the install itself in a screen of its own that asks the
+     player to stay. After fm1-base's web/installer.html (its m-bootloader option, stock firmware and crash report).
+     The firmware and m-bootloader come from release.json beside this page (tools/make_site.py); ?demo runs the
+     same page against a simulated FM-1 (fakefm1.js). Logic: installer.js; transfer: transfer.js. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Install Saadet</title>
+<link rel="icon" id="favicon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --paper: #f6f5f1; --card: #fff; --ink: #121212; --dim: #63625d; --faint: #8f8e88; --line: #e2e0d9; --chip: #eeede7;
+    --warn: #8a5300; --warn-bg: #fff3d6; --warn-line: #f0d9a6; --ok: #17733a; --ok-bg: #e5f4ea; --bad: #b42318; --bad-bg: #fdeceb;
+    --focus: #2563eb; --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 8px 28px rgba(0, 0, 0, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0b0b0c; --card: #151516; --ink: #f2f2ee; --dim: #a6a5a0; --faint: #74736f; --line: #2a2a2c; --chip: #202022;
+      --warn: #f4b54a; --warn-bg: #2a2111; --warn-line: #4a3a17; --ok: #55c785; --ok-bg: #12261a; --bad: #ff8577; --bad-bg: #2c1614;
+      --focus: #7aa7ff; --shadow: 0 1px 2px rgba(0, 0, 0, .5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0b0b0c; --card: #151516; --ink: #f2f2ee; --dim: #a6a5a0; --faint: #74736f; --line: #2a2a2c; --chip: #202022;
+    --warn: #f4b54a; --warn-bg: #2a2111; --warn-line: #4a3a17; --ok: #55c785; --ok-bg: #12261a; --bad: #ff8577; --bad-bg: #2c1614;
+    --focus: #7aa7ff; --shadow: 0 1px 2px rgba(0, 0, 0, .5);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", Arial, sans-serif;
+         font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-underline-offset: 2px; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+  svg.i { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* the site's bar, as the editor's */
+  .site { max-width: 640px; margin: 0 auto; padding: 18px 16px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .site .brand { font-weight: 650; font-size: 17px; letter-spacing: -.01em; text-decoration: none; }
+  .site nav { display: flex; gap: 18px; font-size: 14px; }
+  .site nav a, .site button.lang { color: var(--dim); text-decoration: none; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+  .site nav a:hover, .site button.lang:hover { color: var(--ink); }
+  .site nav a[aria-current="page"] { color: var(--ink); }
+
+  main { max-width: 640px; margin: 0 auto; padding: 0 16px 32px; }
+  .demo { background: var(--ink); color: var(--paper); font-size: 13px; text-align: center; padding: 7px 16px; }
+  .demo a { color: inherit; }
+
+  .hero { padding: 48px 0 28px; }
+  .kicker { margin: 0 0 10px; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+  h1 { margin: 0; font-size: clamp(34px, 8vw, 46px); line-height: 1.04; font-weight: 680; letter-spacing: -.025em; }
+  h1 .v { color: var(--faint); font-weight: 500; }
+  .lede { margin: 14px 0 0; font-size: 18px; color: var(--dim); max-width: 34em; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 0; padding: 0; list-style: none; }
+  .facts li { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--chip); color: var(--dim); }
+  .banner { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 16px; padding: 14px 16px; border-radius: 12px;
+            background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--ink); }
+  .banner svg { color: var(--warn); margin-top: 2px; }
+  .banner p { margin: 0; }
+
+  /* the three steps, numbered by what is shown */
+  .steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+  .step { counter-increment: step; position: relative; display: grid; grid-template-columns: 32px 1fr; gap: 0 16px;
+          background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px 22px 22px 18px; margin: 0 0 12px; box-shadow: var(--shadow); }
+  .step::before { content: counter(step); display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+                  border: 1.5px solid var(--line); color: var(--dim); font-size: 14px; font-weight: 600; }
+  .step[data-state="active"]::before { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .step[data-state="done"]::before { content: "✓"; background: var(--ok-bg); border-color: transparent; color: var(--ok); }
+  .step > div { min-width: 0; }
+  .step h2 { margin: 3px 0 6px; font-size: 18px; font-weight: 640; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .step p { margin: 0 0 14px; color: var(--dim); }
+  .step p:last-child { margin-bottom: 0; }
+  .tag { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--dim);
+         padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+
+  .btn { font: inherit; font-weight: 600; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+         min-height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .btn:hover:not(:disabled) { border-color: var(--faint); }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .btn.primary:hover:not(:disabled) { opacity: .88; }
+  .btn.big { width: 100%; min-height: 52px; font-size: 16px; }
+  .btn:disabled { opacity: .38; cursor: default; }
+  .btn.ghost { background: none; }
+  .row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; margin-top: 22px; }
+  .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .device { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin: 0 0 14px; border-radius: 12px; background: var(--chip); }
+  .device svg.i { width: 28px; height: 28px; }
+  .device .what { flex: 1; min-width: 0; line-height: 1.35; }
+  .device .what b { display: block; font-weight: 620; }
+  .device .what span { color: var(--dim); font-size: 14px; }
+  .chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; background: var(--card); color: var(--dim); }
+  .chip.ok { background: var(--ok-bg); color: var(--ok); }
+  .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  .chip.bad { background: var(--bad-bg); color: var(--bad); }
+  .msg { color: var(--bad) !important; font-weight: 500; }
+  .msg:empty { display: none; }
+
+  .option { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; margin: 0 0 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+  .option:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .option input { width: 18px; height: 18px; margin: 3px 0 0; accent-color: var(--ink); flex: none; }
+  .option b { display: block; font-weight: 620; margin-bottom: 2px; }
+  .option span span { color: var(--dim); font-size: 15px; }
+  .note { font-size: 14px; }
+  .caution { display: flex; gap: 10px; align-items: flex-start; color: var(--ink) !important; background: var(--warn-bg); border-radius: 10px; padding: 10px 12px; }
+  .caution svg.i { color: var(--warn); width: 18px; height: 18px; margin-top: 2px; }
+  .small { font-size: 13px !important; color: var(--faint) !important; }
+
+  .more { margin: 28px 0 0; border-top: 1px solid var(--line); }
+  .more details { border-bottom: 1px solid var(--line); }
+  .more summary { cursor: pointer; padding: 16px 0; font-weight: 600; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  .more summary::-webkit-details-marker { display: none; }
+  .more summary::after { content: "+"; color: var(--faint); font-weight: 400; font-size: 20px; line-height: 1; }
+  .more details[open] summary::after { content: "−"; }
+  .more .in { padding: 0 0 18px; color: var(--dim); }
+  .more .in p, .more .in ol { margin: 0 0 12px; }
+  .more .in ol { padding-left: 20px; }
+  .more textarea { width: 100%; font: 12px/1.45 ui-monospace, Menlo, monospace; color: var(--ink); background: var(--card);
+                   border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+  input[type=file] { font: inherit; font-size: 14px; color: var(--dim); max-width: 100%; }
+  footer { max-width: 640px; margin: 0 auto; padding: 8px 16px 56px; font-size: 13px; color: var(--faint); }
+  footer p { margin: 0 0 6px; }
+
+  /* dialogs: the checks before, and the install's own screen */
+  dialog { border: 0; padding: 0; color: var(--ink); background: var(--card); }
+  dialog::backdrop { background: rgba(10, 10, 10, .5); backdrop-filter: blur(3px); }
+  #preflight { width: min(480px, calc(100% - 32px)); border-radius: 18px; box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
+  #preflight form { padding: 26px 24px 22px; }
+  #preflight h2 { margin: 0 0 18px; font-size: 22px; letter-spacing: -.015em; }
+  .rules { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 14px; }
+  .rules li { display: flex; gap: 14px; align-items: flex-start; }
+  .rules .ri { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 10px; background: var(--chip); }
+  .rules li:first-child .ri { background: var(--warn-bg); color: var(--warn); }
+  .rules b { display: block; font-weight: 620; }
+  .rules span span, .rules div span { color: var(--dim); font-size: 14px; }
+  .check { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: var(--chip); cursor: pointer; font-size: 15px; }
+  .check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--ink); flex: none; }
+
+  body:has(#run[open]) { overflow: hidden; }
+  #run { width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; background: var(--paper); }
+  #run::backdrop { background: var(--paper); }
+  .run-warn { position: sticky; top: 0; display: flex; justify-content: center; align-items: center; gap: 10px; padding: 12px 16px;
+              background: var(--warn-bg); color: var(--ink); border-bottom: 1px solid var(--warn-line); font-weight: 600; font-size: 15px; text-align: center; }
+  .run-warn svg { color: var(--warn); }
+  #run[data-state]:not([data-state="running"]) .run-warn { display: none; }
+  .run-main { max-width: 560px; margin: 0 auto; padding: clamp(32px, 9vh, 96px) 20px 40px; }
+  .run-kicker { margin: 0 0 4px; color: var(--dim); font-weight: 600; }
+  .pct { font-size: clamp(76px, 22vw, 136px); font-weight: 250; line-height: 1; letter-spacing: -.04em; margin: 0 0 18px; }
+  .pct .pc { font-size: .38em; color: var(--faint); letter-spacing: 0; margin-left: .06em; }
+  .bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--ink); border-radius: 99px; transition: width .4s ease; }
+  .bar.indet i { width: 30% !important; animation: indet 1.4s ease-in-out infinite; }
+  @keyframes indet { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+  .runstep { margin: 16px 0 0; font-size: 18px; font-weight: 560; min-height: 1.55em; }
+  .eta { margin: 2px 0 0; color: var(--dim); min-height: 1.55em; }
+  .phases { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 26px 0 0; padding: 0; font-size: 14px; color: var(--faint); }
+  .phases li { display: flex; align-items: center; gap: 8px; }
+  .phases li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }
+  .phases li.now { color: var(--ink); font-weight: 600; }
+  .phases li.now::before { background: var(--ink); border-color: var(--ink); animation: pulse 1.2s ease-in-out infinite; }
+  .phases li.past { color: var(--dim); }
+  .phases li.past::before { background: var(--ok); border-color: var(--ok); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .backnote { display: flex; gap: 10px; align-items: flex-start; margin: 26px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--warn-bg); }
+  .backnote svg { color: var(--warn); margin-top: 2px; }
+  .stall { margin: 14px 0 0; color: var(--dim); font-size: 15px; }
+
+  #run[data-state]:not([data-state="running"]) .live { display: none; }
+  .end-icon { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; margin: 0 0 22px; }
+  .end-icon svg.i { width: 32px; height: 32px; stroke-width: 2; }
+  #run[data-state="done"] .end-icon { background: var(--ok-bg); color: var(--ok); }
+  #run[data-state="paused"] .end-icon, #run[data-state="restart"] .end-icon, #run[data-state="partial"] .end-icon { background: var(--warn-bg); color: var(--warn); }
+  #run[data-state="safe"] .end-icon { background: var(--chip); color: var(--dim); }
+  .end h2 { margin: 0 0 10px; font-size: clamp(28px, 6vw, 36px); line-height: 1.1; letter-spacing: -.02em; }
+  .end > p { margin: 0 0 14px; color: var(--dim); font-size: 17px; }
+  .end ul { margin: 0 0 8px; padding-left: 20px; color: var(--dim); }
+  .end ul li { margin: 0 0 6px; }
+  .end .row { justify-content: flex-start; }
+  .log { margin: 36px 0 0; font-size: 13px; color: var(--faint); }
+  .log summary { cursor: pointer; }
+  .log pre { max-height: 14em; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0;
+             padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+  .log pre:empty::after { content: "—"; }
+
+  @media (max-width: 520px) {
+    .step { display: block; padding: 18px 16px; }
+    .step::before { float: left; width: 28px; height: 28px; margin: 0 12px 0 0; font-size: 13px; }
+    .step h2 { margin-top: 0; min-height: 28px; }
+    .step p:first-of-type { clear: left; }
+    .row .btn { flex: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-tab" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18M8.5 4.5V9"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2.5v4.5M15 2.5v4.5M6.5 7h11v3.5a5.5 5.5 0 0 1-11 0V7zM12 16v5.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6.5v11M15 6.5v11"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5h.01"/></symbol>
+  <symbol id="i-fm1" viewBox="0 0 24 24"><rect x="1.5" y="6" width="21" height="12" rx="2"/><path d="M4.5 9h5v2.5h-5zM13 9.5h.01M16 9.5h.01M19 9.5h.01M5 14v4M8.5 14v4M12 14v4M15.5 14v4M19 14v4"/></symbol>
+</svg>
+
+<div class="demo" id="demo" hidden><span data-t="demo">Demo: a simulated FM-1. Nothing is written.</span> <a href="./" data-t="demoleave">Leave the demo</a></div>
+
+<header class="site">
+  <a class="brand" href="../editor.html">Saadet</a>
+  <nav>
+    <a href="../editor.html" data-t="navEditor">Editor</a>
+    <a href="./" aria-current="page" data-t="navInstall">Install</a>
+    <a href="../manual/index.html" data-t="navManual">Manual</a>
+    <button type="button" class="lang" id="lang" lang="ja">日本語</button>
+  </nav>
+</header>
+
+<main>
+  <section class="hero">
+    <p class="kicker" data-t="kicker">Firmware for the M-VAVE FM-1</p>
+    <h1><span data-t="title">Install Saadet</span> <span class="v" id="hver"></span></h1>
+    <p class="lede" data-t="lede">One polyphonic synthesizer: Prophet, FM6, CZ-1 and JUNO-106, installed over USB from this page.</p>
+    <ul class="facts">
+      <li data-t="factBrowser">Chrome or Edge</li>
+      <li data-t="factCable">A USB data cable</li>
+      <li data-t="factTime">About 3 minutes</li>
+    </ul>
+  </section>
+
+  <div class="banner" id="resumebanner" hidden>
+    <svg class="i"><use href="#i-pause"/></svg>
+    <p><b data-t="resumeBannerH">An installation didn't finish.</b> <span data-t="resumeBanner">Your FM-1 is waiting in update mode. Connect it and press Find FM-1 to finish.</span></p>
+  </div>
+  <div class="banner" id="pagefail" hidden role="alert">
+    <svg class="i"><use href="#i-alert"/></svg>
+    <p id="pagefailtext"></p>
+  </div>
+
+  <ol class="steps">
+    <li class="step" id="st-connect" data-state="active">
+      <div>
+        <h2 data-t="s1h">Connect the FM-1</h2>
+        <p data-t="s1p">Plug it straight into this computer, without a hub, and switch it on. Close other music apps and editor tabs. When the browser asks to use MIDI devices, choose Allow.</p>
+        <div class="device" id="device" hidden>
+          <svg class="i"><use href="#i-fm1"/></svg>
+          <div class="what"><b>FM-1</b><span id="devwhat"></span></div>
+          <span class="chip" id="devchip"></span>
+        </div>
+        <p class="msg" id="connmsg" role="alert"></p>
+        <button type="button" class="btn" id="find"><span data-t="find">Find FM-1</span></button>
+      </div>
+    </li>
+
+    <li class="step" id="st-options" data-state="todo" hidden>
+      <div>
+        <h2><span data-t="s2h">Recovery bootloader</span> <span class="tag" data-t="optional">Optional</span></h2>
+        <label class="option" for="mboot">
+          <input type="checkbox" id="mboot">
+          <span><b data-t="mboot">Also install m-bootloader</b>
+            <span data-t="mbootwhy">A recovery menu (hold PLAY while switching on) and USB download mode (hold REC) that work even when a firmware won't start. It replaces M-VAVE's bootloader and stays through firmware updates.</span></span>
+        </label>
+        <p class="note caution"><svg class="i"><use href="#i-alert"/></svg><span data-t="mbootrisk">It writes the FM-1's boot area, the one step where a power cut can need hardware recovery. Leave it off if you're unsure: you can add it later from this page.</span></p>
+        <p class="small"><span data-t="mbootby">By Julius Vitkauskas, MIT licence.</span>
+          <a href="https://github.com/jvitkauskas/m-bootloader" target="_blank" rel="noopener">github.com/jvitkauskas/m-bootloader<span class="sr" data-t="newtab"> (opens in a new tab)</span></a></p>
+      </div>
+    </li>
+
+    <li class="step" id="st-install" data-state="todo">
+      <div>
+        <h2 data-t="s3h">Install</h2>
+        <p id="plantext" data-t="s3p">Back up your sounds first: Settings, then Backup, in the editor.</p>
+        <button type="button" class="btn primary big" id="go" disabled></button>
+        <p class="small" id="gohint" data-t="gohint">Find your FM-1 first.</p>
+      </div>
+    </li>
+  </ol>
+
+  <section class="more">
+    <details id="d-resume">
+      <summary data-t="mResumeH">If an installation stopped</summary>
+      <div class="in">
+        <p data-t="mResume1">Nothing is lost. Until an installation finishes, the FM-1 starts in update mode: its screen shows UPDATING, or stays dark. That holds even after switching it off.</p>
+        <p data-t="mResume2">Connect it, open this page and press Find FM-1. The page offers to resume, and continues from the start of the write.</p>
+      </div>
+    </details>
+    <details id="d-stock">
+      <summary data-t="mStockH">Go back to M-VAVE's firmware</summary>
+      <div class="in">
+        <p data-t="mStock1">This writes M-VAVE's own FM-1 firmware back over the same cable. It also puts back M-VAVE's bootloader, and what Saadet saved may be lost.</p>
+        <ol>
+          <li><span data-t="mStock2">Download M-VAVE's firmware:</span> <a href="https://yms-file-store.oss-cn-hongkong.aliyuncs.com/software/firmware/FM-1.fwsc">FM-1.fwsc</a></li>
+          <li><label for="stockfile" data-t="mStock3">Choose the file you downloaded:</label><br><input type="file" id="stockfile" accept=".fwsc"></li>
+          <li data-t="mStock4">Connect the FM-1, press Find FM-1 above, then the button below.</li>
+        </ol>
+        <p class="msg" id="stockmsg" role="alert"></p>
+        <button type="button" class="btn" id="stockgo" disabled data-t="mStockGo">Install M-VAVE's firmware</button>
+      </div>
+    </details>
+    <details id="d-report">
+      <summary data-t="mReportH">Report a problem</summary>
+      <div class="in">
+        <p data-t="mReport1">If the FM-1 crashed, don't switch it off: the crash record survives a restart, not a power cycle. Connect it and read the record, then send it with what you were doing.</p>
+        <p><button type="button" class="btn" id="reportgo" data-t="mReportGo">Read the crash report</button>
+          <button type="button" class="btn ghost" id="reportcopy" hidden data-t="mReportCopy">Copy</button></p>
+        <p id="reportstatus" role="status"></p>
+        <label class="sr" for="report" data-t="mReportLabel">Crash report</label>
+        <textarea id="report" readonly hidden rows="12"></textarea>
+      </div>
+    </details>
+    <details id="d-brick">
+      <summary data-t="mBrickH">If the FM-1 won't start</summary>
+      <div class="in">
+        <p data-t="mBrick1">With m-bootloader: switch off, hold PLAY and switch on for its recovery menu, or hold REC for USB download mode.</p>
+        <p><span data-t="mBrick2">Without it, the FM-1's USB recovery route can put a firmware back from a computer:</span>
+          <a href="https://github.com/hugelton/felucca-bsp/tree/main/tools" target="_blank" rel="noopener" data-t="mBrickLink">felucca-bsp recovery tools</a></p>
+      </div>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <p data-t="credits">Saadet by Kerem Kilic (Ellic Studio). Built on fm1-base by Charles Vestal and felucca-bsp, from Felucca by Leo Kuroshita (@kurogedelic), Hügelton Instruments. m-bootloader by Julius Vitkauskas.</p>
+  <p data-t="legal">GPL-3.0-only, without warranty. M-VAVE and FM-1 are trademarks of their respective owners.</p>
+</footer>
+
+<dialog id="preflight" aria-labelledby="pfh">
+  <form method="dialog">
+    <h2 id="pfh" data-t="pfh">Before you start</h2>
+    <ul class="rules">
+      <li><span class="ri"><svg class="i"><use href="#i-tab"/></svg></span>
+        <div><b data-t="pf1h">Keep this tab open and in front</b><span data-t="pf1">Don't switch tabs, minimise the window or close it until the page says Done.</span></div></li>
+      <li><span class="ri"><svg class="i"><use href="#i-plug"/></svg></span>
+        <div><b data-t="pf2h">Leave the FM-1 connected and on</b><span data-t="pf2">Don't unplug the cable or switch the FM-1 off. Plug a laptop into power.</span></div></li>
+      <li><span class="ri"><svg class="i"><use href="#i-clock"/></svg></span>
+        <div><b data-t="pf3h">It takes about 3 minutes</b><span data-t="pf3">The FM-1's screen shows UPDATING, or stays dark. Both are normal.</span></div></li>
+    </ul>
+    <p class="note caution" id="pfboot"><svg class="i"><use href="#i-alert"/></svg><span data-t="pfboot">m-bootloader is written last, after one more restart. Keep the power on until the page says Done.</span></p>
+    <label class="check" id="pfcheck"><input type="checkbox" id="pfok"><span data-t="pfok">I've backed up my sounds, or have nothing to keep.</span></label>
+    <div class="row">
+      <button type="submit" value="cancel" class="btn ghost" data-t="cancel">Cancel</button>
+      <button type="submit" value="go" class="btn primary" id="pfgo" disabled data-t="start">Start installation</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="run" aria-labelledby="runtitle" data-state="running">
+  <div class="run-warn" role="note"><svg class="i"><use href="#i-alert"/></svg><span data-t="runwarn">Keep this tab open and in front. Don't unplug the FM-1.</span></div>
+  <div class="run-main">
+    <div class="live">
+      <p class="run-kicker" id="runtitle"></p>
+      <div class="pct" aria-hidden="true"><span id="pct">0</span><span class="pc">%</span></div>
+      <div class="bar" id="bar" role="progressbar" aria-labelledby="runtitle" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="barfill"></i></div>
+      <p class="runstep" id="runstep" role="status"></p>
+      <p class="eta" id="eta"></p>
+      <ol class="phases" id="phases">
+        <li data-ph="prepare" data-t="phPrepare">Prepare</li>
+        <li data-ph="write" data-t="phWrite">Write</li>
+        <li data-ph="restart" data-t="phRestart">Restart</li>
+        <li data-ph="boot" data-t="phBoot">m-bootloader</li>
+      </ol>
+      <p class="stall" id="stall" hidden data-t="stall">Waiting for the FM-1… keep the cable connected.</p>
+      <div class="backnote" id="backnote" hidden role="alert"><svg class="i"><use href="#i-info"/></svg><span id="backtext"></span></div>
+    </div>
+    <div class="end" id="end" hidden>
+      <div class="end-icon"><svg class="i"><use id="endicon" href="#i-check"/></svg></div>
+      <h2 id="endtitle"></h2>
+      <p id="endtext"></p>
+      <ul id="endtips"></ul>
+      <div class="row" id="endactions"></div>
+    </div>
+    <details class="log"><summary data-t="details">Details</summary><pre id="log"></pre></details>
+  </div>
+</dialog>
+
+<script type="module" src="installer.js"></script>
+</body>
+</html>
