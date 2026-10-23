@@ -8,14 +8,16 @@
 enum { FK_NONE, FK_TRACK, FK_GLOBAL, FK_P5, FK_FM6OP, FK_FM6V, FK_FM6FN, FK_CZ, FK_DEV, FK_LIB, FK_BLE, FK_J106 };
 typedef struct { uint8_t kind, id; const char *label; uint8_t sub; } ui_field_t;   /* label: 0 = the descriptor's own;
                                                                                      * sub: FM6's operator 0..5 (OP1..) */
-/* the device's settings (kept with the settings, not the sound): screen sleep, the LEDs' level, the voice budget */
-enum { DEV_SLEEP, DEV_LIGHTS, DEV_BUDGET, DEV_N };
+/* the device's settings (kept with the settings, not the sound): screen sleep, the LEDs' level, the voice budget,
+ * MIDI THRU */
+enum { DEV_SLEEP, DEV_LIGHTS, DEV_BUDGET, DEV_THRU, DEV_N };
 enum { BL_RADIO, BL_RETRY, BL_PICK, BL_DROP, BL_FORGET, BL_ACTION };
 static const char *const N_SLEEP[] = {"NEVER", "5 MIN", "15 MIN", "30 MIN", "60 MIN"};
 static const param_desc_t DEV_D[DEV_N] = {
     {"SLEEP", F_ENUM, 0, 4, 0, N_SLEEP, 0},
     {"LIGHTS", F_ENUM, 0, LIGHTS_N - 1, LIGHTS_MID, LIGHTS_NAME, 0},
     {"BUDGET", F_INT, 8, 32, VOICE_BUDGET_DEFAULT, 0, "pts"},
+    {"THRU", F_ENUM, 0, 1, 0, N_ONOFF, 0},
 };
 static const param_desc_t *lib_desc(uint32_t id);        /* ui_lib.c: FK_LIB */
 static int32_t lib_get(uint32_t id);
@@ -79,7 +81,9 @@ static int32_t field_get(const ui_field_t *f)
         return p[f->id % LCZ_NP];
     }
     case FK_J106: return j106_get(TSEL, f->id);
-    case FK_DEV: return f->id == DEV_SLEEP ? (int32_t)scr_get() : f->id == DEV_LIGHTS ? settings_lights : settings_budget;
+    case FK_DEV:
+        return f->id == DEV_SLEEP ? (int32_t)scr_get() : f->id == DEV_LIGHTS ? settings_lights :
+               f->id == DEV_THRU ? settings_thru : settings_budget;
     case FK_LIB: return lib_get(f->id);
 #ifdef SAADET_FM1_BASE
     case FK_BLE: return f->id == BL_RADIO ? sd_ble_enabled() : f->id == BL_PICK ? sd_ble_device_pick() : 0;
@@ -183,6 +187,7 @@ static int field_step(const ui_field_t *f, int32_t steps)
     case FK_DEV:                                      /* (as the editor's preferences: saved with the settings) */
         if (f->id == DEV_SLEEP) scr_put((uint32_t)v);
         else if (f->id == DEV_LIGHTS) settings_lights = (uint8_t)v;
+        else if (f->id == DEV_THRU) settings_thru = (uint8_t)v;
         else settings_budget = (int16_t)v;
         settings_save();
         break;

@@ -28,7 +28,7 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #include "../firmware/src/gfx.c"
 #include "../firmware/src/panel.c"
 static void settings_save(void) {}
-static uint8_t settings_boot, settings_drumch = 10;  /* (params.c) */
+static uint8_t settings_boot, settings_drumch = 10, settings_thru;  /* (params.c) */
 #define VOICE_BUDGET_DEFAULT 16u
 static int16_t settings_budget=VOICE_BUDGET_DEFAULT;
 #define VOICE_KINDS 5u
@@ -157,6 +157,21 @@ int main(void)
             q.favorites.factory[15][28] = (uint8_t)byte;
             assert(settings_import(&q, sizeof q) && settings_autosave == (byte != AUTOSAVE_OFF_TAG));
         }
+        p = original; settings_import(&p, sizeof p);
+    }
+    {   /* MIDI THRU: row 15 byte 24 bit 6, OFF in records from before it; the byte's other bits stay as saved */
+        persist_t q = original;
+        assert(settings_import(&q, sizeof q) && !settings_thru);
+        q.favorites.factory[15][24] = 0xBFu;
+        assert(settings_import(&q, sizeof q) && !settings_thru);
+        settings_thru = 1;
+        settings_export(&q);
+        assert(q.favorites.factory[15][24] == 0xFFu);
+        settings_thru = 0;
+        assert(settings_import(&q, sizeof q) && settings_thru);
+        settings_thru = 0;
+        settings_export(&q);
+        assert(q.favorites.factory[15][24] == 0xBFu);
         p = original; settings_import(&p, sizeof p);
     }
     {   /* records before PER5 (Felucca's PER1..PER4; 1.2 rewrote them) and short ones: not read */

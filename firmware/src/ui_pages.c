@@ -197,7 +197,11 @@ static const ui_stop_t ST_GLO[] = {
     {"", "TEMPO", PIC_READOUT, {FG(G_BPM, "TEMPO"), FG(G_CLOCK, "CLOCK"), FG(G_SWING, "SWING"), F0}},
     {"", "OUTPUT", PIC_READOUT, {FT(P_LEVEL, "LEVEL"), FT(P_PAN, "PAN"), FT(P_SPRD, "SPREAD"), F0}},
     {"", "TUNING", PIC_READOUT, {FG(G_A4, "A4"), FG(G_TUNE, "FINE"), F0, F0}},
+#ifdef SAADET_FM1_BASE
+    {"", "MIDI", PIC_READOUT, {FG(G_ROUTE, "IN CH"), FG(G_DRUMCH, "OUT CH"), FD(DEV_THRU, "THRU"), F0}},
+#else
     {"", "MIDI", PIC_READOUT, {FG(G_ROUTE, "IN CH"), FG(G_DRUMCH, "OUT CH"), F0, F0}},
+#endif
 #ifdef SAADET_FM1_BASE
     {"", "BLE", PIC_BLE, {{FK_BLE, BL_RADIO, "RADIO", 0}, {FK_BLE, BL_DROP, "DROP", 0},
                           {FK_BLE, BL_FORGET, "FORGET", 0}, {FK_BLE, BL_RETRY, "RETRY", 0}}},

@@ -1,0 +1,88 @@
+wait 1200
+ble connect
+wait 30
+expect ble 1
+expect thru 0
+# THRU starts OFF: incoming MIDI only plays.
+out
+midi USB 90 3c 64
+wait 50
+expect held 1
+expect_unsent BLE 90 3c 64
+midi USB 80 3c 00
+wait 50
+# GLOBAL > MIDI K3 THRU, a device setting.
+tap GLO
+turn SELECT 3 80
+turn K3 1
+expect thru 1
+shot midi-thru.png
+# USB goes on to BLE, never back to USB.
+out
+midi USB 90 3c 64
+wait 50
+expect_out BLE 90 3c 64
+expect_unsent USB 90 3c 64
+midi USB 80 3c 00
+wait 50
+expect_out BLE 80 3c 00
+# TRS goes to both.
+out
+midi TRS 90 40 64
+wait 50
+expect_out USB 90 40 64
+expect_out BLE 90 40 64
+midi TRS 80 40 00
+wait 50
+expect_out USB 80 40 00
+# The phone's MIDI goes to USB only: TO_BLE would echo it back to the phone.
+out
+midi BLE b0 01 40
+wait 50
+expect_out USB b0 01 40
+expect_unsent BLE b0 01 40
+# A phone that drops ends the notes and the sustain it passed on.
+out
+midi BLE b0 40 7f
+midi BLE 90 43 64
+wait 50
+expect_out USB 90 43 64
+ble disconnect
+wait 50
+expect held 0
+expect_out USB 80 43 00
+expect_out USB b0 40 00
+# The external device: USB only (TO_BLE reaches the device itself), released when it disconnects.
+turn SELECT 2 80
+wait 600
+expect ble_device 1
+tap SAVE
+wait 400
+expect ble_device 4
+out
+mididev 90 45 64
+wait 50
+expect_out USB 90 45 64
+expect_unsent BLE 90 45 64
+tap SAVE
+wait 50
+expect_out USB 80 45 00
+# THRU turned OFF ends what is still held, and passes nothing more.
+turn SELECT -2 80
+out
+midi TRS 90 47 64
+wait 50
+expect_out USB 90 47 64
+turn K3 -1
+expect thru 0
+wait 50
+expect_out USB 80 47 00
+out
+midi TRS 80 47 00
+midi USB 90 48 64
+wait 50
+expect_unsent USB 80 47 00
+expect_unsent BLE 90 48 64
+midi USB 80 48 00
+wait 50
+expect held 0

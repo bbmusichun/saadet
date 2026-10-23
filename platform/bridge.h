@@ -18,6 +18,7 @@ void sd_lcd_power(uint32_t state);
 uint32_t sd_master(void);
 int sd_midi_in(uint32_t *packet,int *port);
 void sd_midi_out(uint32_t packet);
+void sd_midi_thru(uint32_t packet,int port);
 int sd_sysex_send(const uint8_t *frame,uint32_t n);
 int sd_read(uint32_t off,void *dst,uint32_t n);
 int sd_erase(uint32_t off);

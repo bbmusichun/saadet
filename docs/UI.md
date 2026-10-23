@@ -27,7 +27,7 @@ keys, and pressing a key jumps to that entry. While a button is held, the keys d
 | ENV | ENV | The engine's own envelopes (P5 filter and amp; FM6 pitch EG; the CZ-1's six 8-stage envelopes; the J106's one ADSR with its VCA mode, VCF amount and polarity), then the common MOD ENV. |
 | LFO | LFO | The engine's own LFO (P5 LFO, FM LFO, CZ-1 vibrato, J106 LFO rate, delay and its DCO and VCF depths), the common LFO, and the four-route matrix. |
 | EDIT | EDIT | The engine's own panel. P5: oscillators, mixer, filter, poly mod, wheel mod, play. FM6: voice and algorithm, OP1–OP6, macros, function settings. CZ-1: tone, detune, line 1 and line 2. J106: DCO waves and modulation, VCF cutoff and modulation (with the HPF), VCA mode, level and chorus. A value that has no effect on the sound as it stands is shown dim, but you can still edit it. |
-| GLO | GLOBAL | Tempo, output, tuning, MIDI channels, voice budget, display, erase everything. |
+| GLO | GLOBAL | Tempo, output, tuning, MIDI channels and thru, voice budget, display, erase everything. |
 | SAVE | SAVE | Choose a slot, set the name letter by letter (CURSOR, LETTER), and star it if you like. Press SAVE again to store. |
 | ARP | ARP | Pattern and feel. Its LED flashes with the arp's notes. |
 | SEQ | CHORD | Chord, voicing, strum. |
@@ -115,5 +115,14 @@ reference has also been measured. The command requires firmware with battery cal
 On the separate fm1-base target, GLOBAL > TEMPO's CLOCK choices are INT, USB,
 TRS and BLE. BLE is a MIDI peripheral advertised as **Saadet** and starts
 through the base's boot/crash guard. Physical keyboard notes are also sent to
-connected USB/BLE hosts. The native editor and DX7/CZ bank imports use USB.
+connected USB/BLE hosts.
+
+**GLOBAL > MIDI K3 THRU** (device setting, default OFF) also sends incoming
+MIDI out again: USB to BLE, TRS to USB and BLE, and either BLE link to USB.
+BLE input does not go back out over BLE, because the base sends BLE output to
+the phone and the external device together and would echo it to its source.
+When a BLE link drops or THRU is turned off, notes and sustain it passed on
+are released at their destination. When an out queue is nearly full,
+pressure, pitch bend and continuous controllers are dropped first. SysEx is
+not passed through. The native editor and DX7/CZ bank imports use USB.
 See `BLE_MIGRATION.md` for current limitations and unmeasured hardware checks.

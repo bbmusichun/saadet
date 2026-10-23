@@ -93,6 +93,15 @@ int sd_midi_in(uint32_t *p,int *port){
     *p&=~0xF0u;return 1;
 }
 void sd_midi_out(uint32_t p){plat_midi_send(p,TO_USB|TO_BLE);}
+/* MIDI THRU: a message from port (sd_midi_in's) out where it did not come from. TO_BLE is both links, so BLE in goes
+ * to USB only (it would echo to its own link); TRS has no out. Continuous streams leave a busy ring's last slots to
+ * the notes and the keys. */
+void sd_midi_thru(uint32_t p,int port){
+    uint32_t to=port==PORT_USB?TO_BLE:port==PORT_TRS?TO_USB|TO_BLE:TO_USB,st=(p>>8)&0xF0u,cc=(p>>16)&127u;
+    int stream=st==0xA0u||st==0xD0u||st==0xE0u||(st==0xB0u&&cc!=64u&&cc!=120u&&cc!=123u);
+    if(stream&&plat_midi_out_room(to)<16u)return;
+    plat_midi_send(p,to);
+}
 int sd_sysex_send(const uint8_t *p,uint32_t n){
 #ifdef PLAT_HOST
     plat_sysex_send(p,n);return 0;

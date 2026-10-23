@@ -42,6 +42,9 @@ static const char *const N_DRUMCH[] = {"OFF", "1", "2", "3", "4", "5", "6", "7",
  * project's: the column shows drumch_cell (seq.c midi_track) */
 static uint8_t settings_drumch = 10;
 static int16_t drumch_cell;
+/* GLO > MIDI KNOB 3, THRU (fm1-base): what comes in goes out again where it did not come from (platform/app.c
+ * sd_midi_thru), 0 OFF. A device setting kept with the settings (favorites row 15 byte 24 bit 6) */
+static uint8_t settings_thru;
 #define PROJ_TMPL 5                                      /* SLOT 5: the template (project.c tmpl) */
 /* SAVE > PROJECT KNOB 2, BOOT: the project power-on loads (OFF, A..D; OFF or an empty slot: the template, if one is
  * saved). A device setting kept with the settings (ext.boot), not the project's: the column shows boot_cell */

@@ -55,10 +55,26 @@ static void sd_ingress(uint32_t packet,uint32_t source)
     }
     sd_queue_midi(packet,source);
 }
+/* THRU passed a port's holds on (sd_midi_thru): a link that drops, or THRU turned off, ends them there too, before
+ * sd_release_port forgets them. Its own note-offs, whatever another port holds: the out is that port's alone */
+static const uint8_t sd_thru_port[4]={0,2,1,3};   /* port -> sd_midi_in's: USB, TRS, BLE, the BLE device */
+static uint8_t sd_thru_was;
+static void sd_thru_release(uint32_t port,uint32_t ch)
+{
+    for(uint32_t note=0;note<128u;note++)
+        if((sd_midi_keys[port][ch][note>>5]>>(note&31u))&1u)sd_midi_thru(8u|(0x80u|ch)<<8|note<<16,sd_thru_port[port]);
+    if(sd_midi_pedal[port][ch])sd_midi_thru(11u|(0xB0u|ch)<<8|64u<<16,sd_thru_port[port]);
+}
 static void sd_connections(void)
 {
     uint8_t up=(uint8_t)(!!sd_ble_connected()|(sd_ble_device_state()==4?2:0));
+    if(sd_thru_was&&!settings_thru)
+        for(uint32_t port=0;port<4u;port++)for(uint32_t ch=0;ch<16u;ch++)sd_thru_release(port,ch);
+    sd_thru_was=settings_thru;
     for(uint32_t link=0;link<2u;link++)if((sd_ble_was_up&~up)&(1u<<link))
-        for(uint32_t ch=0;ch<16u;ch++)sd_release_port(2u+link,ch);
+        for(uint32_t ch=0;ch<16u;ch++){
+            if(settings_thru)sd_thru_release(2u+link,ch);
+            sd_release_port(2u+link,ch);
+        }
     sd_ble_was_up=up;
 }

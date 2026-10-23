@@ -11,6 +11,7 @@
  * A saved template (project.c tmpl_t) follows the record.
  * palette: UI_PAL_TAG + index (any other id: the default).
  * favorites.factory[15][28]: tagged AUTOSAVE OFF; zero/unknown keeps autosave ON.
+ * favorites.factory[15][24] bit 6: MIDI THRU ON (a bit no build wrote before: 0 keeps it OFF).
  * bold: no longer used (one font weight); kept as it was saved, unless it holds the HOLD setting (panel.c). */
 typedef struct {
     uint32_t magic, palette, lowcut, zoom;
@@ -29,6 +30,7 @@ static int16_t settings_glo[4];                     /* ext.glo: project.c GLO_KE
 #define RECORD_PREF_TAG 0x52500000u /* RP, high half of the old zoom word */
 #define A4_TAG 0x41340000u                          /* "A4": old spare contents are not tuning */
 #define AUTOSAVE_OFF_TAG 0xA1u                     /* CZ row byte 28: only this tag disables autosave */
+#define THRU_ON_BIT 0x40u                          /* CZ row byte 24, past its native slots (bit 0) and GLO SELECT */
 #define WORK_BUDGET_TAG 0x57420000u /* WB: high bits of usb_off; low two bits retain USB mode */
 /* GLO > WEIGHTS in favorites.c row 8 bytes 8..15: 'W', version 1, the five points (0 AUTO, 1..15), bit 0 of the
  * last byte SAFETY OFF. Untagged bytes default to OFF; explicit ON is tagged too. Defaults store zeros. */
@@ -92,6 +94,7 @@ static int settings_import(persist_t *p, int n)
     p->palette = palette_to_stored(palette_from_stored(p->palette));
     settings_screen=p->favorites.factory[15][27] < 8u ? p->favorites.factory[15][27] : 0u;
     settings_autosave = p->favorites.factory[15][28] != AUTOSAVE_OFF_TAG;
+    settings_thru = (uint8_t)!!(p->favorites.factory[15][24] & THRU_ON_BIT);
     settings.magic = SETTINGS_MAGIC;
     settings.palette = palette_from_stored(p->palette);
     settings.lowcut = 0;
@@ -150,6 +153,8 @@ static void settings_export(persist_t *p)
 #endif
     p->favorites.factory[15][27]=settings_screen;
     p->favorites.factory[15][28] = settings_autosave ? 0u : AUTOSAVE_OFF_TAG;
+    p->favorites.factory[15][24] = (uint8_t)((p->favorites.factory[15][24] & ~THRU_ON_BIT) |
+                                             (settings_thru ? THRU_ON_BIT : 0u));
     p->ext.usb_off=(p->ext.usb_off&3u)|(settings_budget!=VOICE_BUDGET_DEFAULT?WORK_BUDGET_TAG|((uint32_t)settings_budget<<8):0u);
     p->ext.boot = settings_boot;
     p->ext.drumch = settings_drumch == 10u ? 0u : !settings_drumch ? 17u : settings_drumch;

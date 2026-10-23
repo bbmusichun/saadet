@@ -129,6 +129,7 @@ static void sd_poll(void)
     for(uint32_t i=0;i<7u;i++)sd_enc[i]+=enc[i];
     uint32_t packet;int port;
     while(sd_midi_in(&packet,&port)){
+        if(settings_thru)sd_midi_thru(packet,port);
         sd_ingress(packet,(uint32_t)(port==3?4:port==2?2:port==1?3:1));
     }
     sd_connections();
@@ -139,7 +140,7 @@ void saadet_init(void)
     mi_w=mi_r=0;midi_in_overflow=0;
     memset(sd_midi_keys,0,sizeof sd_midi_keys);memset(sd_midi_pedal,0,sizeof sd_midi_pedal);
     memset(midi_ch,0,sizeof midi_ch);memset(midi_sel_on,0,sizeof midi_sel_on);
-    memset(midi_owners,0,sizeof midi_owners);memset(mchord,0,sizeof mchord);sd_ble_was_up=0;
+    memset(midi_owners,0,sizeof midi_owners);memset(mchord,0,sizeof mchord);sd_ble_was_up=sd_thru_was=0;
     memset(trk,0,sizeof trk);memset(&song,0,sizeof song);eng_state_reset();
     memset(&ui,0,sizeof ui);memset(&uix,0,sizeof uix);uix.held=PL_N;uix.hot=4;uix.eng=255;
     panel=PANEL_DEFAULT;settings_init();persist_boot();panel_init();settings_init();sd_panel_set(panel.btn,panel.enc,panel.dir);
@@ -198,6 +199,7 @@ int saadet_expect(const char *s,int *v)
     if(str_eq(s,"ble_found")){*v=sd_ble_device_count();return 1;}
     if(str_eq(s,"ble_pick")){*v=sd_ble_device_pick();return 1;}
     if(str_eq(s,"ble_forget")){*v=sd_ble_forget_state();return 1;}
+    if(str_eq(s,"thru")){*v=settings_thru;return 1;}
     if(str_eq(s,"engines")){*v=NENG_SHOWN;return 1;}
     return 0;
 }

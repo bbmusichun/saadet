@@ -294,7 +294,18 @@ void ble_midi_reconnect(void)
             min_port[mi_w++ % MQ] = PORT_BLE;
             run_ms(2);
         } else if (!strcmp(cmd, "midi")) {''')
-    p.write_text('/* Saadet dual BLE ingress fixture Copyright (C) 2026 Kerem Kilic (Ellic Studio) */\n'+s)
+    s=replace(s,'''        } else if (!strcmp(cmd, "expect_out")) {
+            fails += expect_out(a, mk_pkt(b, c, d));''','''        } else if (!strcmp(cmd, "expect_out")) {
+            fails += expect_out(a, mk_pkt(b, c, d));
+        } else if (!strcmp(cmd, "expect_unsent")) {   /* this message did not go out to PORT since the last "out" */
+            uint32_t i, pkt = mk_pkt(b, c, d);
+            int p = find_name(PORT_N, NPORTS, a), sent = p < 0;
+            for (i = 0; !sent && i < n_out; i++)
+                sent = ((out_pkt[i] ^ pkt) & 0xFFFFFF00u) == 0 && (out_to[i] >> p & 1u);
+            printf(sent ? "FAIL expect_unsent %s %02X %02X %02X: sent\\n" : "  ok unsent %s %02X %02X %02X\\n", a,
+                   (pkt >> 8) & 0xFF, (pkt >> 16) & 0xFF, pkt >> 24);
+            fails += sent;''')
+    p.write_text('/* Saadet dual BLE ingress and thru fixture Copyright (C) 2026 Kerem Kilic (Ellic Studio) */\n'+s)
 
     p=work/'bsp/chip/fm1_sys.h';s=p.read_text()
     for name in ('fm1_reboot','fm1_enter_uboot'):
