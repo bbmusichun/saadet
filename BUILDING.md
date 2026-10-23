@@ -117,7 +117,11 @@ The port is experimental and private. BLE is a MIDI peripheral advertised as
 keyboard output and channel-message input. The default also enables BLE central
 mode for one external MIDI device alongside one incoming phone/computer link.
 GLOBAL > DEV provides discovery/connect/disconnect; GLOBAL > BLE manages the
-phone link and can forget all BLE bonds. The existing editor and native bank imports continue over USB.
+phone link and can forget all BLE bonds and the saved reconnect target. The last
+successfully connected outgoing MIDI device is remembered and retried on boot
+in the background, with delays increasing to 30 seconds. Radio Off or device
+Disconnect stops retries for the session. Peers with rotating private addresses
+may require reselection. The existing editor and native bank imports continue over USB.
 The distribution/provenance audit and physical checks are tracked in
 `docs/BLE_MIGRATION.md`.
 

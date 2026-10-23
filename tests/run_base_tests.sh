@@ -12,6 +12,7 @@ PYTHON=${PYTHON:-build/venv/bin/python}
 build/base-power-test
 "$PYTHON" tests/base_ble_test.py
 "$PYTHON" tests/base_ble_client_test.py
+"$PYTHON" tests/base_ble_reconnect_test.py
 "$PYTHON" tests/base_bootloader_test.py
 "$PYTHON" tests/licence_check_test.py
 "$PYTHON" tests/build_targets_test.py

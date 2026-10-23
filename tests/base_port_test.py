@@ -117,7 +117,11 @@ with tempfile.TemporaryDirectory() as d:
     subprocess.run(['cc',str(path/'map.c'),'-o',str(path/'map')],check=True)
     sectors=[int(x,16) for x in subprocess.check_output([str(path/'map')],text=True).split()]
 assert len(sectors)==len(set(sectors))
-base={0xA2000,0xA3000,0xA4000,0xA5000}
+app_h=(ROOT/'platform/app.h').read_text()
+base_a=[int(x,16) for x in re.search(r'#define APP_STORE_MAP \{([^}]+)\}',app_h)[1].replace('u','').split(',')]
+base={x+offset for x in base_a for offset in (0,4096)}
+assert len(base)==2*len(base_a)
+assert all(0x93000<=x<0xE0000 for x in base)
 assert not base.intersection(sectors)
 assert all(0x93000<=x<0xE0000 or 0xE5000<=x<0xFF000 for x in sectors)
 print(f'base storage: {len(sectors)} legacy sectors, no platform/OTA overlap')

@@ -3,6 +3,7 @@
 /* Saadet's adapter to Charles Vestal's unchanged fm1-base btdev helper.
  * The helper and JieLi MIDI client retain their upstream notices. */
 #include "btdev.h"
+#include "ble_reconnect.h"
 static uint8_t sd_radio_on=1,sd_forget,sd_forget_resume;
 static uint32_t sd_forget_at;
 int sd_ble_connected(void){return plat_ble_connected();}
@@ -22,9 +23,10 @@ int32_t sd_ble_pairing_code(void){
 int sd_ble_device_count(void){return btdev_count();}
 int sd_ble_device_pick(void){return btdev_pick();}
 int sd_ble_device_found(int i,char *name,int *rssi){return btdev_found(i,name,rssi);}
-const char *sd_ble_device_name(void){return btdev_name();}
+const char *sd_ble_device_name(void){return sd_bt_name();}
 void sd_ble_enable(int on){
     if(sd_forget==2)return;
+    if(on)sd_bt_resume();else sd_bt_pause();
     sd_radio_on=(uint8_t)!!on;plat_ble_enable(on);
 }
 void sd_ble_drop_host(void){
@@ -50,6 +52,10 @@ void sd_ble_device_choose(int steps){
 }
 const char *sd_ble_device_action(void){
     if(sd_forget==2||plat_ble_state()!=BLE_READY)return "RADIO NOT READY";
+    if(btdev_busy())sd_bt_pause();else sd_bt_resume();
+#if FM1B_BLE_CENTRAL && !defined(PLAT_HOST)
+    sd_bt_display=0;
+#endif
     return btdev_word(btdev_save());
 }
 void sd_ble_forget_arm(int on){
@@ -60,6 +66,7 @@ int sd_ble_forget_state(void){return sd_forget;}
 void sd_ble_forget_confirm(void){
     if(sd_forget!=1||plat_ms()-sd_forget_at>=15000u)return;
     sd_forget=2;sd_forget_at=plat_ms();sd_forget_resume=sd_radio_on;
+    sd_bt_pause();
     plat_ble_enable(0); /* let both links finish before removing their bonds */
 }
 const char *sd_ble_page(int devices,int pairing){
@@ -79,6 +86,7 @@ const char *sd_ble_page(int devices,int pairing){
 #else
             ok=1;
 #endif
+            if(ok)ok=sd_bt_forget();
             sd_forget=0;plat_ble_enable(sd_forget_resume);
             message=ok?"PAIRINGS CLEARED":"FORGET FAILED";
         }else if(plat_ms()-sd_forget_at>=6000u){
@@ -86,6 +94,7 @@ const char *sd_ble_page(int devices,int pairing){
         }
     }
     btdev_page(devices&&sd_radio_on&&sd_forget!=2);
+    sd_bt_poll(sd_radio_on&&sd_forget!=2);
     if(!btdev_busy())btdev_choose(btdev_pick()); /* a new scan can have fewer devices */
     for(int event;(event=btdev_event())!=BTDEV_NONE;){
         if(!message[0])message=btdev_word(event);

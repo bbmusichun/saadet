@@ -11,8 +11,8 @@
 #define APP_HOST_EXPECT
 #define APP_BTDEV
 /* Separate pairs outside all 24 live Saadet objects. IDs are base-local. */
-enum { OBJ_PANEL, OBJ_BLE, OBJ_NOBJ };
-#define APP_STORE_MAP {0xA2000u,0xA4000u}
+enum { OBJ_PANEL, OBJ_BLE, OBJ_BT_LAST, OBJ_NOBJ };
+#define APP_STORE_MAP {0xA2000u,0xA4000u,0xA6000u}
 void app_init(void);
 void app_render(int32_t *lr,uint32_t n,uint32_t gain);
 void app_panic(void);

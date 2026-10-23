@@ -235,6 +235,11 @@ run(r'''
 #include "plat.h"
 static uint32_t now;
 static int state=BLE_READY,device,computer,can_clear,clear_ok=1,clear_calls;
+enum {OBJ_BT_LAST=2};
+int plat_store_load(uint32_t o,void *p,uint32_t n){(void)o;(void)p;(void)n;return -1;}
+int plat_store_save(uint32_t o,const void *p,uint32_t n){(void)o;(void)p;(void)n;return 0;}
+int saadet_ble_peer(uint8_t *a,uint8_t *t,char *n){(void)a;(void)t;(void)n;return 0;}
+int saadet_ble_connect_peer(const uint8_t *a,uint8_t t,const char *n){(void)a;(void)t;(void)n;return -1;}
 uint32_t plat_ms(void){return now;}
 int plat_ble_state(void){return state;}
 int plat_ble_connected(void){return computer;}

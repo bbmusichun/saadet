@@ -82,7 +82,7 @@ The port includes:
   existing PLL settings without changing them.
 - The existing UI, raw physical panel calibration, LED duty planes, display
   sleep, saved-object formats and the 384-slot library. The base has separate
-  A/B objects at `0xA2000..0xA5000` for panel/radio data. Tests enumerate all
+  A/B objects at `0xA2000..0xA7000` for panel/radio data and the last MIDI device. Tests enumerate all
   48 live legacy sectors and verify no platform or OTA overlap.
 - USB and TRS MIDI plus BLE MIDI peripheral input/output. BLE advertises
   **Saadet**; central mode supports one external MIDI device beside a phone/
@@ -158,6 +158,21 @@ Additional connection adaptations:
   reads, and return zero beyond the name. Startup diagnostics now say Saadet.
 - Turning the radio off during initialization remains effective when the
   asynchronous Bluetooth-ready event arrives.
+- The last outgoing device is saved in a separate atomic A/B object only
+  after its MIDI subscription is acknowledged. On boot, after the radio is
+  ready and a one-second startup delay, Saadet reconnects to that address and
+  address type without opening GLOBAL > DEV. Failed attempts wait 2, 4, 8,
+  16, then 30 seconds between attempts, continuing at 30 seconds; unexpected
+  link loss also retries. Connecting and MIDI setup retain their timeouts.
+  Radio Off and an explicit device Disconnect stop retries for the session;
+  Radio On or RETRY resumes them. Forget clears the saved target along with
+  the bonds, and a failed Forget leaves retries stopped. Unchanged targets
+  are not rewritten on each connection. Failed storage writes retry no more
+  than once every 30 seconds while connected.
+  This applies to the outgoing MIDI-device role. Incoming phone/computer
+  links still connect from their MIDI app. Peers that rotate private BLE
+  addresses may need to be selected again in GLOBAL > DEV; reconnect does
+  not guess identity from a device name.
 
 For a Mac, open Audio MIDI Setup > Window > Show MIDI Studio > Bluetooth and
 connect to Saadet. If the page says WAITING FOR MIDI, quit and reopen Audio

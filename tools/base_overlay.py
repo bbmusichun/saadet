@@ -244,6 +244,38 @@ def apply(work):
     s=s[:start]+replace(s[start:end],'        case HCI_SUBEVENT_LE_CONNECTION_COMPLETE:',
         '        case HCI_SUBEVENT_LE_ENHANCED_CONNECTION_COMPLETE:\n        case HCI_SUBEVENT_LE_CONNECTION_COMPLETE:')+s[end:]
     # Cancellation must resume advertising and must not trigger retry-on-0x3E.
+    s=replace(s,'int ble_midi_connect(int i)',
+        'static char sd_mc_peer_name[21];\nint ble_midi_connect(int i)')
+    s=replace(s,'    mc_tries = 3;\n    mc_create();',
+        '    memcpy(sd_mc_peer_name, mc_dev[i].name, sizeof sd_mc_peer_name);\n    mc_tries = 3;\n    mc_create();')
+    s=replace(s,'void ble_midi_disconnect(void)\n{', '''/* Main-loop bridge: persist only an acknowledged MIDI peer, never a scan
+ * index or a failed selection. Reuse the address type as well as the address. */
+int saadet_ble_peer(u8 *address, u8 *type, char *name)
+{
+    if (!mc_ready()) return 0;
+    memcpy(address, mc_conn.peer_address, 6);
+    *type = mc_conn.peer_address_type;
+    memcpy(name, sd_mc_peer_name, 21);
+    name[20] = 0;
+    return 1;
+}
+int saadet_ble_connect_peer(const u8 *address, u8 type, const char *name)
+{
+    if (mc_handle || (mc_state != BLE_MC_OFF && mc_state != BLE_MC_SCANNING)) return -1;
+    ble_midi_scan(0);
+    memset(&mc_conn, 0, sizeof mc_conn);
+    mc_conn.conn_interval = 24;
+    mc_conn.supervision_timeout = 400;
+    mc_conn.peer_address_type = type;
+    memcpy(mc_conn.peer_address, address, 6);
+    memcpy(sd_mc_peer_name, name, 21);
+    sd_mc_peer_name[20] = 0;
+    mc_tries = 0; /* the app owns the backoff between automatic attempts */
+    mc_create();
+    return 0;
+}
+void ble_midi_disconnect(void)
+{''')
     s=function(s,'void ble_midi_disconnect(void)', '''void ble_midi_disconnect(void)
 {
     mc_tries = 0;
