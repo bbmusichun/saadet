@@ -1,0 +1,119 @@
+wait 1200
+# The peripheral can stay connected while Saadet scans for a MIDI peripheral.
+ble connect
+expect ble 1
+tap GLO
+turn SELECT 5 80
+wait 600
+expect ble_device 1
+expect ble_found 1
+shot ble-devices.png
+# Leaving the device page stops discovery.
+tap HOME
+expect ble_device 0
+tap GLO
+wait 600
+expect ble_device 1
+# SAVE is a connect/disconnect action here, not a sound save.
+tap SAVE
+expect ble_device 2
+wait 400
+expect ble_device 4
+expect ble 1
+shot ble-device-connected.png
+# The phone DROP control leaves the external device connected.
+turn SELECT -1 80
+turn K2 1
+expect ble 0
+expect ble_device 4
+turn SELECT 1 80
+ble connect
+# Both BLE links can hold the same pitch independently.
+midi BLE 90 3c 64
+mididev 90 3c 64
+wait 50
+expect held 1
+midi BLE 80 3c 00
+wait 50
+expect held 1
+# Dropping the external device releases its holds while the phone survives.
+tap SAVE
+wait 50
+expect ble 1
+expect held 0
+wait 600
+tap SAVE
+wait 400
+expect ble_device 4
+# Sustained external notes also end when that device disconnects.
+mididev b0 40 7f
+mididev 90 40 64
+mididev 80 40 00
+wait 50
+expect held 1
+tap SAVE
+wait 50
+expect held 0
+wait 600
+tap SAVE
+wait 400
+expect ble_device 4
+# Physical keys are sent when only the external device is connected.
+ble disconnect
+expect ble 0
+out
+key 0 down
+wait 50
+expect_out BLE 90 35 64
+key 0 up
+wait 50
+# Dropping the phone must not silence a held note from the external keyboard.
+ble connect
+mididev 90 40 64
+midi BLE 90 40 64
+wait 50
+ble disconnect
+wait 50
+expect held 1
+mididev 80 40 00
+wait 50
+expect held 0
+# Both BLE inputs use the BLE clock-source choice.
+turn SELECT -5 80
+turn K2 3 80
+mididev fa
+wait 50
+expect clock 3
+expect playing 1
+mididev fc
+wait 50
+expect playing 0
+# Forget explicitly clears all bonds and closes both links.
+turn SELECT 4 80
+ble connect
+mididev 90 43 64
+wait 50
+expect held 1
+turn K3 1
+expect ble_forget 1
+shot ble-forget-armed.png
+turn K3 -1
+expect ble_forget 0
+turn K3 1
+tap HOME
+expect ble_forget 0
+tap GLO
+turn K3 1
+wait 15050
+expect ble_forget 0
+turn K3 1
+tap SAVE
+expect ble_forget 2
+wait 400
+expect ble_forget 0
+expect ble 0
+expect ble_device 0
+expect held 0
+wait 1200
+expect ble_state 2
+shot ble-forgotten.png

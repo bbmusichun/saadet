@@ -87,7 +87,11 @@ void sd_lcd_power(uint32_t s){
 #endif
 }
 uint32_t sd_master(void){return plat_master();}
-int sd_midi_in(uint32_t *p,int *port){return plat_midi_in(p,port);}
+int sd_midi_in(uint32_t *p,int *port){
+    if(!plat_midi_in(p,port))return 0;
+    if(*port==PORT_BLE&&(*p&0x10u))*port=3; /* external device, separate from the phone */
+    *p&=~0xF0u;return 1;
+}
 void sd_midi_out(uint32_t p){plat_midi_send(p,TO_USB|TO_BLE);}
 int sd_sysex_send(const uint8_t *p,uint32_t n){
 #ifdef PLAT_HOST
@@ -96,22 +100,7 @@ int sd_sysex_send(const uint8_t *p,uint32_t n){
     return ota_wire_send(p,n);
 #endif
 }
-int sd_ble_connected(void){return plat_ble_connected();}
-static uint8_t sd_radio_on=1;
-int sd_ble_state(void){return plat_ble_state();}
-int sd_ble_linked(void){return plat_ble_linked();}
-int sd_ble_available(void){return FM1B_BLE;}
-int sd_ble_enabled(void){return FM1B_BLE&&sd_radio_on;}
-void sd_ble_enable(int on){sd_radio_on=(uint8_t)!!on;plat_ble_enable(on);}
-void sd_ble_reconnect(void){
-    sd_ble_enable(1);
-#if FM1B_BLE && !defined(PLAT_HOST)
-    extern void ble_midi_reconnect(void);
-    if(plat_ble_state()==BLE_READY)ble_midi_reconnect();
-#elif FM1B_BLE
-    plat_ble_enable(0);plat_ble_enable(1);
-#endif
-}
+#include "ble_devices.h"
 static int sd_data_ok(uint32_t off,uint32_t n){return (off>=0x93000u&&off<=0xE0000u&&n<=0xE0000u-off)||(off>=0xE5000u&&off<=0xFF000u&&n<=0xFF000u-off);}
 #ifdef PLAT_HOST
 static uint8_t sd_nor[0x100000];

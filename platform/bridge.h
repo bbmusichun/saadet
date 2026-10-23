@@ -48,6 +48,18 @@ int sd_ble_available(void);
 int sd_ble_enabled(void);
 void sd_ble_enable(int on);
 void sd_ble_reconnect(void);
+int sd_ble_device_state(void);
+int sd_ble_device_count(void);
+int sd_ble_device_pick(void);
+int sd_ble_device_found(int i,char *name,int *rssi);
+const char *sd_ble_device_name(void);
+void sd_ble_device_choose(int steps);
+const char *sd_ble_device_action(void);
+const char *sd_ble_page(int devices,int pairing);
+void sd_ble_drop_host(void);
+void sd_ble_forget_arm(int on);
+int sd_ble_forget_state(void);
+void sd_ble_forget_confirm(void);
 
 void sd_panel_set(const uint8_t *buttons,const uint8_t *enc,const int8_t *direction);
 void saadet_panel_calibrated(const uint8_t *buttons,const uint8_t *enc,const int8_t *direction);

@@ -129,7 +129,7 @@ static void sd_poll(void)
     for(uint32_t i=0;i<7u;i++)sd_enc[i]+=enc[i];
     uint32_t packet;int port;
     while(sd_midi_in(&packet,&port)){
-        sd_ingress(packet,(uint32_t)(port==2?2:port==1?3:1));
+        sd_ingress(packet,(uint32_t)(port==3?4:port==2?2:port==1?3:1));
     }
     sd_connections();
 }
@@ -194,6 +194,10 @@ int saadet_expect(const char *s,int *v)
     if(str_eq(s,"ble_linked")){*v=sd_ble_linked();return 1;}
     if(str_eq(s,"ble_state")){*v=sd_ble_state();return 1;}
     if(str_eq(s,"ble_enabled")){*v=sd_ble_enabled();return 1;}
+    if(str_eq(s,"ble_device")){*v=sd_ble_device_state();return 1;}
+    if(str_eq(s,"ble_found")){*v=sd_ble_device_count();return 1;}
+    if(str_eq(s,"ble_pick")){*v=sd_ble_device_pick();return 1;}
+    if(str_eq(s,"ble_forget")){*v=sd_ble_forget_state();return 1;}
     if(str_eq(s,"engines")){*v=NENG_SHOWN;return 1;}
     return 0;
 }

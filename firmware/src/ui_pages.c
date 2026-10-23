@@ -8,7 +8,7 @@
 enum { PL_HOME, PL_LIB, PL_SCL, PL_ENV, PL_LFO, PL_EDIT, PL_GLO, PL_SAVE, PL_ARP, PL_SEQ, PL_PLAY, PL_N };
 /* the picture between the header and the values (ui_pics.c); a stop's arg says which envelope, operator or filter */
 enum { PIC_NONE, PIC_ENV, PIC_LFO, PIC_MATRIX, PIC_ARP, PIC_SCALE, PIC_CHORD, PIC_VOICES, PIC_READOUT, PIC_LIB,
-       PIC_FADERS, PIC_P5ENV, PIC_FILTER, PIC_ALGO, PIC_FMEG, PIC_CZEG, PIC_ERASE, PIC_BLE };
+       PIC_FADERS, PIC_P5ENV, PIC_FILTER, PIC_ALGO, PIC_FMEG, PIC_CZEG, PIC_ERASE, PIC_BLE, PIC_BTDEV };
 typedef struct { const char *obj, *page; uint8_t pic; ui_field_t f[4]; uint8_t arg; } ui_stop_t;   /* obj "": the
                                                                                                 * place is one object */
 typedef struct { const char *name; const ui_stop_t *stop; uint8_t n; } ui_place_t;
@@ -173,7 +173,10 @@ static const ui_stop_t ST_GLO[] = {
     {"", "TUNING", PIC_READOUT, {FG(G_A4, "A4"), FG(G_TUNE, "FINE"), F0, F0}},
     {"", "MIDI", PIC_READOUT, {FG(G_ROUTE, "IN CH"), FG(G_DRUMCH, "OUT CH"), F0, F0}},
 #ifdef SAADET_FM1_BASE
-    {"", "BLE", PIC_BLE, {{FK_BLE, 0, "RADIO", 0}, F0, F0, {FK_BLE, 1, "RETRY", 0}}},
+    {"", "BLE", PIC_BLE, {{FK_BLE, BL_RADIO, "RADIO", 0}, {FK_BLE, BL_DROP, "DROP", 0},
+                          {FK_BLE, BL_FORGET, "FORGET", 0}, {FK_BLE, BL_RETRY, "RETRY", 0}}},
+    {"", "DEV", PIC_BTDEV, {{FK_BLE, BL_PICK, "DEVICE", 0}, F0,
+                            {FK_BLE, BL_RADIO, "RADIO", 0}, {FK_BLE, BL_ACTION, "LINK", 0}}},
 #endif
     {"", "VOICES", PIC_VOICES, {FD(DEV_BUDGET, "BUDGET"), F0, F0, F0}},
     {"", "DISPLAY", PIC_READOUT, {FD(DEV_SLEEP, "SLEEP"), FD(DEV_LIGHTS, "LIGHTS"), F0, F0}},

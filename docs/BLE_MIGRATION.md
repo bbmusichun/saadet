@@ -80,7 +80,8 @@ The port includes:
   A/B objects at `0xA2000..0xA5000` for panel/radio data. Tests enumerate all
   48 live legacy sectors and verify no platform or OTA overlap.
 - USB and TRS MIDI plus BLE MIDI peripheral input/output. BLE advertises
-  **Saadet**; central mode is not built. BLE is started by the base's existing
+  **Saadet**; central mode supports one external MIDI device beside a phone/
+  computer link. BLE is started by the base's existing
   boot/crash guard. GLOBAL > TEMPO adds BLE to the clock-source choices.
 - Per-port physical note/sustain holds before the shared channel controller
   path. Disconnecting BLE releases its notes, while USB/TRS holds on the same
@@ -167,6 +168,50 @@ boot reports advertising as Saadet with no recorded crash, and the missing
 `sys_timer` warning no longer appears after the latest startup marker. A
 physical BLE connection remains unverified. Installation receipts and the
 package hash are in `VALIDATION.md`.
+
+## Direct MIDI devices and forgetting (23 October 2026)
+
+The default now enables fm1-base's `ble_central` configuration and `APP_BTDEV`.
+It reuses Charles Vestal's unchanged `lib/btdev.{c,h}` at the pinned base
+revision, already used by CTL, for discovery selection, connection actions and
+events. Its existing MIDI client handles service/characteristic discovery,
+subscription, connection retry and search timeouts. No CTL UI drawing code was
+copied. Saadet's new bridge/UI code is credited to Kerem; the upstream helper
+and JieLi-derived service retain their original notices.
+
+GLOBAL > DEV scans while open, shows up to eight devices in a scrolling list,
+and uses K1 to choose and SAVE/K4 to connect or disconnect. An established
+connection survives page changes. The peripheral role stays available to a
+phone/computer. Saadet's keys send to both BLE destinations. The two incoming
+links carry distinct internal source tags through physical note/sustain
+ownership, then share the existing BLE clock-source selection. Losing either
+link releases only its holds, preserving USB/TRS and the other BLE link.
+
+The checked overlay also accepts enhanced connection-complete events in the
+client, resumes advertising after cancellation, prevents cancellation from
+re-entering the retry loop, and respects the client's advertising pause during
+phone-link RETRY. Connection requests retain the upstream no-forced-pairing
+policy with optional Just Works acceptance when the peer asks.
+
+GLOBAL > BLE adds a phone-only DROP control and FORGET ALL PAIRINGS. Forget
+requires a clockwise K3 arm and a SAVE press; a backward turn, leaving the page
+or 15 seconds cancels the arm. After confirmation, both links close and the
+SDK's documented `ble_list_clear_all()` runs only when no link or connection
+attempt remains, after a short settling interval. It clears the SDK's shared
+master/slave bond table, not Saadet sounds, calibration, or the radio address.
+The radio resumes its previous requested state on completion/error. Failure
+to reach quiescence within six seconds reports FORGET FAILED. The SDK API's
+return value controls success/failure reporting. External automatic reconnect
+and selectively forgetting one saved bond are not implemented.
+
+Tests cover the real parser's source tags, separate overlapping holds and
+sustain, both roles together, MIDI output with only the client connected,
+shared BLE clock selection, page-driven scanning, and connection actions.
+The target adapter tests confirmation, expiry/cancellation, waiting for links,
+SDK success/failure and timeout handling. Both SDK role configurations exercise
+the actual bond-clear guard/API delegation. UI fixtures verify all new screen
+states and scrolling. Real radio interoperability and persistent bond removal
+still require physical peer validation; software tests do not prove those.
 
 ## Licensing boundary still outstanding
 

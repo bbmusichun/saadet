@@ -145,7 +145,13 @@ typedef uint16_t hci_con_handle_t;
 #define CCC_GET(h,a) ccc
 #define CCC_SET(h,a,v) (ccc=(v))
 static uint8_t ccc,send_mtu,connection_update_cnt,adv_ctrl_en,mutex,att_ram_buffer[128];
-static uint16_t con_handle;
+static uint16_t con_handle,mc_handle;
+static unsigned mc_state,clears;
+static int clear_result=1;
+#define ROLE_SERVER 0
+#define BLE_MC_CONNECTING 2
+#define BLE_MC_SEARCHING 3
+static int ble_list_clear_all(void){clears++;return clear_result;}
 static const char gap_device_name[]="Saadet";
 static unsigned disconnects,advertise,init_handle;
 static uint8_t ble_work_state;
@@ -154,11 +160,14 @@ static void os_mutex_post(uint8_t *m){(void)m;}
 static void ble_op_disconnect(uint16_t h){assert(h==con_handle&&h);disconnects++;}
 static void bt_ble_adv_enable(uint8_t on){advertise=(advertise<<1)|on;}
 static void ble_op_att_send_init(uint16_t h,void *p,int n,int mtu){(void)p;(void)n;(void)mtu;init_handle=h;}
+static void ble_op_multi_att_send_conn_handle(uint16_t h,int x,int role){(void)x;(void)role;init_handle=h;}
+static void multi_att_clear_ccc_config(uint16_t h){(void)h;ccc=0;}
 static void set_ble_work_state(int s){ble_work_state=(uint8_t)s;}
 static uint16_t little_endian_read_16(const uint8_t *p,unsigned i){return p[i]|(uint16_t)p[i+1]<<8;}
 ''' + '\n'.join(routine(midi, x) for x in (
     'static int periph_ready(void)', 'static uint16_t att_read_callback(',
-    'static void server_profile_start(', 'void ble_midi_reconnect(void)')) + (
+    'static void server_profile_start(', 'void ble_midi_reconnect(void)',
+    'int ble_midi_can_forget(void)', 'int ble_midi_forget_all(void)')) + (
     '\nstatic void disconnect_event(uint8_t *packet){switch(packet[0]){\n' + disconnect + '}}\n') + r'''
 int main(void){
     uint8_t b[64];memset(b,0x55,sizeof b);
@@ -179,7 +188,85 @@ int main(void){
     event[3]=42;disconnect_event(event);
     assert(!con_handle&&advertise==1&&!init_handle&&ble_work_state==BLE_ST_DISCONN);
     con_handle=0;advertise=0;ble_midi_reconnect();assert(disconnects==1&&advertise==1&&adv_ctrl_en==1);
-    puts("BLE peripheral: ATT name discovery, fresh-link subscription/MTU and reconnect passed");
+#if BLE_MIDI_CENTRAL
+    advertise=0;mc_state=BLE_MC_CONNECTING;ble_midi_reconnect();assert(!advertise);
+    mc_state=BLE_MC_SEARCHING;ble_midi_reconnect();assert(!advertise);mc_state=0;
+#endif
+    con_handle=42;assert(!ble_midi_forget_all()&&!clears);
+    con_handle=0;
+#if BLE_MIDI_CENTRAL
+    mc_handle=7;assert(!ble_midi_forget_all()&&!clears);mc_handle=0;
+    mc_state=BLE_MC_CONNECTING;assert(!ble_midi_forget_all());
+    mc_state=BLE_MC_SEARCHING;assert(!ble_midi_forget_all());mc_state=0;
+#endif
+    assert(ble_midi_forget_all()&&clears==1);
+    clear_result=0;assert(!ble_midi_forget_all()&&clears==2);
+    puts("BLE peripheral: name reads, fresh links, reconnect and SDK bond deletion passed");
 }
 '''
 run(code)
+
+run(code.replace("#define BLE_MIDI_CENTRAL 0", "#define BLE_MIDI_CENTRAL 1"))
+
+# Execute the shipping MIDI parser with each link's source tag.
+run(r'''
+#include <stdint.h>
+#include <assert.h>
+#include <stdio.h>
+typedef uint8_t u8;typedef uint16_t u16;
+static uint32_t received;static unsigned count;
+static void ble_midi_receive(uint32_t p){received=p;count++;}
+''' + '\n'.join(routine(midi,x) for x in ('static int midi_len(', 'static u8 cin_of(', 'static void midi_parse(')) + r'''
+int main(void){
+    const u8 note[]={0x80,0x80,0x90,60,100},clock[]={0x80,0x80,0xfa};
+    midi_parse(note,sizeof note,0);assert(count==1&&(received&255)==9);
+    midi_parse(note,sizeof note,0x10);assert(count==2&&(received&255)==0x19);
+    midi_parse(clock,sizeof clock,0x10);assert(count==3&&(received&255)==0x1f&&(received>>8)==0xfa);
+    puts("BLE MIDI parser: phone and external-device source tags preserved");
+}
+''')
+
+# Exercise the target branch of Saadet's async forget adapter with the real
+# upstream discovery helper (the host simulator cannot report SDK failures).
+run(r'''
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "plat.h"
+static uint32_t now;
+static int state=BLE_READY,device,computer,can_clear,clear_ok=1,clear_calls;
+uint32_t plat_ms(void){return now;}
+int plat_ble_state(void){return state;}
+int plat_ble_connected(void){return computer;}
+int plat_ble_linked(void){return computer;}
+int plat_ble_device(void){return device;}
+void plat_ble_enable(int on){state=on?BLE_READY:BLE_OFF;if(!on)device=computer=0;}
+void plat_ble_scan(int on){if(on&&state==BLE_READY&&device==0)device=BLE_DEV_SCANNING;else if(!on&&device==BLE_DEV_SCANNING)device=0;}
+int plat_ble_found(int i,char *name,int *rssi){(void)i;(void)name;(void)rssi;return 0;}
+int plat_ble_connect(int i){(void)i;device=BLE_DEV_CONNECTING;return 0;}
+void plat_ble_disconnect(void){device=0;}
+void ble_midi_drop_host(void){computer=0;}
+void ble_midi_reconnect(void){computer=0;}
+int ble_midi_can_forget(void){return can_clear;}
+int ble_midi_forget_all(void){clear_calls++;return clear_ok;}
+#include "btdev.c"
+#include "ble_devices.h"
+int main(void){
+    bd.pick=7;sd_ble_page(0,1);assert(!btdev_pick()); /* a shorter rescan clamps the old choice */
+    sd_ble_forget_confirm();assert(!clear_calls&&state==BLE_READY);
+    sd_ble_forget_arm(1);assert(sd_ble_forget_state()==1);
+    now=15000;sd_ble_page(0,1);assert(!sd_ble_forget_state());
+    sd_ble_forget_arm(1);sd_ble_page(0,0);assert(!sd_ble_forget_state());
+    sd_ble_forget_arm(1);sd_ble_forget_confirm();assert(sd_ble_forget_state()==2&&state==BLE_OFF);
+    sd_ble_enable(1);assert(state==BLE_OFF); /* do not reconnect during deletion */
+    now+=300;sd_ble_page(0,1);assert(!clear_calls&&sd_ble_forget_state()==2);
+    can_clear=1;clear_ok=0;
+    assert(!strcmp(sd_ble_page(0,1),"FORGET FAILED")&&clear_calls==1&&state==BLE_READY);
+    sd_ble_forget_arm(1);sd_ble_forget_confirm();now+=300;clear_ok=1;
+    assert(!strcmp(sd_ble_page(0,1),"PAIRINGS CLEARED")&&clear_calls==2&&state==BLE_READY);
+    sd_ble_forget_arm(1);sd_ble_forget_confirm();now+=6001;can_clear=0;
+    assert(!strcmp(sd_ble_page(0,1),"FORGET FAILED")&&clear_calls==2&&state==BLE_READY);
+    puts("BLE forget: confirmation, expiry, cancellation, quiescence, success, failure and timeout passed");
+}
+''', ['-DFM1B_BLE=1','-DFM1B_BLE_CENTRAL=1',
+      '-I'+str(BASE/'include'),'-I'+str(BASE/'lib'),'-I'+str(ROOT/'platform')])

@@ -152,6 +152,13 @@ static void ui_octave(uint32_t b)
 static void ui_button_down(uint32_t b)
 {
     uint32_t p = place_of_button(b), browsing = uix.br.on;
+#ifdef SAADET_FM1_BASE
+    if(b==B_SAVE&&uix.place==PL_GLO&&uix.held==PL_N&&!uix.reveal){
+        uint32_t picture=place_of(PL_GLO).stop[ui_stop(PL_GLO)].pic;
+        if(picture==PIC_BTDEV){ui_message(sd_ble_device_action());return;}
+        if(picture==PIC_BLE&&sd_ble_forget_state()==1){sd_ble_forget_confirm();return;}
+    }
+#endif
     lib_delete_poll();
     if (lib.deleting) {
         if (b == B_FX && uix.place == PL_LIB && fm1_in.buttons == ui_btn_bit(B_FX)) {
@@ -280,6 +287,11 @@ static void ui_knob(uint32_t k, int32_t s)
 static void ui_timers(void)
 {
     uint32_t now = fm1_ms;
+#ifdef SAADET_FM1_BASE
+    uint32_t picture=uix.place==PL_GLO?place_of(PL_GLO).stop[ui_stop(PL_GLO)].pic:PIC_NONE;
+    const char *event=sd_ble_page(picture==PIC_BTDEV&&!uix.reveal,picture==PIC_BLE&&!uix.reveal);
+    if(event[0])ui_message(event);
+#endif
     lib_delete_poll();
     if (uix.erasing && (!lib.erase || !ui_erase_page() || fm1_in.buttons != ui_btn_bit(B_GLO))) {
         lib.erase = uix.erasing = 0;

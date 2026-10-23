@@ -197,6 +197,28 @@ def apply(work):
     p.write_text('/* Saadet calibration bridge Copyright (C) 2026 Kerem Kilic (Ellic Studio) */\n'+s)
 
     p=work/'ble/midi/le_midi.c';s=p.read_text()
+    # Keep the two BLE links distinct until Saadet has tracked physical holds.
+    s=replace(s,'static void midi_parse(const u8 *b, u16 len)', 'static void midi_parse(const u8 *b, u16 len, u8 source)')
+    s=replace(s,'ble_midi_receive(0xFu |', 'ble_midi_receive(source | 0xFu |')
+    s=replace(s,'ble_midi_receive((uint32_t)cin_of', 'ble_midi_receive(source | (uint32_t)cin_of')
+    s=replace(s,'midi_parse(buffer, buffer_size);','midi_parse(buffer, buffer_size, 0);')
+    s=replace(s,'midi_parse(d->blob, d->blob_length);','midi_parse(d->blob, d->blob_length, 0x10);')
+    start=s.index('static void client_packet_handler(')
+    end=s.index('/* one HCI handler for both roles:',start)
+    s=s[:start]+replace(s[start:end],'        case HCI_SUBEVENT_LE_CONNECTION_COMPLETE:',
+        '        case HCI_SUBEVENT_LE_ENHANCED_CONNECTION_COMPLETE:\n        case HCI_SUBEVENT_LE_CONNECTION_COMPLETE:')+s[end:]
+    # Cancellation must resume advertising and must not trigger retry-on-0x3E.
+    s=function(s,'void ble_midi_disconnect(void)', '''void ble_midi_disconnect(void)
+{
+    mc_tries = 0;
+    if (mc_handle)
+        ble_op_disconnect(mc_handle);
+    else if (mc_state == BLE_MC_CONNECTING) {
+        ble_op_create_connection_cancel();
+        mc_state = BLE_MC_OFF;
+        bt_ble_adv_enable(1);
+    }
+}''')
     s=replace(s,'static const char gap_device_name[] = "FM-1";', 'static const char gap_device_name[] = "Saadet";')
     # A fresh link must negotiate its own subscription, MTU and parameters.
     s=replace(s,'    set_ble_work_state(BLE_ST_CONNECT);', '''    CCC_SET(handle, H_CCC, 0);
@@ -213,10 +235,36 @@ def apply(work):
     # Reuse CTL's radio enable/disconnect lifecycle, keeping advertising enabled
     # so the disconnect-complete event makes this peripheral discoverable again.
     s += '''
+void ble_midi_drop_host(void)
+{
+    os_mutex_pend(&mutex, 0);
+    if (con_handle) ble_op_disconnect(con_handle);
+    os_mutex_post(&mutex);
+}
+int ble_midi_can_forget(void)
+{
+    if (con_handle) return 0;
+#if BLE_MIDI_CENTRAL
+    if (mc_handle || mc_state == BLE_MC_CONNECTING || mc_state == BLE_MC_SEARCHING) return 0;
+#endif
+    return 1;
+}
+int ble_midi_forget_all(void)
+{
+    if (!ble_midi_can_forget()) return 0;
+    return ble_list_clear_all(); /* SDK API clears bond keys in RAM and VM */
+}
 void ble_midi_reconnect(void)
 {
     os_mutex_pend(&mutex, 0);
     adv_ctrl_en = 1;
+#if BLE_MIDI_CENTRAL
+    if (mc_state == BLE_MC_CONNECTING || mc_state == BLE_MC_SEARCHING) {
+        if (con_handle) ble_op_disconnect(con_handle);
+        os_mutex_post(&mutex);
+        return; /* client search owns the advertising pause */
+    }
+#endif
     if (con_handle)
         ble_op_disconnect(con_handle);
     else {
@@ -228,6 +276,7 @@ void ble_midi_reconnect(void)
 '''
     p.write_text('/* Saadet connection adaptations Copyright (C) 2026 Kerem Kilic (Ellic Studio) */\n'+s)
     p=work/'device/radio.c';s=p.read_text()
+    s=replace(s,'ble_in_q[bi_w % BQ] = pkt & ~0xF0u;', 'ble_in_q[bi_w % BQ] = pkt; /* internal cable tag identifies the BLE link */')
     s=replace(s,'BT ready: advertising as FM-1','BT ready: advertising as Saadet')
     s=replace(s,'static volatile uint8_t ble_state;', 'static volatile uint8_t ble_state;\nstatic uint8_t ble_off;')
     s=replace(s,'static uint8_t ble_off;                           /* switched off by the player (plat_ble_enable) */', '')
@@ -238,6 +287,14 @@ void ble_midi_reconnect(void)
         }
         ble_state = BLE_READY;''')
     p.write_text('/* Saadet radio naming Copyright (C) 2026 Kerem Kilic (Ellic Studio) */\n'+s)
+
+    p=work/'host/plat_host.c';s=p.read_text()
+    s=replace(s,'        } else if (!strcmp(cmd, "midi")) {', '''        } else if (!strcmp(cmd, "mididev")) {
+            min_q[mi_w % MQ] = mk_pkt(a, b, c) | 0x10u;
+            min_port[mi_w++ % MQ] = PORT_BLE;
+            run_ms(2);
+        } else if (!strcmp(cmd, "midi")) {''')
+    p.write_text('/* Saadet dual BLE ingress fixture Copyright (C) 2026 Kerem Kilic (Ellic Studio) */\n'+s)
 
     p=work/'bsp/chip/fm1_sys.h';s=p.read_text()
     for name in ('fm1_reboot','fm1_enter_uboot'):

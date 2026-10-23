@@ -135,6 +135,7 @@ static uint8_t midi_in_source[MQ],midi_in_overflow;
 static uint32_t mi_w,mi_r;
 static uint32_t fm1_ticks(void){return 0;}
 static int sd_ble_connected(void){return 1;}
+static int sd_ble_device_state(void){return 0;}
 #include "platform/midi_ingress.h"
 static unsigned aborts;
 static void saadet_sysex_byte(uint8_t b){if(b>=0x80&&b<0xF8)aborts++;}
@@ -147,7 +148,7 @@ int main(void){
     sd_ingress(on,1);sd_ingress(on,3);
     sd_ingress(on+(1u<<16),1);sd_ingress(on+(2u<<16),1);
     sd_ingress(on+(3u<<16),1);assert(midi_in_overflow);
-    for(unsigned p=0;p<3;p++)for(unsigned ch=0;ch<16;ch++)for(unsigned w=0;w<4;w++)assert(sd_midi_keys[p][ch][w]==0);
+    for(unsigned p=0;p<4;p++)for(unsigned ch=0;ch<16;ch++)for(unsigned w=0;w<4;w++)assert(sd_midi_keys[p][ch][w]==0);
     sd_ingress(on,3);assert(sd_midi_keys[2][0][1]==0); /* ignored until the render acknowledges panic */
     mi_r=mi_w;midi_in_overflow=0;
     sd_ingress(on,1);unsigned before=mi_w;sd_ingress(off,1);

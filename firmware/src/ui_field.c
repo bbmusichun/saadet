@@ -9,6 +9,7 @@ typedef struct { uint8_t kind, id; const char *label; uint8_t sub; } ui_field_t;
                                                                                      * sub: FM6's operator 0..5 (OP1..) */
 /* the device's settings (kept with the settings, not the sound): screen sleep, the LEDs' level, the voice budget */
 enum { DEV_SLEEP, DEV_LIGHTS, DEV_BUDGET, DEV_N };
+enum { BL_RADIO, BL_RETRY, BL_PICK, BL_DROP, BL_FORGET, BL_ACTION };
 static const char *const N_SLEEP[] = {"NEVER", "5 MIN", "15 MIN", "30 MIN", "60 MIN"};
 static const param_desc_t DEV_D[DEV_N] = {
     {"SLEEP", F_ENUM, 0, 4, 0, N_SLEEP, 0},
@@ -48,7 +49,8 @@ static const param_desc_t *field_desc(const ui_field_t *f)
         static const char *const names[] = {"OFF", "ON"};
         static const param_desc_t radio = {"RADIO", F_ENUM, 0, 1, 1, names, 0};
         static const param_desc_t retry = {"RETRY", F_INT, 0, 1, 0, 0, 0};
-        if (sd_ble_available()) d = f->id ? &retry : &radio;
+        static const param_desc_t pick = {"DEVICE", F_INT, 0, 7, 0, 0, 0};
+        if (sd_ble_available()) d = f->id == BL_RADIO ? &radio : f->id == BL_PICK ? &pick : &retry;
         break;
     }
 #endif
@@ -77,7 +79,7 @@ static int32_t field_get(const ui_field_t *f)
     case FK_DEV: return f->id == DEV_SLEEP ? (int32_t)scr_get() : f->id == DEV_LIGHTS ? settings_lights : settings_budget;
     case FK_LIB: return lib_get(f->id);
 #ifdef SAADET_FM1_BASE
-    case FK_BLE: return f->id ? 0 : sd_ble_enabled();
+    case FK_BLE: return f->id == BL_RADIO ? sd_ble_enabled() : f->id == BL_PICK ? sd_ble_device_pick() : 0;
 #endif
     }
     return 0;
@@ -108,8 +110,14 @@ static int field_step(const ui_field_t *f, int32_t steps)
 #ifdef SAADET_FM1_BASE
     if (f->kind == FK_BLE) {
         if (!sd_ble_available() || !steps) return 0;
-        if (f->id) { if (steps > 0) sd_ble_reconnect(); }
-        else sd_ble_enable(steps > 0);
+        switch(f->id){
+        case BL_RADIO: sd_ble_enable(steps > 0); break;
+        case BL_RETRY: if(steps > 0)sd_ble_reconnect(); break;
+        case BL_PICK: sd_ble_device_choose(steps); break;
+        case BL_DROP: if(steps > 0)sd_ble_drop_host(); break;
+        case BL_FORGET: sd_ble_forget_arm(steps > 0); break;
+        case BL_ACTION: if(steps > 0)ui_message(sd_ble_device_action()); break;
+        }
         return 1;
     }
 #endif
@@ -179,7 +187,12 @@ static void field_text(const ui_field_t *f, const param_desc_t *d, char *val, ch
 {
     const char *u = "";
 #ifdef SAADET_FM1_BASE
-    if (f->kind == FK_BLE && f->id) {
+    if (f->kind == FK_BLE && f->id == BL_PICK) {
+        if(sd_ble_device_count())fmt_int(val,sd_ble_device_pick()+1);
+        else str_cpy(val,"-",16);
+        unit[0]=0;return;
+    }
+    if (f->kind == FK_BLE && f->id != BL_RADIO && f->id != BL_PICK) {
         str_cpy(val, "+", 16); unit[0] = 0; return;
     }
 #endif

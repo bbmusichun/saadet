@@ -36,17 +36,39 @@ keys, and pressing a key jumps to that entry. While a button is held, the keys d
 
 ## Bluetooth (experimental platform build)
 
-Open GLOBAL > BLE with SELECT. The page shows Saadet's radio state and whether
-a computer/phone has enabled MIDI. K1 RADIO turns Bluetooth off/on for this
-session. Turn K4 RETRY clockwise to release a stalled connection and advertise
-again; BLE-held notes are released when their MIDI connection ends.
+Saadet can connect to one external Bluetooth MIDI device while also accepting
+one phone/computer connection. Both links support MIDI input and output; keys
+played on Saadet go to both connected destinations. USB remains available.
 
+**GLOBAL > DEV** scans while that page is open. Put the external keyboard,
+controller or synth in its Bluetooth MIDI pairing/advertising mode. K1 DEVICE
+selects a discovered device; SAVE or a clockwise turn of K4 LINK connects it.
+The page shows CONNECTING, FINDING MIDI, then CONNECTED. SAVE/K4 disconnects
+an active or pending connection. Leaving the page stops scanning, but keeps an
+established connection. Up to eight discoveries can be selected, with three
+visible rows that scroll with the choice. This is BLE MIDI only, not Bluetooth
+audio or arbitrary Bluetooth accessories.
+
+**GLOBAL > BLE** manages the phone/computer link. K1 RADIO switches the whole
+radio off/on for this session. K2 DROP disconnects only the phone/computer;
+K4 RETRY drops a stalled phone link and resumes advertising when available.
 On Mac, connect to Saadet in Audio MIDI Setup > Window > Show MIDI Studio >
-Bluetooth. On iPhone/iPad, use a music app's Bluetooth MIDI settings. WAITING
-FOR MIDI means the Bluetooth link is up but MIDI has not subscribed: on Mac,
-quit and reopen Audio MIDI Setup, turn RETRY, then Connect again. MIDI
-CONNECTED means the host has enabled notifications. No PIN is required by
-Saadet; it accepts a host's optional Just Works pairing request.
+Bluetooth. On iPhone/iPad, use a music app's Bluetooth MIDI settings.
+WAITING FOR MIDI means the link is up but the host has not enabled MIDI:
+on Mac, quit and reopen Audio MIDI Setup, turn RETRY, then Connect again.
+
+To forget saved bonds, turn **K3 FORGET clockwise** on GLOBAL > BLE, then
+press **SAVE** while FORGET ALL PAIRINGS? is displayed. This disconnects both
+BLE links and clears **all** saved BLE pairings on Saadet, preserving radio
+address/calibration and sounds. Turn K3 back, leave the page, or wait 15 seconds
+to cancel before confirmation. FORGET FAILED means the operation did not
+complete; PAIRINGS CLEARED means the SDK accepted the clear. Forget Saadet on
+the other device as well if it still remembers the old bond, then reconnect.
+
+Saadet accepts optional Just Works pairing. Like Charles's CTL firmware, its
+outgoing MIDI client does not force a PIN/pairing request on devices that do
+not require one. It does not automatically reconnect an external device at
+boot; select and connect it from DEV.
 
 ## Importing SysEx
 

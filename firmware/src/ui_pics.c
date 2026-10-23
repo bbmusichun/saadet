@@ -85,6 +85,32 @@ static void pic_build(ui_vm_t *v, const ui_stop_t *st)
             str_cpy(v->ps[2], "Connect from your", sizeof v->ps[2]);
             str_cpy(v->ps[3], "Bluetooth MIDI app", sizeof v->ps[3]);
         }
+        if(sd_ble_forget_state()){
+            str_cpy(v->ps[0],sd_ble_forget_state()==1?"FORGET ALL PAIRINGS?":"FORGETTING...",sizeof v->ps[0]);
+            str_cpy(v->ps[2],sd_ble_forget_state()==1?"SAVE confirms":"Closing both links",sizeof v->ps[2]);
+            str_cpy(v->ps[3],sd_ble_forget_state()==1?"K3 back cancels":"",sizeof v->ps[3]);
+        }
+        break;
+    }
+    case PIC_BTDEV: {
+        int state=sd_ble_device_state(),n=sd_ble_device_count(),pick=sd_ble_device_pick();
+        const char *status=sd_ble_state()!=2?"RADIO NOT READY":state==4?"CONNECTED":
+            state==2?"CONNECTING":state==3?"FINDING MIDI":n?"MIDI DEVICES":"LOOKING FOR DEVICES";
+        str_cpy(v->ps[0],status,sizeof v->ps[0]);
+        v->pv[0]=(int16_t)pick;v->pv[1]=(int16_t)n;v->pv[2]=(int16_t)state;
+        if(state>=2&&state<=4){
+            str_cpy(v->ps[1],sd_ble_device_name(),sizeof v->ps[1]);
+            str_cpy(v->line[0],"SAVE: DISCONNECT",sizeof v->line[0]);
+        }else{
+            int first=pick>1?pick-1:0;
+            if(first+3>n)first=n>3?n-3:0;
+            v->pv[3]=(int16_t)first;
+            for(int i=0;i<3;i++){
+                int signal=0;
+                if(sd_ble_device_found(first+i,v->ps[i+1],&signal))v->pv[4+i]=(int16_t)signal;
+            }
+            str_cpy(v->line[0],n?"SAVE: CONNECT":"Put device in pairing mode",sizeof v->line[0]);
+        }
         break;
     }
 #endif
@@ -473,6 +499,20 @@ static void pic_readout(const ui_vm_t *v)                 /* the first value, la
 static void pic_draw(const ui_vm_t *v)
 {
     switch (v->pic) {
+    case PIC_BTDEV:
+        cv_text_c(120,40,TY_HD,v->ps[0],T_TEXT,T_BG);
+        if(v->pv[2]>=2&&v->pv[2]<=4){
+            cv_text_fit(10,88,TY_RW,v->ps[1],T_TEXT,T_BG,220);
+        }else for(int i=0;i<3;i++){
+            int y=73+24*i,on=v->pv[0]==v->pv[3]+i;
+            if(!v->ps[i+1][0])continue;
+            if(on)cv_rect(6,y-2,228,21,T_FILL);
+            cv_text_fit(10,y,TY_TX,v->ps[i+1],on?T_TEXT:T_MID,on?T_FILL:T_BG,197);
+            int bars=v->pv[4+i]>-60?3:v->pv[4+i]>-75?2:1;
+            for(int k=0;k<3;k++)cv_rect(215+4*k,y+10-3*k,3,3+3*k,k<bars?T_MID:T_LINE);
+        }
+        cv_text_c(120,153,TY_LB,v->line[0],T_MID,T_BG);
+        break;
     case PIC_BLE:
         cv_text_c(120, 46, TY_HD, v->ps[1], T_MID, T_BG);
         cv_text_c(120, 87, TY_HD, v->ps[0], T_TEXT, T_BG);

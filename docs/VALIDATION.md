@@ -1,5 +1,42 @@
 # Saadet validation — 23 October 2026
 
+## Direct BLE MIDI devices and forgetting
+
+The default BLE target now enables the base's simultaneous central/peripheral
+roles: one external MIDI peripheral, plus one phone/computer connected to
+Saadet. GLOBAL > DEV uses Charles Vestal's unchanged btdev helper to scan,
+select and connect/disconnect. GLOBAL > BLE adds phone-only DROP and confirmed
+FORGET ALL PAIRINGS through the SDK's shared bond-table clear API. The radio
+address/calibration store is not erased. See UI.md for controls and
+BLE_MIGRATION.md for source attribution and implementation boundaries.
+
+Validation on 23 October 2026:
+
+- BLE target: app 533,364 bytes, low RAM 93,404 bytes, resident audio 75,788
+  bytes, POOL 214,752 bytes, engine arena 129,312 bytes. CPU1, resident-code,
+  packed image, engine-arena and boot-layout checks pass.
+- BLE package `platform/build/saadet.fwsc`, identity `FM-1_900`, SHA-256
+  `5ad1ee6589f49c2a0491bf9316a114ee2011aba4fb49b4be0d852c2626ee5c06`.
+- USB-only target also passes: app 397,212 bytes, low RAM 45,672 bytes,
+  resident audio 75,328 bytes, POOL 189,696 bytes. The BLE target is built last
+  so the shared sidecars describe the BLE package.
+- `tests/run_base_tests.sh`: ALL BASE PORT TESTS PASSED. New scenarios exercise
+  page-driven discovery, SAVE/K4 connection actions, outgoing MIDI with only
+  the external device connected, simultaneous phone and external holds,
+  independent disconnects including external sustain, shared BLE clocks,
+  phone-only DROP and confirmed/cancelled/expired forget requests.
+- Sanitized helper tests execute the real MIDI parser with separate source
+  tags, the SDK bond-clear guard in both role configurations, and the actual
+  target adapter's wait-for-links, success, SDK-failure and timeout paths.
+  They also check RETRY preserves a pending client search's advertising pause.
+- The new UI states and scrolling list pass screen layout checks. The existing
+  legacy UI and erase regressions report UI test passed and UI ERASE TESTS PASSED.
+
+Logs: `build/base-ble-central-{host-build,build,usb-build,tests,unit-tests,devices-test,ui-regression,erase-regression}.log`.
+Screens are in `build/base-ui-ble/` and `build/base-ble-devices/`.
+Real peer connection, simultaneous RF/MIDI operation and persistent bond
+removal across a reboot remain pending hardware validation.
+
 ## Computer/phone BLE connection repair
 
 Reviewed Charles Vestal's fm1-ctl at `e181b4a1ac1510ce18ebf6e271a143c2fe364ccd`

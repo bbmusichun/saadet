@@ -9,6 +9,7 @@
 #define APP_CANVAS_PX (240u*24u)
 #define APP_SYSEX
 #define APP_HOST_EXPECT
+#define APP_BTDEV
 /* Separate pairs outside all 24 live Saadet objects. IDs are base-local. */
 enum { OBJ_PANEL, OBJ_BLE, OBJ_NOBJ };
 #define APP_STORE_MAP {0xA2000u,0xA4000u}

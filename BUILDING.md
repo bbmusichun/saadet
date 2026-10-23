@@ -115,7 +115,9 @@ package's synthetic flash head over the device's preserved boot area.
 
 The port is experimental and private. BLE is a MIDI peripheral advertised as
 **Saadet** in its GAP name and startup diagnostics, with
-keyboard output and channel-message input; BLE central mode is
-not built. The existing editor and native bank imports continue over USB.
+keyboard output and channel-message input. The default also enables BLE central
+mode for one external MIDI device alongside one incoming phone/computer link.
+GLOBAL > DEV provides discovery/connect/disconnect; GLOBAL > BLE manages the
+phone link and can forget all BLE bonds. The existing editor and native bank imports continue over USB.
 The distribution/provenance audit and physical checks are tracked in
 `docs/BLE_MIGRATION.md`.
