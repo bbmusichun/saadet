@@ -20,6 +20,8 @@ assert.deepEqual([18,19,20,21,22,23,24,25].map(id=>E.J106.get(jt,id)),[1,0,1,1,1
 E.J106.set(jt,25,3);E.J106.set(jt,21,0);assert.equal(jt[17],0x07);assert.equal(jt[16],82|32);
 assert.deepEqual(E.J106.bytes(E.J106.nibbles(jt)),jt);assert(E.J106.valid(E.J106.init()));
 assert.deepEqual(E.J106.read(new Uint8Array([...jf,240,65,50,0,5,64,247,...jf])).voices.length,2);
+const jfac=E.J106.read(new Uint8Array(readFileSync('assets/j106-factory/j106-factory.syx'))).voices;   /* Roland's factory bank imports */
+assert.deepEqual([jfac.length,jfac[0].name,jfac[127].name,jfac[0].raw[16]],[128,'PATCH A11','PATCH B88',0x51]);
 assert.throws(()=>E.J106.decode(jf.slice(0,-2).concat([247])));
 const jp=E.cleanPatch({name:'J',engine:21,p:[],j106:jt});assert.deepEqual(E.libraryFile('bank',[jp],{}).patches[0].j106,jt);
 assert.throws(()=>E.cleanPatch({engine:19,p:[],j106:jt}));

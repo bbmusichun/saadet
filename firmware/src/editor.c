@@ -271,10 +271,11 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     if (ed_cz_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_native_handle(cmd, a, na)) { ed_send(); return; }
     switch (cmd) {
-#if MELODEE_USB_AUDIO
+#if MELODEE_USB_AUDIO || defined(SAADET_FM1_BASE)
     case ED_AUDIO_STATS: {                         /* flags: 1 resets maxima, 2 voices, 4 cores, 8 memory, 16 part victims */
         uint32_t snapshot[55] = {0}, k, count = na && (a[0] & 16u) ? 55u : na && (a[0] & 8u) ? 47u : na && (a[0] & 4u) ? 32u : na && (a[0] & 2u) ? 26u : 20u;
         fm1_irq_off();
+#if MELODEE_USB_AUDIO
         snapshot[0] = ua.play_alt;
         snapshot[1] = ua.cap_alt;
         snapshot[2] = UA_RATE;
@@ -294,6 +295,10 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         snapshot[16] = melodee_dbg.late;
         snapshot[17] = ua_feedback();
         snapshot[18] = melodee_dbg.max_us;            /* render time excludes TIMER5; shedding includes it */
+#else   /* fm1-base owns USB audio (0..15, 17 stay 0): its missed renders and the render time it measures */
+        snapshot[16] = sd_xruns();
+        snapshot[18] = sd_render_max_us;
+#endif
         snapshot[19] = song.cpu_q8;
         if (count >= 26u) {
             for (uint32_t p = 0; p < NPART; p++) {
@@ -344,7 +349,11 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
                 snapshot[51u+p] = voice_kills_part[p];
             }
         if (na && (a[0] & 1u)) {
+#if MELODEE_USB_AUDIO
             ua.poll_max_ticks = ua.service_max_ticks = melodee_dbg.max_us = 0;
+#else
+            sd_render_max_us = 0;
+#endif
 #if MELODEE_DUAL_CORE
             audio_worker.max_job_ticks = audio_worker.max_wait_ticks = 0;
 #endif

@@ -34,6 +34,12 @@ additional engines or parts.
 | 95 | Native Prophet transfers |
 | 96 | Native JUNO-106 transfers |
 
+Command 72 answers on both builds with the same layout (`tools/usb_audio_stats.py`
+reads it; flag 1 resets the maxima, 2 adds voices, 4 the second core, 8 memory,
+16 per-part voice cuts). On the fm1-base build the base owns USB audio: fields
+0–15 and 17 read 0, `audio_late` counts the base's missed renders and
+`audio_max_us` is the longest render it measured.
+
 Step, pattern, song, motion and project commands are rejected without a reply.
 Sample uploading is unavailable. Clients must use the advertised capabilities.
 The editor exposes only Sound, FM6, Library and Settings.
@@ -85,7 +91,8 @@ Roland frames outside the editor header are accepted too: a patch (`41 30`) or
 manual-mode (`41 31`) message waits in SAVE for its slots, as other native
 dumps do, and a single-control message (`41 32 0n cc vv`, cc 0–17) edits the
 playing JUNO-106 tone. Only USB delivers SysEx; TRS MIDI input drops it.
-Favourites use namespace 21 for the starter tones and 22 for user slots.
+Favourites use namespace 21 for the presets (INIT, Roland's factory patches
+A11–B88 as presets 1–128) and 22 for user slots.
 
 ## Backups
 

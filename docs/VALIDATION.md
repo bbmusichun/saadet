@@ -1,5 +1,237 @@
 # Saadet validation — 23 October 2026
 
+## Melodee CPU startup and fp32 safeguards
+
+The BLE base port armed `FM1_GUARD_PC` in `fm1_cstart`, before
+`app_init` launches CPU1. Melodee already handles this in
+`firmware/src/main.c` (introduced in `f12b310` in the Felucca checkout): CPU1
+executes chip mask-ROM before reaching the application's worker entry, and
+the application-only PC windows trap that bootstrap. Melodee records the
+original device fault as DBG bit 10 (`c1_pc_limit_err_r`). The previous Saadet
+command 72 report exposes only the fault count, so it does not independently
+identify this device's fault bit.
+
+`tools/base_overlay.py` now applies the same ordering: stack, write and bus
+guards stay active in `fm1_cstart`; PC limits are enabled unconditionally
+after `app_init` returns and before `audio_init`. This also arms the PC guard
+when CPU1 is skipped or held after a handshake timeout. Worker validation,
+timeout handling and retirement are unchanged.
+
+`tools/check_base.py` rejects the previous generated boot sequence and accepts
+the corrected BLE target. It checks that the early guards exclude PC limits,
+that CPU1 starts within instrument initialization, and that the PC guard
+follows initialization and precedes audio. Existing SRAM placement, packed
+image, CPU1 stack and memory checks pass. The MIDI-ingress host fixture now
+declares the MIDI-thru setting and callback used by its included header.
+
+Build: `platform/build/saadet.fwsc`, identity `FM-1_900`, source `ui-reset`
+at `c4cf703` plus the existing uncommitted work and this fix. SHA-256:
+`3494197fda1bdbf81ee60cb06a77ff7be1066fa4f3b22e12b3b94bf5f91f541f`.
+Application 555,492 B; low RAM 93,468 B; resident audio 83,856 B; engine
+arena 121,184 B.
+
+`tests/run_tests.sh` ended **ALL HOST TESTS PASSED**, including native-Q23
+concurrent worker parity and address/undefined-behaviour checks.
+`tests/run_base_tests.sh` ended **ALL BASE PORT TESTS PASSED**, including
+the repaired MIDI-ingress fixture and command 72 diagnostics.
+
+Installed with `tools/flash.sh --no-build --port FM-1`: the installer finished
+at 100%, restarted the device and verified `FM-1_900` running (log:
+`build/core1-fix-flash.log`). The first USB reading reports faults 0,
+jobs 0, CPU1 offline, missed renders 0 and longest render 239 us. The previous
+worker retirement sets `fm1_core1_bar` in `.noinit`, which survives this
+update at the same address. A full power-off is required to clear that safety
+lock; CPU1 startup, completed jobs and Prophet polyphony verification remain
+pending that power cycle. The safety lock has not been bypassed.
+
+The user then reported a crash when playing more than five Prophet voices.
+The USB platform log retained CPU0 exception vector 1 at `0x01C51EBA`
+(`p5_samples`, a floating-point subtraction) with return address `0x01C4F6D6`
+and uptime 6,155 ms (`build/core1-fix-device-log.txt`). After that crash,
+CPU1 was barred again. The old USB log did not include its recorded EMU/DBG
+cause, so the instruction address alone does not establish the fault type.
+
+A further comparison found another missing Melodee safeguard: CPU0 cleared
+only the divide-by-zero trap, whereas Melodee also clears all five floating-
+point trap enables (`firmware/hal/fm1_irq.h`, `97357ab`). CPU1 already used
+the latter policy. The base overlay now applies it to CPU0 too, preserving
+the stack guard and other EMU bits. The USB platform log now includes the
+already-recorded EMU and DBG cause words. The worker mailbox, launch, safe
+hold, retained retirement and exception-restore assembly match the Melodee
+checkout byte for byte; no voice cap or scheduling limit was raised.
+
+`tests/base_cpu_test.py` compiles the generated CPU0 setup with mocked
+registers under address/undefined-behaviour sanitizers and checks five initial
+EMU states, including all enables set. Floating-point and divide traps are
+cleared while stack/unrelated bits, exception setup and branch trace are
+preserved. The target checker enforces this policy, and the complete base
+suite again ended **ALL BASE PORT TESTS PASSED**.
+
+The combined BLE package SHA-256 is
+`94b836980d60159dfcd9fcdc7f53da5c6aee243edbcd5484cfa54310247f2615`;
+application 555,604 B, memory sizes unchanged. It was installed successfully
+(`build/core1-fix-fp32-flash.log`). Its expanded log read the retained crash
+cause as **EMU `0x00000002`, DBG `0`**: SDK `illeg_err`, an illegal instruction,
+not a floating-point arithmetic exception (`build/core1-fix-fp32-device-log.txt`).
+The fp32 mask remains appropriate Melodee parity, but does not explain that
+crash. Stability after a cold start was not established by this package.
+
+The next comparison found that the base only raised VDC14/SYSVDD; Melodee
+uses the full stock V15 supply sequence in `firmware/hal/fm1_power.h`, with
+DCDC/LDO handover, I/O supplies and final read-back verification. Saadet's
+copy of that initializer matched Melodee byte for byte before this change.
+The base now includes that same helper through an external-HAL option and
+calls it with IRQs off and CPU1 held, before peripherals and app init. CPU1
+requires its complete verified result, rather than just two voltage fields.
+No PLL/clock retune or cache reconfiguration was added. This closes a concrete
+power-initialization difference; it is not yet proof of the illegal-instruction
+crash's cause.
+
+The stock cold/warm transaction trace, every transfer timeout and incorrect
+read-back checks pass under sanitizers (`tests/power_test.c`, now also in the
+base suite). The base CPU test verifies the actual worker startup gate for
+verified/unverified power and early failed boots. Target checks enforce power
+before peripherals/CPU1; the complete base suite passed again.
+
+Final BLE package: SHA-256
+`c5bda602f490ff8fdc2df2866e926c20492b8ce1a038137c3e2a8e2bfa5b641c`,
+application 555,860 B, low RAM 93,500 B; resident audio, POOL and engine arena
+unchanged. Installed successfully (`build/core1-fix-stock-power-flash.log`):
+100% written, restarted, `FM-1_900` verified running. Initial counters: CPU1
+offline, jobs/faults/rejections/timeouts/missed renders all zero, longest render
+268 us. After the user's full power cycle, CPU1 came online and completed
+22,971 jobs with zero worker faults/rejections/timeouts or missed renders.
+
+The first controlled Prophet test reached six held voices without a crash,
+then the seventh note stole a voice. The user increased the saved voice budget
+to 16. The repeated test then measured 4, 5, 6, 7 and 8 held voices with CPU1
+online and completed jobs increasing; no worker faults/rejections/timeouts.
+Before that repeat, the device had accumulated three missed-render events
+during user operation; the test records this baseline rather than claiming
+zero lifetime missed renders. The eight-voice chord then stayed held for 30 s:
+CPU1 jobs increased from 56,781 at the stepped eight-note reading to 98,953
+after the sustain, then 100,345 after note-off. Faults/rejections/timeouts
+stayed zero and missed renders stayed at three (no additions). The longest
+render was 2,166 us against the 2,902 us half-buffer budget; longest worker
+job 421 us, join wait 163 us. All generated notes received note-offs, and the
+final reading had zero held voices. `build/core1-fix-load.log` ends
+**DEVICE PROPHET LOAD CHECK PASSED**. The user reported playback okay after
+raising the budget. This is a measured cold-boot and short loaded check of
+the current Prophet sound, not a worst-case-patch or long-term stability proof.
+
+## Audio diagnostics (editor command 72) on the fm1-base build
+
+Source: `ui-reset` at `c4cf703` with the uncommitted JUNO-106 factory work
+below and this change. No device was flashed and no repository commit was made.
+
+Command 72 was compiled only with the legacy USB audio, so the fm1-base build
+could not report whether CPU1 came up. It now answers there in the legacy
+layout: `audio_late` is the base's missed renders (`plat_xruns`),
+`audio_max_us` the longest render its deadline hook measured (flag 1 resets
+it), `cpu_q8` the load already kept there, then voices, the CPU1 worker
+(online, jobs, job/wait maxima, timeouts, faults), memory (cache RAM reported
+disabled) and per-part voice cuts. The base owns USB audio, so fields 0–15 and
+17 read 0. `platform/deadline.h` now precedes the editor, whose report reads
+its overload counters. `tools/usb_audio_stats.py` finds the port by part of
+its name (default `Saadet`).
+
+`tests/base_stats_test.c` (in `tests/run_base_tests.sh`, under
+address/undefined-behaviour sanitizers) compiles the editor as the base does
+and checks the schema 6 and 2 replies, zero USB fields, xruns, the longest
+render and load after three deadline calls, two sounding voices, the CPU1
+fields offline and online, memory (190,464 B capacity, the JUNO-106 part in
+use, no cache) and the reset. `tests/run_tests.sh` ended **ALL HOST TESTS
+PASSED**; `tests/run_base_tests.sh` without `tests/base_port_test.py` (whose
+fixture predates MIDI thru; fixed on a separate branch) ended **ALL BASE PORT
+TESTS PASSED**. The legacy package is byte-identical to the build before this
+change.
+
+| Build | Package | App image | Low RAM | Resident audio | Engine arena | SHA-256 |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `./build.sh` (BLE) | `platform/build/saadet.fwsc` | 555,444 B | 93,468 B | 83,856 B | 121,184 B | `8a99307d…40bf` |
+| `./build.sh --no-ble` | `platform/build/saadet-usb.fwsc` | 419,272 B | 45,736 B | 83,408 B | 146,208 B | `0ded5f2a…97d8` |
+| `./build.sh --legacy` | `build/saadet.fwsc` | 287,412 B | 37,272 B | — | — | `b4f2aef8…568f` |
+
+To read the device after installing (USB):
+
+    build/venv/bin/python tools/usb_audio_stats.py --voices --cores --memory
+
+`core1_online` 1 means the second core is rendering.
+
+Installed on the user's request: `tools/flash.sh --no-build --port FM-1` wrote
+`platform/build/saadet.fwsc` (SHA-256 `8a99307d…40bf`) over the running
+`FM-1_900`: 100 % written, restarted, `FM-1_900` returned (log:
+`build/stats-flash.log`). Two idle readings over USB (port `FM-1`) after the
+restart agree: **`core1_online` 0, `core1_faults` 1, `core1_jobs` 0**,
+`core1_rejected` and `core1_timeouts` 0; `audio_late` 0, `audio_max_us` 271
+then 740, `cpu_q8` 0; no voices; resource capacity 121,184 B, used 1,460 B, no
+cache. The fault counter is cleared at boot, so CPU1 faulted once during this
+boot without completing a job and was retired: the installed build renders on
+one core and PROPHET plays five voices. The fault's address and cause are not
+in this report.
+
+## JUNO-106 factory patches
+
+Source: `ui-reset` at `c4cf703` with uncommitted changes: Roland's 128 Juno-106
+factory patches as JUNO-106's presets 1–128 after INIT, in place of Saadet's 16
+starter tones (removed at the user's request), and VCA LEVEL as the panel's
+-5..+5 trim. No device was flashed and no repository commit was made.
+
+Data (`tools/make_j106_factory.py`, see `assets/j106-factory/README.md`): all
+three cassette recordings pass their checksums; the two bank A recordings agree
+in 62 of 64 records; A74 and A88 come from hinzen.de's recording (the Sunshine
+Jones bank's A74 is a copy of its A82); all 128 patches equal hinzen.de's
+`Factory_Patches.pat`. `j106-factory.syx` SHA-256 `635c40b1…93f3`.
+
+Host checks (`tests/j106_test.c` in the Q15 fixtures, the shipping Q23 build and
+under address/undefined-behaviour sanitizers):
+
+- Presets 1–128 equal the asset file byte for byte as programs 0–127, and each
+  tone's name equals its preset name (the web editor shows a tone's own name
+  only when they differ). A11 BRASS holds the bytes both recordings hold;
+  choosing JUNO-106 plays A11.
+- Every preset sounds within a second, stays bounded and ends. FX RISE 2 first
+  sounds at 0.28 s (a falling negative envelope opens a self-oscillating
+  filter), so the window grew from 0.22 s. FRONTIER ORG (VCA 127, HPF 0) peaks
+  at 163,105 in Q15, over the former three voices × 2 × `VOICE_FS`; the bound
+  now includes HPF 0's +4 dB shelf.
+- Five factory patches (B23 ORCH PAD, B27/B28 FX RISE, B36 FX SWEEP 1, B85
+  ROCKET MEN) have VCA LEVEL 0 and were silent under the former linear level.
+  The panel scale is -5..+5 (Analogue Renaissance's test procedure sets "VCA:
+  +5"), so 0 is now about -6 dB (measured -6.1 dB against 64), 64 and 127
+  unchanged. The ±6 dB span is an estimate.
+- Envelope law. Played on the device, BRASS had an impact at its start,
+  TRUMPET sounded like an electric piano and FLUTES like a pluck. The former
+  exponential law between the published ends (attack 1.5 ms–3 s, decay and
+  release 1.5 ms–12 s) made the factory decays clicks. With the key held, to
+  1 %: PIZZICATO, SNARE DRUM, STEEL DRUMS and MELODIC TAPS 0.01 s, PIANO I
+  0.16 s, FLUTES 0.47 s; BRASS opened with an 8 dB spike. A square law between
+  the same ends gives PIZZICATO 0.09 s, SNARE DRUM 0.47 s, PIANO I 3.25 s,
+  FLUTES 4.99 s and CHORUS BELL2 10.2 s, and BRASS settles over about a second
+  (the first three are tested). The law is fitted to the patches' names, not
+  measured on an instrument. The LFO rate now spans Roland's published
+  0.1–30 Hz (it was 0.1–20 Hz).
+- A star row tagged for the former starter tones (J6F 1) shows no star and is
+  cleared at the first star (now J6F 2).
+- `web/test_synth.mjs` imports the asset with the editor's own reader: 128
+  tones, PATCH A11 .. PATCH B88.
+
+`tests/run_tests.sh` ended **ALL HOST TESTS PASSED**. `tests/run_base_tests.sh`
+stopped at `tests/base_port_test.py`, whose ingress fixture predates MIDI thru
+(`c4cf703` changed `platform/midi_ingress.h`; the fixture lacks `sd_midi_thru`
+and `settings_thru`). Untouched here; every later step of the script, run
+separately, passed (**ALL BASE PORT TESTS PASSED**). Logs:
+`build/j106-factory-*.log`.
+
+| Build | Package | App image | Low RAM | Resident audio | Engine arena | SHA-256 |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `./build.sh` (BLE) | `platform/build/saadet.fwsc` | 554,132 B | 93,468 B | 83,856 B | 121,184 B | `976a61b9…b415` |
+| `./build.sh --no-ble` | `platform/build/saadet-usb.fwsc` | 417,928 B | 45,736 B | 83,376 B | 146,240 B | `cedef5a6…4607` |
+| `./build.sh --legacy` | `build/saadet.fwsc` | 287,412 B | 37,272 B | — | — | `b4f2aef8…568f` |
+
+Unmeasured: the factory patches against a Juno-106, the VCA LEVEL span, what
+the cassette's SW1 bit 7 means, and playing them on the device.
+
 ## JUNO-106 engine and the BLE default build
 
 Source: `ui-reset` with the uncommitted JUNO-106 engine (MPL-2.0, see

@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* JUNO-106: the native tone format against the instrument's published MIDI
- * implementation, the switch fields, the voice (pitch, envelope times,
+ * implementation, the switch fields, Roland's factory patches as the presets,
+ * the voice (pitch, envelope times,
  * filter, resonance, chorus, high-pass), the library, the last state and its
  * pre-JUNO-106 form, favourites, and the editor's command 96. */
 #include <assert.h>
@@ -169,26 +170,78 @@ static void voice(void)
     printf("  silent mixer: resonance 127 %.3g, 80 %.3g\n", whistle, quiet);
     ok("full resonance self-oscillates; moderate resonance does not", whistle > 1e9 && quiet < whistle * 1e-6);
 
-    /* every starter tone sounds, stays finite and bounded, and ends */
+    /* every preset (INIT, the factory patches) sounds within a second (FX RISE 2 rises from 0.28 s), stays
+     * finite and bounded (three voices at the VCA's +6 dB, through HPF 0's +4 dB shelf), and ends */
     int sound = 1;
     for (uint32_t k = 0; k < ENG_J106.npresets; k++) {
         juno(k);
         trk_note_on(TSEL, 48, 100); trk_note_on(TSEL, 55, 100); trk_note_on(TSEL, 64, 100);
         int32_t peak = 0; double e = 0;
-        for (uint32_t i = 0; i < 300u; i++) { int32_t p = block(out); if (p > peak) peak = p; for (uint32_t j = 0; j < CTL; j++) e += (double)out[j] * out[j]; }
+        for (uint32_t i = 0; i < FS / CTL; i++) { int32_t p = block(out); if (p > peak) peak = p; for (uint32_t j = 0; j < CTL; j++) e += (double)out[j] * out[j]; }
         trk_all_off(TSEL);
         for (b = 0; live() && b < 30000u; b++) block(out);
         char nm[24]; str_cpy(nm, eng_preset(&ENG_J106, k)->name, sizeof nm);
-        if (!(e > 0 && peak < 3 * 2 * VOICE_FS * AUDIO_ONE && !live())) { printf("  tone %u %s: peak %d live %u\n", (unsigned)k, nm, (int)peak, (unsigned)live()); sound = 0; }
+        if (!(e > 0 && peak < 3 * 2 * VOICE_FS * AUDIO_ONE * 8 / 5 && !live())) { printf("  tone %u %s: peak %d live %u\n", (unsigned)k, nm, (int)peak, (unsigned)live()); sound = 0; }
     }
-    ok("every starter tone sounds, is bounded and ends", sound);
+    ok("every preset sounds, is bounded and ends", sound);
+}
+
+static void factory(void)
+{
+    /* Roland's factory patches: preset k is program k - 1 of the vendor file, byte for byte; A11 as both
+     * cassette recordings hold it (assets/j106-factory/README.md) */
+    static const uint8_t A11[J106_RAW] = {0x14, 0x31, 0x00, 0x66, 0x00, 0x23, 0x0D, 0x3A, 0x00,
+                                          0x56, 0x6C, 0x03, 0x31, 0x2D, 0x20, 0x00, 0x51, 0x11};
+    uint8_t syx[128u * J106_FRAME];
+    FILE *f = fopen("assets/j106-factory/j106-factory.syx", "rb");
+    size_t n = f ? fread(syx, 1, sizeof syx, f) : 0;
+    if (f) fclose(f);
+    ok("the factory bank file", n == sizeof syx && J106_FACTORY_N == 128u && ENG_J106.npresets == J106_FACTORY_N + 1u);
+    int same = n == sizeof syx;
+    for (uint32_t k = 1; same && k <= J106_FACTORY_N; k++) {
+        j106_patch_t want; char nm[16];
+        juno(k);
+        j106_patch_name(nm, tone());
+        same = j106_patch_decode(&want, syx + (k - 1u) * J106_FRAME, J106_FRAME) && !memcmp(tone()->raw, want.raw, J106_RAW) &&
+               tone()->program == k - 1u && str_eq(nm, eng_preset(&ENG_J106, k)->name);
+        if (!same) printf("  preset %u %s\n", (unsigned)k, nm);
+    }
+    ok("presets 1..128: the factory patches A11..B88, named as their presets", same);
+    juno(1);
+    ok("A11 BRASS", !memcmp(tone()->raw, A11, J106_RAW) && str_eq(eng_preset(&ENG_J106, 1)->name, "BRASS"));
+    power_on(); set_engine_of(TSEL, ENGI_J106);
+    ok("choosing JUNO-106 plays A11", TSEL->preset == 1u && !memcmp(tone()->raw, A11, J106_RAW));
+    /* VCA LEVEL is the panel's -5..+5 trim: five factory patches (B23 ORCH PAD, B85 ROCKET MEN ..) sit at 0 */
+    double e[2];
+    for (uint32_t i = 0; i < 2u; i++) {
+        juno(0); tone()->raw[J106_VCA_LEVEL] = i ? 64u : 0u;
+        trk_note_on(TSEL, 60, 100); energy(50); e[i] = energy(300); trk_all_off(TSEL);
+    }
+    printf("  VCA LEVEL 0 against 64: %.1f dB\n", 10.0 * log10(e[0] / e[1]));
+    ok("VCA LEVEL 0 is quieter, not silent", e[0] > e[1] * 0.1 && e[0] < e[1] * 0.5);
+    /* the envelope law between the published ends, as the factory patches need it: their sustain-0 decays
+     * (key held, to 1 %) a pluck's, a piano's and a held flute's, not clicks */
+    static const struct { uint32_t k; float lo, hi; } DECAY[] = {{22, 0.05f, 0.2f},    /* A37 PIZZICATO */
+                                                               {7, 2.0f, 5.0f},      /* A18 PIANO I */
+                                                               {3, 3.0f, 8.0f}};     /* A14 FLUTES */
+    int32_t out[CTL];
+    for (uint32_t i = 0; i < NELEM(DECAY); i++) {
+        juno(DECAY[i].k + 1u); trk_note_on(TSEL, 60, 100);
+        uint32_t b = 0; int peaked = 0;
+        while (voice0() && b < 40000u && !(peaked && voice0()->env < 0.01f)) { block(out); b++; peaked |= voice0()->stage == 2u; }
+        float s = (float)b * CTL / FS;
+        char nm[16]; j106_patch_name(nm, tone());
+        printf("  %s decays in %.2f s\n", nm, s);
+        ok(DECAY[i].k == 22u ? "PIZZICATO plucks" : DECAY[i].k == 7u ? "PIANO I rings" : "FLUTES holds", s > DECAY[i].lo && s < DECAY[i].hi);
+        trk_all_off(TSEL); for (b = 0; live() && b < 60000u; b++) block(out);
+    }
 }
 
 static void part(void)
 {
     /* the chorus: a stereo pair from the mono part; off, the part stays mono */
     int32_t out[CTL], left[CTL];
-    juno(1);
+    juno(0);
     j106_switch_set(tone()->raw, J106_CHORUS, 1);
     trk_note_on(TSEL, 60, 100);
     double diff = 0, sum = 0; uint32_t stereo = 1;
@@ -205,7 +258,7 @@ static void part(void)
     ok("chorus II is stereo; off is mono", stereo && !ENG_J106.stereo(TSEL, out, left, CTL));
     trk_all_off(TSEL);
     /* the whole mixer: chorus on, both channels sound and differ */
-    juno(1); j106_switch_set(tone()->raw, J106_CHORUS, 2); trk_note_on(TSEL, 60, 100);
+    juno(0); j106_switch_set(tone()->raw, J106_CHORUS, 2); trk_note_on(TSEL, 60, 100);
     double dl = 0, dr = 0, dd = 0;
     for (uint32_t b = 0; b < 400u; b++) {
         int32_t st[CTL * 2]; mix_block(st, CTL);
@@ -257,12 +310,15 @@ static void library(void)
     uint32_t saved = 0;
     ok("an import into the shared slots", !shared_import(ENGI_J106, 10, 1, (const uint8_t *)&imp, sizeof imp, &saved) && saved == 1u &&
        (up_name(10, nm), !memcmp(nm, "IMPORTED", 8)));      /* (native names keep their padding, as other native slots) */
-    /* favourites: the starter tones in their tagged row, the old SID stars cleared */
+    /* favourites: the presets in their tagged row, the old SID stars and the former starter tones' cleared */
     memset(favorites.factory[3], 0xFF, 32);
     ok("an untagged row holds no JUNO-106 star", !favorite_has(ENGI_J106, 3));
     ok("a star", favorite_set(ENGI_J106, 3, 1) && favorite_has(ENGI_J106, 3) && !favorite_has(ENGI_J106, 4) && favorites.factory[3][28] == 'J');
     ok(".. and off", favorite_set(ENGI_J106, 3, 0) && !favorite_has(ENGI_J106, 3));
     ok("no star past the row", !favorite_set(ENGI_J106, J106_STAR_CAP, 1) && J106_STAR_CAP >= ENG_J106.npresets);
+    memset(favorites.factory[3], 0, 32); favorites.factory[3][0] = 0xFF; memcpy(favorites.factory[3] + 28, "J6F\1", 4);
+    ok("the former starter tones' stars are not the factory patches'", !favorite_has(ENGI_J106, 1));
+    ok(".. and are cleared at the first star", favorite_set(ENGI_J106, 3, 1) && !favorite_has(ENGI_J106, 1) && favorites.factory[3][31] == 2u);
 }
 
 static void state(void)
@@ -306,7 +362,7 @@ static void editor(void)
     uint8_t get[] = {0, 0}; request(ED_J106, get, sizeof get);
     uint8_t frame[J106_FRAME]; j106_patch_encode(tone(), 2, frame, sizeof frame);
     ok("GET: the patch message and the name", wire_n > 30u && wire[5] == 1 && wire[6] == 0 && !memcmp(wire + 8, frame + 1, J106_FRAME - 2u) &&
-       !memcmp(wire + 8 + J106_FRAME - 2u, "BRASS", 5));
+       !memcmp(wire + 8 + J106_FRAME - 2u, "TRUMPET", 7));
     uint8_t put[2 + J106_FRAME - 2u] = {1, 0};
     memcpy(put + 2, frame + 1, J106_FRAME - 2u); put[2 + 4 + J106_VCF_RES] = 111;   /* (frame byte 5: the first slider) */
     host_preset(TSEL, ENGI_FM6, 0);
@@ -322,12 +378,13 @@ static void editor(void)
     uint8_t fav[] = {USER_NATIVE_J106, 0, 0x40, 4}; request(ED_FAV_GET, fav, sizeof fav);   /* (start: v14, 8192 = 0) */
     ok("favourites answer the JUNO-106 namespace", wire_n && wire[5] == 0 && wire[6] == USER_NATIVE_J106);
     uint8_t star[] = {ENGI_J106, 2, 0x40, 1}; request(ED_FAV_SET, star, sizeof star);
-    ok(".. and its starter tones", favorite_has(ENGI_J106, 2));
+    ok(".. and its presets", favorite_has(ENGI_J106, 2));
 }
 
 int main(void)
 {
     format();
+    factory();
     voice();
     part();
     library();

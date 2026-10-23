@@ -115,10 +115,14 @@ static void fl_plain_window_init(void){}
 static int ota_frame_get(const uint8_t **p,uint32_t *n){(void)p;(void)n;return 0;}
 static void ota_frame_done(void){}
 #define ED_BK_FLASH_PTR(off) sd_flash(off)
+/* editor command 72: the longest render the base measured (saadet_deadline), the overload counters, and the
+ * cache-RAM status (off here) */
+static uint32_t sd_render_max_us;
+#include "deadline.h"
+#include "../firmware/hal/fm1_cache.h"
 #include "../firmware/src/editor.c"
 
 #include "midi_ingress.h"
-#include "deadline.h"
 
 static void sd_poll(void)
 {

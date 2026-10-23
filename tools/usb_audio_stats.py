@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Kerem Kilic (Ellic Studio)
-"""Read USB audio counters over MIDI without changing the sound or settings."""
+"""Read the audio, voice, second-core and memory counters (editor command 72) over USB MIDI without changing the
+sound or settings. On the fm1-base build the base owns USB audio: those fields read 0, and audio_late counts the
+base's missed renders."""
 import argparse
 import json
 import time
@@ -53,12 +55,22 @@ def snapshot(incoming, outgoing, window=False, voices=False, cores=False, memory
             return {field: sum(data[1 + i * 5 + j] << (7 * j) for j in range(5))
                     for i, field in enumerate(fields)}
         time.sleep(0.005)
-    raise TimeoutError('No USB audio diagnostics reply; requires a USB audio build (editor command 72)')
+    raise TimeoutError('No diagnostics reply; requires firmware with editor command 72')
+
+
+def port_name(names, want):
+    """the port called want, else the first whose name contains it (any case)"""
+    if want in names:
+        return want
+    found = [n for n in names if want.lower() in n.lower()]
+    if not found:
+        raise SystemExit(f'No MIDI port matches {want!r}: {names}')
+    return found[0]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--port', default='Melodee')
+    parser.add_argument('--port', default='Saadet', help='a port name, or part of one (default: Saadet)')
     parser.add_argument('--seconds', type=float, default=0)
     parser.add_argument('--interval', type=float, default=5)
     parser.add_argument('--window', action='store_true',
@@ -71,7 +83,8 @@ def main():
     args = parser.parse_args()
     if args.interval < 1 or args.seconds < 0:
         parser.error('interval must be >= 1 s; seconds must be >= 0')
-    with mido.open_input(args.port) as incoming, mido.open_output(args.port) as outgoing:
+    with mido.open_input(port_name(mido.get_input_names(), args.port)) as incoming, \
+            mido.open_output(port_name(mido.get_output_names(), args.port)) as outgoing:
         start = time.monotonic()
         while True:
             stats = snapshot(incoming, outgoing, args.window, args.voices, args.cores, args.memory, args.parts, args.complete)

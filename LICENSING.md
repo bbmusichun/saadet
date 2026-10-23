@@ -47,7 +47,7 @@ Mozilla Public License 2.0 (`LICENSES/MPL-2.0.txt`) file by file:
 | File | What |
 | --- | --- |
 | `firmware/src/j106_patch.h` | The native tone: the instrument's patch-message layout, switch bits, decoding and encoding |
-| `firmware/src/eng_j106.c` | The voice, the part's LFO, high-pass and chorus, and Saadet's own starter tones |
+| `firmware/src/eng_j106.c` | The voice, the part's LFO, high-pass and chorus, and the presets (Roland's factory patches themselves are vendor data, below) |
 | `firmware/src/j106_edit.h` | Panel field descriptors and edits |
 | `firmware/src/editor_j106.c` | Editor command 96 and the instrument's SysEx messages |
 | `tests/j106_test.c` | Host tests |
@@ -55,8 +55,9 @@ Mozilla Public License 2.0 (`LICENSES/MPL-2.0.txt`) file by file:
 It was written from the Juno-106's published architecture and from its MIDI
 implementation as publicly documented (the owner's-manual layout reproduced in
 ST-Log issue 33, Peter Cassidy's 1994 analogue-list summary in the Hyperreal
-archive, and the hinzen.de Juno-106 SysEx page). Those were read for facts only:
-message layouts and parameter meanings. No code, tables or data from KR-106,
+archive, and the hinzen.de Juno-106 SysEx page) and, for the VCA LEVEL
+slider's -5..+5 scale, Analogue Renaissance's JUNO-106 test procedure. Those
+were read for facts only: message layouts and parameter meanings. No code, tables or data from KR-106,
 fm-106, TAL-U-NO, the Felucca forks' Juno engines or any other emulation were read
 or used; those are GPL-licensed and incompatible with this file-level licence.
 The DSP is generic (polynomial band-limited steps, a trapezoidal four-pole
@@ -65,9 +66,11 @@ maths already in the tree (`firmware/src/x0x/fastmath.h`, Charles Vestal). Its
 times, ranges, curves and chorus rates are engineering estimates, not measurements
 of an instrument.
 
-No Roland factory patches are included: the starter tones are Saadet's own.
-Patches a user imports remain the user's material. The hooks that connect the
-engine to the existing instrument (engine table, library, state, mixer, panel,
+The presets are INIT and Roland's 128 factory patches. Those patches are Roland's
+data, kept in `assets/j106-factory/` and generated into a build header; they are
+not part of the MPL-2.0 files and no licence is granted for them (see Third-party
+material below). Patches a user imports remain the user's material. The hooks
+that connect the engine to the existing instrument (engine table, library, state, mixer, panel,
 editor and web editor) are edits to GPL-3.0-only files and stay GPL-3.0-only; the
 legacy firmware built with them is GPL-3.0-only as a whole. MPL-2.0 permits this
 combination (its section 3.3); the JUNO-106 files themselves remain available
@@ -100,6 +103,7 @@ Melodee's additions and modifications are credited separately in the source file
 | MAME uPD933 device model by Devin Acker: native CZ phase functions, envelope rate law and logarithmic amplitude adapted to C with native fp32 playback | BSD-3-Clause | `firmware/src/cz_native.c`, `LICENSES/BSD-3-Clause-uPD933.txt` |
 | Casio CZ-1 preset tones A-1..H-8 (Casio Computer Co., Ltd., 1986): the 64 factory sounds as native tone data, combined from the "64 original CZ-1 patches" SysEx (GeoCities CZ-101 page, archived 2009) and Oli Larkin's VirtualCZ conversions of the same presets (LCD names, line levels, velocity). Included as sound data for CZ-1 compatibility; the rights stay with Casio. See `assets/cz1-factory/README.md` | Casio's (no licence granted) | `assets/cz1-factory/cz1-factory.syx`, `tools/make_cz1_factory.py`, `tools/gen_cz1_factory.py` |
 | Sequential Prophet-5/10 factory programs v1.03 (Sequential, 2025; <https://sequential.com/support/download/prophet-5-10-sounds/>): the 200 programs of `P5_Factory_Programs_USER_v1.03.syx`, unchanged native data, as PROPHET's factory presets and its default native user collection. Included as sound data for Prophet-5 compatibility; the rights stay with Sequential. See `assets/prophet5-factory/README.md` | Sequential's (no licence granted) | `assets/prophet5-factory/prophet5-v1.03.syx`, `tools/gen_prophet_factory.py` |
+| Roland Juno-106 factory patches A11..B88 (Roland Corporation, 1984): the 128 factory patches as patch messages, decoded from two recordings of Roland's factory data cassette (sunshine-jones.com, hinzen.de) and checked against hinzen.de's patch file, as JUNO-106's presets; names from the factory list (synthmania.com). Included as sound data for Juno-106 compatibility; the rights stay with Roland. See `assets/j106-factory/README.md` | Roland's (no licence granted) | `assets/j106-factory/j106-factory.syx`, `tools/make_j106_factory.py`, `tools/gen_j106_factory.py` |
 | klattsch by Tony Gies (<https://github.com/tgies/klattsch>): design reference for the VOICE engine; no code copied. Formant data from Klatt (1980) / Hillenbrand et al. (1995) | MIT (klattsch) | credit only |
 | JieLi AC79 SDK by JieLi Technology: three external files go into every `.fwsc` package; the optional RAM recovery helper is in `assets/recovery/` | Apache-2.0 | `LICENSES/Apache-2.0.txt` |
 

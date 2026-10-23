@@ -89,8 +89,8 @@ static void engine_load_of(track_t *t, uint32_t ei, uint32_t pi)
     apply_preset_to(t, pi);
     fm1_irq_on();
 }
-/* the engine's defaults and its first preset (PROPHET: Sequential's first factory program, JUNO-106: the first
- * starter tone, not INIT) */
+/* the engine's defaults and its first preset (PROPHET: Sequential's first factory program, JUNO-106: Roland's
+ * A11, not INIT) */
 static void set_engine_of(track_t *t, uint32_t ei)
 {
     engine_load_of(t, ei, ei % NENGINES == ENGI_PROPHET || ei % NENGINES == ENGI_J106 ? 1u : 0u);

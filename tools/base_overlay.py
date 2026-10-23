@@ -156,6 +156,29 @@ def apply(work):
     p.write_text(s)
     p=work/'bsp/chip/usb.c';s=patch_usb(p.read_text());p.write_text('/* Saadet integration modifications Copyright (C) 2026 Kerem Kilic (Ellic Studio) */\n'+s)
     p=work/'device/main_fm1.c';s=p.read_text()
+    # Use Melodee's complete stock V15 supply sequence and checked result,
+    # rather than the base's two-rail-only raises. CPU1 stays held until the
+    # DCDC/LDO mode, IO supplies and CPU/SRAM supplies have all verified.
+    start=s.index('        for (rails_tries = 1;')
+    end=s.index('        flash_ok =',start)
+    s=s[:start]+'        rails_tries = 1;\n        sd_power_init(); /* Melodee stock V15 power setup; CPU1 held, IRQs off */\n'+s[end:]
+    # Melodee firmware/src/main.c defers the PC limits until CPU1's bounded
+    # handshake returns: CPU1 first executes mask-ROM outside our XIP/SRAM
+    # windows. Enabling them in cstart faults that bootstrap (DBG bit 10).
+    # Keep stack/write/bus guards on throughout, and arm PC limits even when
+    # app_init skips CPU1 or the handshake stops it on timeout.
+    s=replace(s,'    fm1_guard_enable(FM1_GUARD_STACK | FM1_GUARD_WRITE | FM1_GUARD_BUS | FM1_GUARD_PC);',
+        '    fm1_guard_enable(FM1_GUARD_STACK | FM1_GUARD_WRITE | FM1_GUARD_BUS);')
+    s=replace(s,'    app_init();                                     /* the app\'s engine and its saved state (or defaults) */',
+        '    app_init();                                     /* the app\'s engine and its saved state (or defaults) */\n'
+        '    fm1_guard_enable(FM1_GUARD_PC);                  /* CPU1 has left mask-ROM, or is held after timeout */')
+    # Include the already-recorded causes, so an on-device CPU exception can
+    # be distinguished from a stack, PC-limit or invalid-bus fault over USB.
+    s=replace(s,'        for (k = (int)FM1_CRASH_CTX_N - 1;',
+        '        { char cause[]="emu 00000000 dbg 00000000";\n'
+        '          hexs(cause+4,fm1_crash.emu); cause[12]=\' \';\n'
+        '          hexs(cause+17,fm1_crash.dbg); log_line_send(cause); }\n'
+        '        for (k = (int)FM1_CRASH_CTX_N - 1;')
     start=s.index('#if FELUCCA_UAC_OUT\n            uac_play(');end=s.index('            if (full)',start)
     s=s[:start]+'''#if FELUCCA_UAC
             uac_tap(o + 2u * k, REND_FRAMES); /* synth capture precedes computer playback */
@@ -180,6 +203,11 @@ def apply(work):
     p.write_text('/* Saadet integration modifications Copyright (C) 2026 Kerem Kilic (Ellic Studio) */\n'+s)
 
     p=work/'bsp/chip/fm1_irq.h';s=p.read_text()
+    # Match Melodee's CPU0 fp32 policy (firmware/hal/fm1_irq.h,
+    # 97357ab). CPU1 already uses it in fm1_core1_main. Inexact arithmetic
+    # and quiet filter tails are normal, not reasons to reset the synth.
+    s=replace(s,'    FM1_EMU_CON &= ~(1u << 2);',
+        '    FM1_EMU_CON &= ~((1u << 2) | (31u << 16)); /* Melodee: div0 and fp32 traps off, stack guard retained */')
     s=replace(s,'void fm1_fault_c(uint32_t *f)\n{','void fm1_fault_c(uint32_t *f)\n{\n    if(sd_fault_frame(f))return;')
     p.write_text('/* Saadet CPU1 recovery modifications Copyright (C) 2026 Kerem Kilic (Ellic Studio) */\n'+s)
     p=work/'bsp/chip/fm1_vec.S';s=p.read_text()

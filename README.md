@@ -60,8 +60,10 @@ from other Juno emulations: one DCO per voice with saw, pulse/PWM, sub-octave
 square and noise, a resonant four-pole low-pass, one ADSR, the delayed triangle
 LFO, then the instrument-wide high-pass and stereo chorus I/II. Tones keep the
 instrument's 18-byte patch layout; its patch messages import over USB and its
-single-control messages edit the playing tone. The starter tones are Saadet's
-own, not Roland's factory bank. Times and ranges are engineering estimates;
+single-control messages edit the playing tone. Its presets are Roland's 128
+factory patches (A11–B88), decoded from recordings of the factory cassette and
+kept as Roland's data ([assets/j106-factory](assets/j106-factory/README.md)).
+Times and ranges are engineering estimates;
 neither the sound nor its CPU cost has been measured against an instrument or
 on an FM-1. See [LICENSING.md](LICENSING.md#juno-106-engine-mpl-20).
 SID is retired with its stored engine ID reserved. FM6 uses the MSFA renderer;

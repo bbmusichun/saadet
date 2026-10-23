@@ -241,6 +241,16 @@ static float j106_per_block(float seconds)    /* a one-pole's coefficient per bl
 {
     return 1.0f - fm_expf(-(float)CTL / (seconds * FS));
 }
+/* An envelope time (attack to full, decay and release to 1 %) from its
+ * slider: the published 1.5 ms .. 3 s attack and 1.5 ms .. 12 s decay and
+ * release, a square law between them. The law is an estimate fitted to the
+ * factory patches' names (PIZZICATO's decay about 0.1 s, PIANO I's 3 s,
+ * FLUTES' 5 s); an exponential one turned their decays into clicks. */
+static float j106_time(uint32_t v, float most)
+{
+    float x = (float)(v & 127u) * (1.0f / 127.0f);
+    return 0.0015f + most * x * x;
+}
 static float j106_tri(uint32_t phase)
 {
     float x = (float)phase * (1.0f / 2147483648.0f);   /* 0..2 */
@@ -264,7 +274,7 @@ static void j106_block(track_t *t)
     delay = delay * delay * 3.0f * FS;
     if (P->delay_n < 0x7FFFFFFFu) P->delay_n += CTL;
     float fade = delay <= 0.0f ? 1.0f : fm_clampf(((float)P->delay_n - delay * 0.5f) / (delay * 0.5f), 0.0f, 1.0f);
-    float hz = 0.1f * fm_exp2f((float)(p[J106_LFO_RATE] & 127u) * (7.64f / 127.0f));   /* 0.1 .. 20 Hz */
+    float hz = 0.1f * fm_exp2f((float)(p[J106_LFO_RATE] & 127u) * (8.23f / 127.0f));   /* 0.1 .. 30 Hz, as published */
     P->lfo += (uint32_t)(hz * (4294967296.0f / FS)) * CTL;
     r->lfo0 = P->lfo_out;
     r->lfo1 = P->lfo_out = j106_tri(P->lfo) * fade;
@@ -288,11 +298,12 @@ static void j106_block(track_t *t)
     float res = (float)j106_value(t, J106_VCF_RES, 1) * (1.0f / 127.0f);
     r->k = 4.2f * res * fm_sqrtf(res);         /* self-oscillation from about 0.95 */
     r->drive = 1.0f + 0.4f * r->k;              /* keeps some of the passband loss at high resonance */
-    r->level = (float)(p[J106_VCA_LEVEL] & 127u) * (1.0f / 64.0f);
-    /* 1.5 ms .. 3 s attack, 1.5 ms .. 12 s decay and release (to 1 %) */
-    r->atk = j106_per_block(0.0015f * fm_exp2f((float)(p[J106_ENV_A] & 127u) * (10.97f / 127.0f)) / 1.79f);
-    r->dec = j106_per_block(0.0015f * fm_exp2f((float)(p[J106_ENV_D] & 127u) * (12.97f / 127.0f)) / 4.6f);
-    r->rel = j106_per_block(0.0015f * fm_exp2f((float)(p[J106_ENV_R] & 127u) * (12.97f / 127.0f)) / 4.6f);
+    /* the panel's -5..+5 trim, not a mute (five factory patches play at 0): about -6 dB at 0, unity at 64, about
+     * +6 dB at 127; the span is an estimate */
+    r->level = fm_exp2f(((float)(p[J106_VCA_LEVEL] & 127u) - 64.0f) * (1.0f / 63.5f));
+    r->atk = j106_per_block(j106_time(p[J106_ENV_A], 3.0f) / 1.79f);
+    r->dec = j106_per_block(j106_time(p[J106_ENV_D], 12.0f) / 4.6f);
+    r->rel = j106_per_block(j106_time(p[J106_ENV_R], 12.0f) / 4.6f);
     r->sus = (float)(p[J106_ENV_S] & 127u) * (1.0f / 127.0f);
     r->range = j106_range(p);
     r->tune = t->p[P_E2];                       /* (here: a voice may render after the matrix restores the track) */
@@ -383,39 +394,24 @@ static uint32_t j106_stereo(track_t *t, int32_t *out, int32_t *left, uint32_t n)
 }
 
 /* ------------------------------------------------------------ the sounds --- */
-/* Saadet's own starter tones, made for this engine; no factory bank of the
- * instrument is included. Field order as j106_patch.h. */
-static const struct { char name[J106_NAME_LEN + 1u]; uint8_t raw[J106_RAW]; } J106_TONES[] = {
-    {"WARM PAD",   {40, 60, 0, 50, 0,   58, 20, 30, 6, 40,    64, 70, 80, 90, 75, 40,   26, 16}},
-    {"STRINGS",    {50, 40, 4, 70, 0,   70, 0, 10, 0, 60,     64, 55, 70, 100, 70, 0,   90, 8}},
-    {"BRASS",      {60, 30, 0, 0, 0,    38, 25, 70, 0, 50,    64, 25, 60, 70, 35, 30,   50, 16}},
-    {"SUB BASS",   {64, 0, 0, 0, 0,     30, 40, 45, 0, 30,    70, 0, 55, 30, 20, 100,   41, 24}},
-    {"PLUCK BASS", {64, 0, 0, 0, 0,     22, 60, 75, 0, 40,    70, 0, 45, 0, 25, 70,     49, 16}},
-    {"POLY SYNTH", {45, 0, 0, 40, 0,    50, 35, 55, 0, 50,    64, 5, 65, 50, 45, 20,    90, 16}},
-    {"SQUARE LEAD",{70, 70, 10, 0, 0,   64, 30, 35, 0, 60,    64, 0, 60, 80, 30, 0,     42, 16}},
-    {"ORGAN",      {64, 0, 0, 0, 0,     100, 0, 0, 0, 40,     64, 0, 0, 127, 0, 60,     12, 12}},
-    {"WIND",       {20, 0, 0, 0, 100,   55, 90, 0, 40, 0,     64, 90, 90, 100, 90, 0,   66, 8}},
-    {"RES SWEEP",  {64, 0, 0, 0, 0,     20, 105, 80, 0, 30,   64, 60, 95, 20, 70, 0,    18, 16}},
-    {"PWM CHOIR",  {35, 0, 0, 90, 0,    66, 10, 0, 0, 50,     64, 80, 90, 110, 80, 0,   74, 8}},
-    {"GLASS KEYS", {64, 0, 0, 30, 0,    70, 75, 40, 0, 100,   64, 0, 70, 0, 70, 0,      92, 1}},
-    {"HOLLOW LEAD",{64, 80, 12, 100, 0, 60, 50, 30, 0, 70,    64, 10, 60, 90, 30, 0,    42, 17}},
-    {"FALLING PAD",{64, 0, 0, 0, 0,     90, 40, 60, 0, 30,    64, 50, 90, 40, 50, 0,    18, 18}},
-    {"SOFT KEYS",  {64, 0, 0, 20, 0,    45, 10, 50, 0, 80,    64, 0, 75, 20, 55, 30,    74, 9}},
-    {"ARP BLIP",   {64, 0, 0, 0, 0,     40, 70, 70, 0, 40,    64, 0, 30, 0, 20, 0,      50, 8}},
-};
-#define J106_TONES_N ((uint32_t)NELEM(J106_TONES))
-static void j106_tone(uint32_t k, j106_patch_t *p)    /* preset k: 0 INIT, then the starter tones */
+/* Roland's 128 factory patches, generated at build time from the vendor data
+ * in assets/j106-factory/ (tools/gen_j106_factory.py). That data is Roland's,
+ * attributed to Roland and not covered by this file's licence. */
+#include "melodee_j106.h"
+static void j106_tone(uint32_t k, j106_patch_t *p)    /* preset k: 0 INIT, then factory patch k - 1 */
 {
     j106_patch_init(p);
-    if (!k || k > J106_TONES_N) return;
-    memcpy(p->raw, J106_TONES[k - 1u].raw, J106_RAW);
+    if (!k || k > J106_FACTORY_N) return;
+    memcpy(p->raw, J106_FACTORY[k - 1u].raw, J106_RAW);
     p->program = (uint8_t)(k - 1u);
-    j106_patch_name_set(p, J106_TONES[k - 1u].name);
+    j106_patch_name_set(p, J106_FACTORY[k - 1u].name);
 }
+/* INIT, then the factory patches in their order (preset k is program k - 1:
+ * A11..A88, B11..B88), named as the factory list names them */
 static void j106_preset_make(uint32_t k, preset_t *pr, char *name)
 {
     pr->env[2] = 127;
-    str_cpy(name, k && k <= J106_TONES_N ? J106_TONES[k - 1u].name : "INIT TONE", 21);
+    str_cpy(name, k && k <= J106_FACTORY_N ? J106_FACTORY[k - 1u].name : "INIT TONE", 21);
 }
 static void j106_preset_loaded(track_t *t, uint32_t pi)
 {
@@ -431,7 +427,7 @@ static const engine_t ENG_J106 = {
              {"TUNE", F_SEMI, -24, 24, 0, 0, 0}, {"ENV", F_INT, -63, 63, 0, 0, 0},
              {"LFO", F_INT, -63, 63, 0, 0, 0}, {"PWM", F_INT, -63, 63, 0, 0, 0},
              {"SUB", F_INT, -63, 63, 0, 0, 0}, {"NOISE", F_INT, -63, 63, 0, 0, 0}},
-    .preset_make = j106_preset_make, .npresets = J106_TONES_N + 1u, .poly = J106_POLY, .ownenv = 1,
+    .preset_make = j106_preset_make, .npresets = J106_FACTORY_N + 1u, .poly = J106_POLY, .ownenv = 1,
     .note_on = j106_note_on, .render = j106_render, .done = j106_done, .block = j106_block,
     .units = j106_units, .cap = j106_cap, .post = j106_post, .stereo = j106_stereo,
     .knob = {P_E0, P_E1, P_E3, P_REL}

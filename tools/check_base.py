@@ -22,6 +22,23 @@ first=boot.index('    fm1_time_init();')
 for marker in ('d = _bss_start','d = _pool_start','s = _data_load','s = _rt_load','s=_sd_audio_load'):
     assert boot.index(marker)<first,f'boot uses resident helpers before initialization: {marker}'
 assert boot.index('d = _pool_start')<boot.index('s=_sd_audio_load'),'POOL clear wipes resident code'
+# CPU1 executes mask-ROM before our entry. PC limits may be armed only once
+# app_init's bounded handshake has returned (ready, skipped, or held timeout).
+main=(ROOT/'build/fm1-base-platform/device/main_fm1.c').read_text()
+assert 'fm1_guard_enable(FM1_GUARD_STACK | FM1_GUARD_WRITE | FM1_GUARD_BUS);' in boot
+assert 'FM1_GUARD_PC' not in boot,'PC limits trap CPU1 mask-ROM bootstrap'
+app_init=main.index('    app_init();')
+pc_guard=main.index('    fm1_guard_enable(FM1_GUARD_PC);')
+assert app_init<pc_guard<main.index('    audio_init();',app_init),'PC limits must follow CPU1 handshake and precede audio'
+instrument=(ROOT/'platform/instrument.c').read_text().split('void saadet_init(void)',1)[1].split('void saadet_render',1)[0]
+assert 'fm1_multicore_start();' in instrument,'PC guard ordering assumes CPU1 starts inside app_init'
+irq=(ROOT/'build/fm1-base-platform/bsp/chip/fm1_irq.h').read_text()
+assert 'FM1_EMU_CON &= ~((1u << 2) | (31u << 16));' in irq,'CPU0 must use Melodee fp32 exception policy'
+power=main.index('        sd_power_init();')
+assert power<main.index('    lcd_init();',power)<app_init,'stock power setup must precede peripherals and CPU1'
+app=(ROOT/'platform/app.c').read_text()
+assert '#include "../firmware/hal/fm1_power.h"' in app,'base must reuse Melodee stock power initializer'
+assert 'return fm1_power_ready&&!bootguard.failed;' in app,'CPU1 must require the full verified supply setup'
 assert sym('sd_worker_stop')>=0x02000120,'early CPU1 stop must execute from flash before SRAM initialization'
 lo,hi=sym('_sd_audio_start'),sym('_sd_audio_end')
 assert 0x1c20000<=lo<hi<=sym('_pool_end')<=sym('_resource_end')==0x1c74000
@@ -48,5 +65,5 @@ report={'app_bytes':len(image),'low_ram_bytes':sym('_bss_end')-0x1c08000,
         'engine_arena_bytes':sym('_resource_end')-sym('_resource_start'),
         'package_sha256':hashlib.sha256(package.read_bytes()).hexdigest()}
 (OUT/(package.stem+'-validation.json')).write_text(json.dumps(report,indent=2)+'\n')
-print('Saadet target checks passed: CPU1, SRAM code, packed image, arena, boot layout')
+print('Saadet target checks passed: CPU1, bootstrap PC guards, SRAM code, packed image, arena, boot layout')
 print(json.dumps(report))

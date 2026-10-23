@@ -155,6 +155,7 @@ int sd_write(uint32_t off,const void *src,uint32_t n){
     return flash_ok?fl_write(off,src,n):-1;
 #endif
 }
+uint32_t sd_xruns(void){return plat_xruns();}
 uint32_t sd_battery(void){
 #ifdef PLAT_HOST
     return 600;
@@ -168,9 +169,12 @@ uint32_t sd_battery(void){
 }
 
 #ifndef PLAT_HOST
+#define FM1_POWER_EXTERNAL_HAL 1
+#include "../firmware/hal/fm1_power.h"
+int sd_power_init(void){fm1_power_ready=(uint8_t)fm1_power_init();return fm1_power_ready;}
 void app_cstart(void){sd_worker_stop();}
 void app_fault(const void *crash){(void)crash;sd_worker_crash();}
-int sd_worker_allowed(void){return fm1_vdc14()==7u&&fm1_sysvdd()==15u&&!bootguard.failed;}
+int sd_worker_allowed(void){return fm1_power_ready&&!bootguard.failed;}
 #endif
 
 void sd_panel_set(const uint8_t *buttons,const uint8_t *enc,const int8_t *direction){

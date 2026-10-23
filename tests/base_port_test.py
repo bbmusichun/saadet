@@ -136,6 +136,8 @@ static uint32_t mi_w,mi_r;
 static uint32_t fm1_ticks(void){return 0;}
 static int sd_ble_connected(void){return 1;}
 static int sd_ble_device_state(void){return 0;}
+static uint8_t settings_thru;
+static void sd_midi_thru(uint32_t p,int port){(void)p;(void)port;}
 #include "platform/midi_ingress.h"
 static unsigned aborts;
 static void saadet_sysex_byte(uint8_t b){if(b>=0x80&&b<0xF8)aborts++;}

@@ -100,9 +100,12 @@ The port includes:
   than the base's small command-frame collector. Native bank imports and the
   editor are USB facilities; BLE SysEx/editor transport is not implemented.
 
-The legacy `ED_AUDIO_STATS` command is currently not advertised on this port;
-the base has its own render/xrun/radio diagnostics. Existing editor preset,
-settings and backup commands still use Saadet's protocol. No physical backup
+Editor command 72 (audio diagnostics) answers on this port in its legacy
+layout: render time and missed renders from the base's deadline hook, CPU
+load, voices, the CPU1 worker and memory; the USB-audio fields read 0, as the
+base owns USB audio. The base also keeps its own render/xrun/radio
+diagnostics. Existing editor preset, settings and backup commands still use
+Saadet's protocol. No physical backup
 round trip or BLE connection has yet been measured. The initial migration
 required RP2040 recovery; its measured write/readback and subsequent boot are
 recorded in `docs/VALIDATION.md`.

@@ -40,6 +40,7 @@ static void shed_voice(void)
 }
 
 void saadet_deadline(uint32_t us,uint32_t budget){
+    if(us>sd_render_max_us)sd_render_max_us=us;
     sd_overload_history=(uint8_t)((sd_overload_history<<1)|(us>budget*85u/100u));
     if((sd_overload_history&3u)==3u)sd_shed_pending=1;
     song.cpu_q8=(song.cpu_q8*31u+(budget?us*256u/budget:0u))/32u;

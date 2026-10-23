@@ -26,6 +26,7 @@ int sd_write(uint32_t off,const void *src,uint32_t n);
 const uint8_t *sd_flash(uint32_t off);
 int sd_flash_ok(void);
 uint32_t sd_battery(void);
+uint32_t sd_xruns(void);
 void saadet_init(void);
 void saadet_render(int32_t *lr,uint32_t n,uint32_t gain);
 void saadet_frame(void);
@@ -41,6 +42,7 @@ int sd_fault_frame(const uint32_t *frame);
 void sd_worker_stop(void);
 void sd_worker_crash(void);
 int sd_worker_allowed(void);
+int sd_power_init(void);
 
 int sd_ble_connected(void);
 int sd_ble_state(void);
