@@ -72,3 +72,6 @@ is by **Leo Kuroshita (@kurogedelic), Hügelton Instruments**, with its notices 
 FM6 uses the MSFA renderer; factory sound data retains its vendor attribution.
 See [LICENSING.md](LICENSING.md), [LICENSE](LICENSE) and [LICENSES](LICENSES/)
 for the applicable file-by-file terms and third-party notices.
+
+## Support
+[Buy me a coffee](https://ko-fi.com/keremimo)
