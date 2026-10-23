@@ -38,9 +38,6 @@
 #ifndef MELODEE_DRUM_FAST
 #define MELODEE_DRUM_FAST 1
 #endif
-#ifndef MELODEE_SID_FAST
-#define MELODEE_SID_FAST 1
-#endif
 #ifndef MELODEE_CAPTURE_FAST
 #define MELODEE_CAPTURE_FAST 1
 #endif

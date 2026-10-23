@@ -36,8 +36,8 @@
 #define P5_OVERSAMPLE 1 /* prototype: benchmark base rate before enabling optional 2x */
 #endif
 #ifndef MELODEE_LEGACY_EXTRAS
-#define MELODEE_LEGACY_EXTRAS 0 /* reference tests only: retired TRIO, WHEEL and PHYS; PHASE, VOICE and NOISE (retired
-                                 * 2026-10-10: the flash for the redesign; CZ-1 keeps PHASE's phase-distortion core) */
+#define MELODEE_LEGACY_EXTRAS 0 /* reference tests only: retired VOICE, TRIO, WHEEL, PHYS and NOISE;
+                                 * PHASE and SID implementations have been removed */
 #endif
 #define MELODEE_PROPHET 1
 #define ENGI_FM6 12u
@@ -50,7 +50,7 @@
 #define USER_NONE 65535u
 #define ENGI_ANALOG 0u           /* retired in 1.2: never selectable (eng_ok), its stored sounds play silent */
 #define ENGI_DIGITAL 1u          /* retired: never selectable (eng_ok), its stored sounds play silent */
-#define NENG_SHOWN (NENGINES - 9u - !MELODEE_SLICE - 6u * !MELODEE_LEGACY_EXTRAS)   /* the engines one can pick: PRESETS, the EDIT
+#define NENG_SHOWN (NENGINES - 11u - !MELODEE_SLICE - 5u * !MELODEE_LEGACY_EXTRAS)   /* the engines one can pick: PRESETS, the EDIT
                                                 * layer, the editor, in the display order of engines.c ENGINE_ORDER */
 #define ENGI_SLICE 13u           /* reserved without MELODEE_SLICE: never selectable (eng_ok) */
 #ifdef SMP_USER_SLOTS

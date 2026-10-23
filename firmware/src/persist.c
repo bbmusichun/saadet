@@ -136,6 +136,7 @@ static void state_boot(void)
     cz_patch[0] = s->cz;
     p5_patch[0] = s->p5; p5_ready[0] = 1;
     memcpy(fm6_fn[0], s->fm6_fn, FM6_NFN);
+    fm6_fn[0][FN_ENGINE] = FM6_MODERN; /* old renderer IDs load through MSFA */
     cz_track_accept(t);
     fm1_irq_on();
     {
@@ -252,5 +253,45 @@ static int shared_preferences_save(void)
     return persist_pending || persist_old;
 #else
     return 0;
+#endif
+}
+
+/* Erase only live A/B objects. Retired project addresses alias current objects or
+ * even offset zero; preflight every address before touching flash. */
+static int persist_erase_all(void)
+{
+#if MELODEE_FLASH
+    uint32_t obj, copy, total = 0, done = 0;
+    if (!flash_ok || transport_busy()) return -1;
+    for (obj = 0; obj < OBJ_COUNT; obj++) {
+        if (st_retired(obj)) continue;
+        for (copy = 0; copy < 2u; copy++) {
+            uint32_t off = st_sector(obj, copy);
+            if (off < 0x93000u || off > 0x100000u - ST_SECTOR || off % ST_SECTOR ||
+                (off < 0xE5000u && off + ST_SECTOR > 0xE0000u)) return -1;
+            total++;
+        }
+    }
+    BOOT_WORK_BEGIN("Erasing everything", total);
+    for (obj = 0; obj < OBJ_COUNT; obj++) {
+        if (st_retired(obj)) continue;
+        for (copy = 0; copy < 2u; copy++) {
+            uint32_t off = st_sector(obj, copy), at, i;
+            if (st_erase(off)) { BOOT_WORK_END(1); return -1; }
+            for (at = 0; at < ST_SECTOR; at += sizeof st_buf) {
+                if (st_read(off + at, st_buf, sizeof st_buf)) { BOOT_WORK_END(1); return -1; }
+                for (i = 0; i < sizeof st_buf; i++)
+                    if (st_buf[i] != 255u) { BOOT_WORK_END(1); return -1; }
+            }
+            BOOT_WORK_PROGRESS(++done);
+        }
+    }
+    panel.magic = settings.magic = 0;              /* .noinit must not restore calibration or settings */
+    reset_intended();
+    BOOT_WORK_END(0);
+    fm1_reboot();
+    return 0;
+#else
+    return -1;
 #endif
 }

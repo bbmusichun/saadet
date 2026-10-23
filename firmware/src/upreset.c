@@ -620,6 +620,8 @@ static uint32_t up_nth(uint32_t n)             /* slot of the n-th used one (n <
     return 0;
 }
 
+static int up_delete(uint32_t k) { return up_put(k, 0); }
+
 static uint32_t up_rank(uint32_t slot)         /* used slots before it */
 {
     uint32_t k, n = 0;

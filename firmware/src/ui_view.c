@@ -4,7 +4,7 @@
  * builds the view every frame and draws it only when it differs from the last one drawn, so a change from anywhere
  * (a knob, the web editor, MIDI) reaches the screen, and an idle frame sends nothing. A view is drawn whole, a band
  * of rows at a time (gfx.c cv_begin_band); the panel gets only the blocks that changed (gfx.c df_diff). */
-enum { VM_PAGE, VM_HOME, VM_POP, VM_REVEAL, VM_BROWSE, VM_SAVE, VM_IMPORT };
+enum { VM_PAGE, VM_HOME, VM_POP, VM_REVEAL, VM_BROWSE, VM_SAVE, VM_IMPORT, VM_ERASE, VM_COUNTDOWN };
 enum { BAR_NONE, BAR_FILL, BAR_BIPOLAR, BAR_TICK, BAR_STEPS };
 enum { KM_KEY, KM_CHORD, KM_NOTE, KM_NOTES };      /* HOME's chord line: the key, a chord, one note, notes */
 #define KB_LO 36u                                   /* HOME's keyboard: C2 .. B5 */
@@ -22,6 +22,7 @@ typedef struct {
     uint8_t mode, eng, hot;                         /* hot: the column last turned (4: none) */
     uint8_t ndots, dot;
     char head[12], sub[16], toast[28];
+    char warn[32];
     vm_col_t col[4];
     char name[24], oct[8], state[48];               /* HOME (name: also POP, SAVE; an empty list's word) */
     uint8_t macro[4];
@@ -47,6 +48,11 @@ static void pic_draw(const ui_vm_t *v);             /* ui_pics.c */
 /* -------------------------------------------------------- the parts --- */
 static void vm_header(const ui_vm_t *v)
 {
+    if (v->warn[0]) {
+        cv_rect(0, 0, 240, 30, T_TEXT);
+        cv_text_fit(10, 8, TY_HD, v->warn, T_BG, T_TEXT, 220);
+        return;
+    }
     if (v->toast[0]) {                              /* a message stands in for the header a moment */
         cv_text_fit(10, 8, TY_TX, v->toast, T_TEXT, T_BG, 220);
         return;
@@ -244,7 +250,7 @@ static void vm_draw_browse(const ui_vm_t *v)
     if (!v->toast[0])
         cv_text_r(230, 8, TY_TX, v->bcount, T_MID, T_BG);
     vm_list(v, 40);
-    for (uint32_t e = 0; e < 4u; e++) {             /* the sources ALGORITHM picks, the chosen one lit */
+    for (uint32_t e = 0; e < NELEM(ENG_TAG); e++) {  /* the sources ALGORITHM picks, the chosen one lit */
         const aafont_t *f = e == v->bsrc ? TY_HD : TY_TX;
         int32_t w = text_w(f, ENG_TAG[e]);
         cv_text(x, 212, f, ENG_TAG[e], e == v->bsrc ? T_TEXT : T_DIM);
@@ -281,6 +287,25 @@ static void vm_draw_import(const ui_vm_t *v)        /* the dump: how many, the f
     cv_text_fit(10, 158, TY_LB, v->line[2], T_DIM, T_BG, 220);
     vm_cols(v);
 }
+static void vm_draw_erase(const ui_vm_t *v)
+{
+    static const char *const WHAT[] = {"All 384 user sound slots", "Favourites", "CZ-1 and Prophet banks",
+        "Settings and calibration", "The sound restored at power-on"};
+    vm_header(v);
+    cv_text(10, 40, TY_RW, "Erase everything", T_TEXT);
+    for (uint32_t i = 0; i < NELEM(WHAT); i++)
+        cv_text_fit(10, 66 + 20 * (int32_t)i, TY_TX, WHAT[i], v->warn[0] ? T_TEXT : T_DIM, T_BG, 220);
+    cv_text(10, 166, TY_LB, v->warn[0] ? "K1 back to cancel" : "The firmware stays.", T_MID);
+    vm_cols(v);
+}
+static void vm_draw_countdown(const ui_vm_t *v)
+{
+    vm_header(v);
+    cv_arc(120 * 16, 124 * 16, 68 * 16, 8 * 16, 0, 360, T_LINE);
+    cv_arc(120 * 16, 124 * 16, 68 * 16, 8 * 16, 270, v->sweep, T_THEME);
+    cv_text_c(120, ty_y(124, TY_PO), TY_PO, v->name, T_TEXT, T_BG);
+    cv_text_c(120, 212, TY_TX, "Let go to cancel", T_MID, T_BG);
+}
 static void vm_draw(const ui_vm_t *v)
 {
     uint32_t rows = CV_MAX / 240u, top;
@@ -293,6 +318,8 @@ static void vm_draw(const ui_vm_t *v)
         case VM_BROWSE: vm_draw_browse(v); break;
         case VM_SAVE: vm_draw_save(v); break;
         case VM_IMPORT: vm_draw_import(v); break;
+        case VM_ERASE: vm_draw_erase(v); break;
+        case VM_COUNTDOWN: vm_draw_countdown(v); break;
         default: vm_draw_page(v); break;
         }
         cv_blit_band(0, 0);

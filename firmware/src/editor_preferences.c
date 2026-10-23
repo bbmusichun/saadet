@@ -66,6 +66,33 @@ static uint32_t ed_ui_save(void)
     return 3;
 #endif
 }
+/* A raw sample and an independently stored full reference. No percentage is
+ * inferred until an empty reference is measured as well. */
+static void ed_battery(const uint8_t *a, uint32_t n)
+{
+    uint32_t rc = 0;
+#ifdef FM1_IRQ_TARGET
+    int32_t raw = fm1_adc_read(FM1_ADC_BATT);
+#else
+    int32_t raw = song.batt_raw;
+#endif
+    if (n) {
+        uint32_t full = n == 3u ? (uint32_t)a[1] | (uint32_t)a[2] << 7 : 0u;
+        if (n != 3u || a[0] != 1u || !full || full > 1023u) rc = 1;
+        else if (transport_busy() || template_old()) rc = 2;
+        else {
+            settings_batt_full = (uint16_t)full;
+            rc = ed_ui_save();
+#if MELODEE_FLASH
+            if (!rc && battery_full_of(&persist_saved) != full) rc = 3;
+#endif
+        }
+    }
+    if (raw <= 0 || raw > 1023) { raw = 0; if (!rc) rc = 2; }
+    ed_b(1); ed_b(rc);
+    ed_b((uint32_t)raw); ed_b((uint32_t)raw >> 7);
+    ed_b(settings_batt_full); ed_b(settings_batt_full >> 7);
+}
 static uint32_t ed_ui_set(const uint8_t *a, uint32_t n)
 {
     if (n != 2u || a[0] > 10u) return 1;
@@ -98,6 +125,7 @@ static uint32_t ed_ui_set(const uint8_t *a, uint32_t n)
 }
 static int ed_ui_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
 {
+    if (cmd == ED_BATTERY) { ed_battery(a, n); return 1; }
     switch (cmd) {
     case ED_UI_STATE:
         ed_ui_state(); return 1;

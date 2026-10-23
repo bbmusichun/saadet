@@ -1,0 +1,20 @@
+name = "SAADET"
+id_prefix = "FM-1_9"
+usb_manufacturer = "Ellic Studio"
+usb_product = "Saadet FM-1"
+o2 = ["instrument.c"]
+o2_cflags = ["-DMELODEE_RAM_AUDIO=1"]
+asm = ["cpu1_entry.S"]
+include = ["../firmware/src", "../build/gen"]
+words = "words.tsv"
+ble = true
+ble_central = false
+usb_audio_in = true
+usb_audio_out = true
+licence = "GPL-3.0-only"
+# The port remains private and under audit; no distribution/relicensing claim.
+
+# The base explicitly supports separate app-owned CPU1 hardware glue.
+vendored = ["hardware/"]
+
+ir_pass = "tools/ir_pass.py"

@@ -43,6 +43,20 @@ static int up_favorite_set(uint32_t k,int on){if(k>=64u)return 0;uint32_t *word=
 int main(void)
 {
     persist_t original = {0}, p;
+    {   /* The full battery reference shares reserved bytes, never the sound banks or panel mapping. */
+        persist_t q = {0}; q.magic = PERSIST_MAGIC; q.panel = PANEL_DEFAULT;
+        assert(settings_import(&q, sizeof q) && !settings_batt_full);
+        for (uint32_t raw = 1; raw <= 1023; raw++) {
+            settings_batt_full = (uint16_t)raw; settings_export(&q);
+            settings_batt_full = 0;
+            assert(settings_import(&q, sizeof q) && settings_batt_full == raw && sizeof q == 604u);
+            assert(!memcmp(&q.panel, &PANEL_DEFAULT, sizeof q.panel));
+        }
+        uint8_t *b = q.favorites.factory[FX_PREF_ROW] + FX_PREF_BYTE;
+        b[3] = 4; assert(settings_import(&q, sizeof q) && !settings_batt_full);
+        b[0] = 'F'; b[1] = 'Q'; b[2] = 1; b[3] = 2;
+        assert(settings_import(&q, sizeof q) && !settings_batt_full);
+    }
     {   /* Retired fidelity bytes remain reserved in PER5 and are cleared on save. */
         persist_t q={0};q.magic=PERSIST_MAGIC;q.panel=PANEL_DEFAULT;
         uint8_t *f=q.favorites.factory[FX_PREF_ROW]+FX_PREF_BYTE;

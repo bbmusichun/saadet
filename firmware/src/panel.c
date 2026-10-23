@@ -68,6 +68,7 @@ static int32_t panel_enc(uint32_t role)
 /* Keep the retained settings layout fixed. palette: the index into UI_PALETTES */
 #define SETTINGS_MAGIC 0x53455434u              /* "SET4" */
 struct { uint32_t magic, palette, lowcut, zoom; } settings __attribute__((section(".noinit")));
+static uint16_t settings_batt_full;             /* device's measured full-charge ADC value; 0 = uncalibrated */
 
 static void settings_save(void);              /* project.c: flash copy (MELODEE_FLASH) */
 

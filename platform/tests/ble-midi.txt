@@ -1,0 +1,72 @@
+wait 1200
+expect engines 3
+ble connect
+wait 30
+expect ble 1
+master 4096
+midi BLE 90 3c 64
+wait 50
+expect held 1
+midi USB 90 3c 64
+wait 50
+expect held 1
+# Disconnect BLE while USB still holds this pitch.
+ble disconnect
+wait 50
+expect ble 0
+expect held 1
+midi USB 80 3c 00
+wait 50
+expect held 0
+# A BLE-only note is released on connection loss, including sustain.
+ble connect
+wait 30
+midi BLE b0 40 7f
+midi BLE 90 40 64
+wait 50
+expect held 1
+midi BLE 80 40 00
+wait 50
+expect held 1
+ble disconnect
+wait 50
+expect held 0
+# TRS survives an unrelated BLE disconnect too.
+ble connect
+wait 30
+midi TRS 90 43 64
+midi BLE 90 47 64
+wait 50
+expect held 2
+ble disconnect
+wait 50
+expect held 1
+midi TRS 80 43 00
+wait 50
+expect held 0
+# Physical keys are also broadcast to USB and BLE.
+ble connect
+wait 30
+out
+key 0 down
+wait 50
+expect_out USB 90 35 64
+expect_out BLE 90 35 64
+key 0 up
+wait 50
+
+# GLOBAL > TEMPO offers BLE as the fourth clock source.
+tap GLO
+turn K2 3 80
+wait 30
+expect clock_source 3
+midi BLE fa
+wait 50
+expect clock 3
+expect playing 1
+midi USB fc
+wait 50
+expect playing 1
+midi BLE fc
+wait 50
+expect playing 0

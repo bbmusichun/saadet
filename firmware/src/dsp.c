@@ -6,7 +6,7 @@
  * oscillator at amp = 1.0 (Q15 32767) contributes VOICE_FS. */
 #define VOICE_FS 24000           /* per-voice level: one voice peaks near -6 dBFS before the master */
 
-/* n bytes packed by tools/gen_tables.py lz_pack (reSID's waveforms, CZ-1's factory tones): c < 0x80: c + 1 bytes
+/* n bytes packed by tools/gen_tables.py lz_pack (CZ-1's factory tones): c < 0x80: c + 1 bytes
  * follow; c >= 0x80: (c & 0x7F) + 3 bytes copied from d + 1 back, d in the next two bytes. A copy may reach back
  * before o into a dictionary the caller placed there */
 static void lz_unpack(uint8_t *o, const uint8_t *b, uint32_t n)

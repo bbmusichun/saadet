@@ -68,6 +68,26 @@ static void pic_build(ui_vm_t *v, const ui_stop_t *st)
     uint32_t k;
     v->pic = st->pic;
     switch (st->pic) {
+#ifdef SAADET_FM1_BASE
+    case PIC_BLE: {
+        int state = sd_ble_state();
+        const char *status = !sd_ble_available() ? "UNAVAILABLE" : !sd_ble_enabled() ? "OFF" :
+            state == 0 ? "STOPPED" : state == 1 ? "STARTING" : state == 3 ? "FAILED" :
+            sd_ble_connected() ? "MIDI CONNECTED" : sd_ble_linked() ? "WAITING FOR MIDI" : "ADVERTISING";
+        str_cpy(v->ps[0], status, sizeof v->ps[0]);
+        str_cpy(v->ps[1], "Saadet", sizeof v->ps[1]);
+        if (sd_ble_linked() && !sd_ble_connected()) {
+            str_cpy(v->ps[2], "Mac: reopen", sizeof v->ps[2]);
+            str_cpy(v->ps[3], "Audio MIDI Setup", sizeof v->ps[3]);
+        } else if (sd_ble_connected()) {
+            str_cpy(v->ps[2], "MIDI in / out ready", sizeof v->ps[2]);
+        } else {
+            str_cpy(v->ps[2], "Connect from your", sizeof v->ps[2]);
+            str_cpy(v->ps[3], "Bluetooth MIDI app", sizeof v->ps[3]);
+        }
+        break;
+    }
+#endif
     case PIC_ENV:
         v->pv[0] = t->p[P_ATK]; v->pv[1] = t->p[P_DEC]; v->pv[2] = t->p[P_SUS]; v->pv[3] = t->p[P_REL];
         break;
@@ -453,6 +473,12 @@ static void pic_readout(const ui_vm_t *v)                 /* the first value, la
 static void pic_draw(const ui_vm_t *v)
 {
     switch (v->pic) {
+    case PIC_BLE:
+        cv_text_c(120, 46, TY_HD, v->ps[1], T_MID, T_BG);
+        cv_text_c(120, 87, TY_HD, v->ps[0], T_TEXT, T_BG);
+        cv_text_c(120, 129, TY_TX, v->ps[2], T_MID, T_BG);
+        cv_text_c(120, 149, TY_TX, v->ps[3], T_MID, T_BG);
+        break;
     case PIC_ENV: pic_env(v); break;
     case PIC_LFO: pic_lfo(v); break;
     case PIC_MATRIX: pic_matrix(v); break;

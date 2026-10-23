@@ -9,6 +9,7 @@ static uint32_t ui_stop(uint32_t p);                      /* ui.c */
 static void ui_sound_name(char *b);
 static int up_load(uint32_t k);                           /* upreset.c */
 static int up_store(uint32_t k, const char *name);
+static int up_delete(uint32_t k);
 static void up_name(uint32_t k, char *b);
 static void up_slot_label(char *b, uint32_t k);
 static void up_ui_named(uint32_t op, uint32_t k, const char *name);
@@ -27,9 +28,12 @@ static struct {
     uint8_t cursor, star, edited;
     char name[13];
     uint16_t first;              /* IMPORT: the first slot */
+    uint8_t deleting, erase;     /* explicit knob arming; delete is tied to a slot and bank generation */
+    uint16_t delete_slot;
+    uint32_t delete_t, delete_gen;
 } lib;
 
-static uint32_t lib_engine(uint32_t src) { return eng_vis(src - LIB_P5); }   /* LIB_P5.. -> P5, FM6, CZ-1, SID */
+static uint32_t lib_engine(uint32_t src) { return eng_vis(src - LIB_P5); }   /* LIB_P5.. -> P5, FM6, CZ-1 */
 /* one pass over list src: its count; the sounds from .. from + nw - 1 into w (w[i].eng 255: none) */
 static uint32_t lib_scan(uint32_t src, int32_t from, lib_item_t *w, uint32_t nw)
 {
@@ -110,6 +114,42 @@ static void lib_open(uint32_t src)                 /* a list opened: at the soun
 {
     int32_t k = lib_find_now(src);
     if (k >= 0) lib.at[src] = (uint16_t)k;
+}
+
+static int lib_deletable(lib_item_t *it)
+{
+    uint32_t src = ui_stop(PL_LIB), n = lib_count(src);
+    return n && lib_item(src, lib.at[src] % n, it) && it->user;
+}
+static void lib_delete_cancel(void) { lib.deleting = 0; }
+static void lib_delete_poll(void)
+{
+    lib_item_t it;
+    if (lib.deleting && (fm1_ms - lib.delete_t >= 3000u || up_gen != lib.delete_gen ||
+        !lib_deletable(&it) || it.idx != lib.delete_slot))
+        lib_delete_cancel();
+}
+static void lib_delete(void)
+{
+    char name[24], msg[28] = "DELETED ";
+    uint32_t src = ui_stop(PL_LIB), n;
+    lib_item_t it;
+    int rc;
+    lib_delete_poll();
+    if (!lib.deleting) return;
+    lib_delete_cancel();
+    if (!lib_deletable(&it) || it.idx != lib.delete_slot) return;
+    lib_item_name(&it, name);
+    rc = up_delete(it.idx);
+    if (rc && rc != 3) { ui_message("DELETE ERROR"); return; }
+    up_slot_label(msg + 8, it.idx);
+    str_cpy(msg + str_len(msg), " ", 2);
+    str_cpy(msg + str_len(msg), name, sizeof msg - str_len(msg));
+    ui_message(rc == 3 ? "DELETED (RAM)" : msg);
+    lib.pending = 0;                              /* the sound playing stays; the next row is not loaded */
+    n = lib_count(src);
+    if (!n) lib.at[src] = 0;
+    else if (lib.at[src] >= n) lib.at[src] = (uint16_t)(n - 1u);
 }
 
 /* --------------------------------------------------------------- SAVE --- */
@@ -195,6 +235,7 @@ static const param_desc_t *lib_desc(uint32_t id)
 {
     static param_desc_t d;
     static const char *const N_STAR[] = {"OFF", "ON"};
+    lib_item_t it;
     d = (param_desc_t){"", F_INT, 0, 0, 0, 0, 0};
     switch (id) {
     case LF_SOUND: {                                   /* (its bar: where the sound is in the list) */
@@ -207,6 +248,10 @@ static const param_desc_t *lib_desc(uint32_t id)
     case LF_CURSOR: d.label = "CURSOR"; d.max = 11; break;
     case LF_LETTER: d.label = "LETTER"; d.max = (int16_t)(sizeof LIB_CHARS - 2u); break;
     case LF_FIRST: d.label = "FIRST"; d.max = (int16_t)(UP_SLOTS - (sx_stage.count ? sx_stage.count : 1u)); break;
+    case LF_DELETE:
+        if (!lib_deletable(&it)) return 0;
+        d.label = "DELETE"; d.max = 1; break;
+    case LF_ERASE: d.label = "ERASE ALL"; d.max = 1; break;
     default: return 0;
     }
     return &d;
@@ -227,6 +272,8 @@ static int32_t lib_get(uint32_t id)
         return LIB_CHARS[k] ? (int32_t)k : 0;
     case LF_SFAV: return lib.star;
     case LF_FIRST: return lib.first;
+    case LF_DELETE: return lib.deleting;
+    case LF_ERASE: return lib.erase;
     }
     return 0;
 }
@@ -259,6 +306,15 @@ static void lib_step(uint32_t id, int32_t s)
     }
     case LF_SFAV: lib.star = s > 0; break;
     case LF_FIRST: lib.first = (uint16_t)clamp((int32_t)lib.first + s, 0, lib_desc(LF_FIRST)->max); break;
+    case LF_DELETE:
+        lib.deleting = (uint8_t)(s > 0 && lib_deletable(&it));
+        if (lib.deleting) {
+            lib.delete_slot = it.idx;
+            lib.delete_gen = up_gen;
+            lib.delete_t = fm1_ms;
+        }
+        break;
+    case LF_ERASE: lib.erase = s > 0; break;
     }
 }
 static void lib_text(uint32_t id, char *val, char *unit)
@@ -282,5 +338,7 @@ static void lib_text(uint32_t id, char *val, char *unit)
         break;
     }
     case LF_FIRST: up_slot_label(val, lib.first); break;
+    case LF_DELETE: str_cpy(val, lib.deleting ? "ON" : "\x96", 4); break;
+    case LF_ERASE: str_cpy(val, lib.erase ? "ON" : "\x96", 4); break;
     }
 }

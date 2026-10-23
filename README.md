@@ -7,11 +7,10 @@ Saadet starts at Melodee `nightly` commit
 checkout and its uncommitted work are separate. `upstream` is read-only locally;
 this repository has no publishing remote.
 
-- One polyphonic synth part: Prophet, FM6, CZ-1 or SID.
-- Three serial insert FX with independent wet/dry mix and tone controls.
+- One polyphonic synth part: Prophet, FM6 or CZ-1.
 - Arpeggiator, HOLD, chords, strum, scales, microtonal tuning, modulation and MIDI performance.
 - Native sound editing, factory libraries, SysEx import/export and 384 shared user sound slots.
-- Stereo USB playback and stereo post-FX capture at 44.1 kHz, with 16/24-bit USB formats.
+- Stereo USB playback and stereo synth-master capture at 44.1 kHz, with 16/24-bit USB formats.
   Native rendering and the common audio path use 24-bit precision; USB format selection is independent.
 - Automatic last-sound recall, device settings, complete Saadet backups, USB update and recovery.
 
@@ -19,11 +18,13 @@ There are no additional tracks, track selection, solo/multitrack mixer, drum eng
 sequencer, patterns, songs, recording, motion automation, send buses, punch effects, projects, project templates,
 MPC bank-to-track routing or USB stems.
 
-The on-device interface has been removed ahead of a new design. Until it lands
-the screen stays blank: the keys play the current sound, MASTER sets the volume
-and the other buttons and knobs do nothing. Startup maintenance, the update
-countdown (OCT- and OCT+ held for five seconds), UPDATE and the crash report still
-draw. Sound editing, the library and settings are in the editor.
+The on-device interface provides engine editing, envelopes, modulation, scales,
+chords, arp, library, favourites, saving and SysEx import. The FX button opens
+LIBRARY; insert effects are removed. User sounds can be deleted with K4 DELETE
+and an FX confirmation. GLOBAL's last page can erase all saved data after arming
+K1 and holding GLO for three seconds. See [the panel guide](docs/UI.md) for the
+controls and cancellation gestures. Startup maintenance, update mode (OCT- and
+OCT+ held for five seconds), and the crash report retain their own screens.
 
 Build and test instructions are in [BUILDING.md](BUILDING.md). Serve the repository
 locally and open [the editor](web/editor.html) for Sound, FM6, Library and Settings.
@@ -46,14 +47,30 @@ without exposing project-template functions.
 ## Validation and provenance
 
 The host suite exercises native engines, controls, MIDI ownership and repeats,
-insert FX, native 24-bit transport, power-loss recovery, archive round trips, USB transport and the blank
-panel. The target build checks RAM placement and firmware packaging.
+native 24-bit transport, power-loss recovery, archive round trips, USB transport,
+panel navigation, sound deletion and protected full-storage erasure. The target build checks RAM placement and firmware packaging.
 These checks do not establish physical audio quality, control behavior or
 sustained buffer deadlines on an FM-1. No hardware installation is part of this fork's creation.
 
 New Saadet/Melodee work is by Kerem Kilic (Ellic Studio). Retained Felucca work
 is by Leo Kuroshita (@kurogedelic), Hügelton Instruments, with its notices kept.
+SID is retired with its stored engine ID reserved. FM6 uses the MSFA renderer;
+legacy MARK I/OPL settings load through it and can sound different. CZ-1 is
+independent of the removed PHASE/CrispyZebra engine. BLE/platform migration
+status and provenance are in [the migration record](docs/BLE_MIGRATION.md).
+
 The initial reduction was adapted from earlier Melodee synth-only work, then
 updated against this nightly's native engines, FX, shared library and drawing code.
 See [LICENSING.md](LICENSING.md), [LICENSE](LICENSE), and [LICENSES](LICENSES/)
 for applicable upstream and third-party terms.
+
+An experimental `platform/` target now ports Saadet to **fm1-base + felucca-bsp**
+with BLE MIDI, alongside the existing platform. It builds locally and has
+simulator coverage. After recovery from a failed first boot, the corrected
+firmware now boots on the FM-1, answers USB MIDI/editor requests and reports
+BLE advertising. Pairing and physical audio/control validation remain pending.
+The platform also prepares m-bootloader 1.2 for a separate, checked installation
+to add recovery at power-on; see the installation order in BUILDING.md.
+See [BUILDING.md](BUILDING.md#experimental-fm1-base--ble-port) and
+[the migration record](docs/BLE_MIGRATION.md) for the licensing and validation
+boundaries.

@@ -25,6 +25,7 @@ static uint64_t instructions(void)
 }
 static __attribute__((noinline)) void plan_reference(fm6_voice_t *s, const int32_t *lv, uint32_t alg, uint32_t eng, uint32_t fbshift)
 {
+    eng=FM6_MODERN; /* historical modes migrate to the Apache MSFA renderer */
     uint32_t k, has = 1u, fb_on = fbshift < 16u;
     /* MODERN gains are linear; MARK I/OPL gains are chip attenuation codes.
      * A live mode switch must not interpolate across these different units. */
@@ -33,24 +34,13 @@ static __attribute__((noinline)) void plan_reference(fm6_voice_t *s, const int32
         s->fb[0]=s->fb[1]=0.0f;
     }
     s->eng = (uint8_t)eng;
-    s->loop = 0;
     for (k = 0; k < 6u; k++) {
         uint32_t f = FM6_ALG[alg][k], out = f & 3u, in = (f >> 4) & 3u, add = f & 4u, run;
         float g1, g2;
-        if (eng == FM6_MARK1 && !k && fb_on && (alg == 3u || alg == 5u))
-            f = 0xc4u, out = 0, in = 0, add = 4u;        /* MARK I: the loop runs from OP6 */
         if (eng == FM6_MODERN) {
             g1 = s->gout[k];
             g2 = fm_exp2f((float)lv[k] * (1.0f / 16777216.0f) - 14.0f);
             run = g1 >= 1120.0f / 16777216.0f || g2 >= 1120.0f / 16777216.0f;
-        } else if (eng == FM6_MARK1) {
-            g1 = s->gout[k] ? s->gout[k] : 16383;
-            g2 = 16384 - (lv[k] >> 14);
-            run = g1 <= 16284 || g2 <= 16284;
-        } else {
-            g1 = s->gout[k] ? s->gout[k] : 511;
-            g2 = 512 - (lv[k] >> 19);
-            run = g1 <= 507 || g2 <= 507;
         }
         s->gout[k] = g2;
         s->plan[k] = 0;
@@ -71,19 +61,6 @@ static __attribute__((noinline)) void plan_reference(fm6_voice_t *s, const int32
         if (!in && (f & 0xc0u) == 0xc0u && fb_on) {
             s->plan[k] |= FM6_P_FB;
             s->fbs = (uint8_t)fbshift;
-            if (eng == FM6_MARK1 && (alg == 3u || alg == 5u || alg == 31u))
-                s->fbs = (uint8_t)(fbshift + 2u < 16u ? fbshift + 2u : 16u);
-            if (eng == FM6_MARK1 && (alg == 3u || alg == 5u)) {   /* the loop's other operators: a fixed gain */
-                uint32_t j;
-                s->loop = (uint8_t)(alg == 3u ? 3 : 2);
-                for (j = 1; j < s->loop; j++) {
-                    s->gout[j] = 16384 - (lv[j] >> 14);
-                    s->g[j] = s->gout[j] ? s->gout[j] : 16383;
-                    s->dg[j] = 0;
-                    s->plan[j] = 0;
-                }
-                k += s->loop - 1u;
-            }
         }
         has |= 1u << out;
     }

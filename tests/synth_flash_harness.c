@@ -3,11 +3,18 @@
 /* NOR model used by the single-track UI, persistence and editor tests. */
 static uint8_t nor[0x100000], flash_ok = 1;
 static int erase_error, fail_after = -1;
+static int erase_skip, erase_fail_at = -1;
 static uint32_t erases;
 static int st_read(uint32_t off, void *dst, uint32_t n)
 { assert(off + n <= sizeof nor); memcpy(dst, nor + off, n); return 0; }
 static int st_erase(uint32_t off)
-{ if (erase_error) return -1; erases++; memset(nor + off, 255, 4096); return 0; }
+{
+    assert(off % 4096u == 0 && off <= sizeof nor - 4096u);
+    if (erase_error || (erase_fail_at >= 0 && erases == (uint32_t)erase_fail_at)) return -1;
+    erases++;
+    if (!erase_skip) memset(nor + off, 255, 4096);
+    return 0;
+}
 static int st_prog(uint32_t off, const void *src, uint32_t n)
 {
     if (!fail_after) return -1;

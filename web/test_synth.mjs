@@ -12,7 +12,7 @@ const info=E.parse[E.CMD.INFO](Array.from(readFileSync('build/host/synth-info.bi
 assert(info.synthOnly && info.ntrk===1 && info.nstep===0);
 assert(info.fm6 && info.cz && info.prophet && info.backupCaps===3);
 assert.equal(info.uiCaps&16,0);assert.equal(info.shared.total,384);assert.equal(info.native,null);
-assert.equal(E.engineOrder(info.engines).map(i=>info.engines[i]).join(),'PROPHET,FM6,CZ-1,SID');
+assert.equal(E.engineOrder(info.engines).map(i=>info.engines[i]).join(),'PROPHET,FM6,CZ-1');
 assert(!info.motionMax && !info.patterns && !info.chainRows);
 const tabs=[...html.matchAll(/<button[^>]+data-tab="([^"]+)"/g)].map(m=>m[1]);
 assert.deepEqual(tabs,['sound','fm6','library','settings']);

@@ -4,10 +4,10 @@
  * Historical Q15 fixtures run separately as regression coverage. */
 #define AUDIO_FRAC_BITS 8
 #define MELODEE_USB_AUDIO 1
-#define RESOURCE_HOST_WORDS 43008u
-#define RESOURCE_HOST_LOW_WORDS 2048u
-#define RESOURCE_HOST_DATA_WORDS 12000u
-#define RESOURCE_HOST_RETAINED_WORDS 3800u
+#define RESOURCE_HOST_WORDS 4096u
+#define RESOURCE_HOST_LOW_WORDS 0u
+#define RESOURCE_HOST_DATA_WORDS 0u
+#define RESOURCE_HOST_RETAINED_WORDS 0u
 #include "synth_harness.c"
 #include <assert.h>
 
@@ -104,10 +104,14 @@ static void memory(void)
     /* The minimum target main arena holds the synth's engine state. */
     power_on();
     memset(resource,0,sizeof resource);
-    host_preset(TSEL,ENGI_FM6,0);trk_note_on(TSEL,60,100);
-    for(uint32_t block=0;block<100;block++){int32_t pcm[2*CTL];mix_block(pcm,CTL);}
-    assert(resource[RES_ENGINE0].size);
-    printf("Q23 arena: FM6 fits; %u bytes live\n",resource_used());
+    resource_failures=0;
+    for(uint32_t e=0;e<NENG_SHOWN;e++){
+        host_preset(TSEL,ENGINE_ORDER[e],0);trk_note_on(TSEL,60,100);
+        for(uint32_t block=0;block<100;block++){int32_t pcm[2*CTL];mix_block(pcm,CTL);}
+        assert(resource[RES_ENGINE0].size && !resource_failures);
+        assert(resource_used()<=16384u);
+    }
+    printf("Q23 arena: all three engines fit a 16 KiB bank without cache or SRAM tails\n");
 }
 
 int main(void)

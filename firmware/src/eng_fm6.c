@@ -1,32 +1,27 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio)
  * Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* FM6: six-operator FM that plays DX7 voices the way Dexed plays them. The synthesis is fm6_core.c; this file
- * is the Melodee engine around it.
- *
- * The patch is the sound: every track has one (fm6_patch, the 155-byte single-voice layout: six operators with
- * their 4-rate / 4-level envelopes, keyboard level and rate scaling, velocity, ratio or fixed frequency,
- * detune; 32 algorithms, feedback, LFO, pitch envelope, transpose). It is edited on the device (the FM6 pages),
- * in the web editor (EDITOR_PROTOCOL.md FM6_*) and over USB-MIDI as DX7 SysEx (fm6_store.c), loaded from the
- * PATCH slots and saved inside projects. The FM6 function settings (bend, portamento, the controllers, ENGINE:
- * fm6_core.c fm6_fn) are the track's, as each Dexed instance has its own, saved with the project and the
- * template (project.c), edited on the FM pages and by DX7 function SysEx. On the device the seven EDIT
- * values are macros on top of the patch, neutral at 0 (then the native patch is unmodified):
- *   ALG   PAT = the patch's algorithm, 1..32 another one
- *   FB    added to the patch's feedback (0..7)
- *   MLVL  the output level of every operator that is not a carrier (-36 .. +36 dB): the brightness
- *   MRAT  added to the coarse ratio of the modulators (ratio mode only)
- *   MEG   the modulators' envelope times: + slower (rates down to 40 steps), - faster
- *   VMOD  added to the modulators' velocity sensitivity (0..7)
- *   DTUN  spreads the carriers apart in pitch (up to about +-36 cents between the outer ones)
- * User presets and projects retain the whole voice; the preset browser loads factory voices.
- * The operator envelopes are the voice's amplitude and end it (engine_t.ownenv / done): the track's ADSR, ENV
- * DEST and the matrix's ENV do nothing here. The track's FLT moves MLVL (ENV / LFO -> FLT, the matrix's CUT), SHP
- * the feedback, PIT the pitch (glide, LFO and ENV pitch, unison detune, the matrix's: vmod_t.plog).
- *
- * Voices are chosen and handed over as Dexed does (16 of them, engine_t.alloc / legato / mono_key); a voice that
- * has ended keeps its control path running as Dexed keeps its voices computing (fm6_ghost), so its next note
- * starts where Dexed's would. Their state lives in the part's engine state (engines.c eng_state). */
+/* Portions derived from the Apache-2.0 MSFA component:
+ * Copyright 2012-2013 Google Inc.
+ * Copyright 2016-2025 Pascal Gauthier.
+ * Copyright 2019 Jean Pierre Cimalando (portamento).
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use these portions except in compliance with the License.
+ * You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. Source revisions: docs/BLE_MIGRATION.md. */
+
+/* FM6: native DX7 patch editing and MSFA-based synthesis for Saadet.
+ * The 155-byte voice, 128-byte packed bank record and function settings retain
+ * their stored layouts. Renderer IDs 1/2 load through MSFA; they no longer
+ * select MARK I or OPL. Voice allocation and mono priority use Saadet's common
+ * instrument policy; fm6_voice_policy.h owns retrigger and legato behavior.
+ * The synthesis data and controller model retain Apache-2.0 MSFA provenance.
+ * The enclosing app remains GPL until the full migration audit is complete. */
 #include "fm6_core.c"
 #include "melodee_fm6.h"         /* tools/gen_fm6_patches.py: FM6_INIT, FM6_FACTORY[FM6_NFACTORY] (F1..F8) */
 
@@ -294,7 +289,7 @@ static int fm6_eff_build(const track_t *t)
     return 1;
 }
 
-/* ----------------------------------------------- the part (Dexed's) --- */
+/* --------------------------------------- shared MSFA control state --- */
 typedef struct {
     uint32_t ph, dly;                                    /* LFO phase; delay ramp (DX7 two-slope) */
     int32_t val, depth;                                  /* Q24, 0..1 << 24 */
@@ -306,29 +301,16 @@ typedef struct {
     int32_t prate;                                       /* portamento step per block */
     uint32_t clock;                                      /* Dexed blocks */
     uint32_t hash;                                       /* of the voice, to see edits */
-    uint8_t tick, trig, pon, rr, lav, steal, trn, lgen;  /* rr: chooseNote's start; lav: last voice + 1 */
+    uint8_t tick, trig, pon, lav, trn, lgen;              /* lav: last voice + 1 */
     uint8_t on;                                          /* the operator switches the hash was made with */
-    uint8_t mcur, mlav, mnew, mlive;                     /* MONO: chooseNote's start, last keyed, taken (+ 1), live */
-    int32_t mseq;
     uint32_t amd, pt[4];                                 /* AMS: the shares for this modulation (pok: figured) */
     uint8_t pok;
     int32_t shared_pm, shared_amd, shared_tune;
     uint32_t shared_clock, shared_valid;
     uint8_t ghost_quiet;
 } fm6_ctl_t;
-/* MONO / LEGATO: Dexed keys one of its 16 voices for every key and hands the sounding state from voice to
- * voice (transferSignal / transferState). FM6 plays the note on one voice and keeps what else Dexed's voices
- * hold: the note, its key-down order, whether it counts as playing, its portamento pitch and feedback memory
- * (fm6_key, fm6_note_on, fm6_legato) */
-typedef struct {
-    uint8_t note, fplay;                                 /* note + 1 (0: never keyed); playing, as it was left */
-    int32_t seq, porta[6];
-    float fb[2];
-    fm6_peg_t pe;
-} fm6_mono_t;
 typedef struct {                                         /* a part's (engines.c eng_state) */
     fm6_voice_t v[NVOICE];
-    fm6_mono_t ms[16];
     fm6_lfo_t lfo;
     fm6_ctl_t pt;
     int32_t dc_x1; audio_dc_t dc_y1;                                /* the DC filter: the last input; the last output << 8 */
@@ -467,231 +449,7 @@ static void fm6_keyed(fm6_voice_t *s, const uint8_t *ed, uint32_t note)
     }
 }
 
-/* Dexed's "playing" (Dx7Note::isPlaying: an output operator's envelope not done) */
-static int fm6_playing(const track_t *t, uint32_t i)
-{
-    const fm6_voice_t *s = &FM6P(t)->v[i];
-    const uint8_t *ed = fm6_ed(t);
-    uint32_t k;
-    if (!s->played)
-        return 0;
-    for (k = 0; k < 6u; k++)
-        if ((FM6_ALG[ed[FP_ALG] & 31][k] & 4u) && (s->eg[k].ix < 4u || ed[k * FP_OP + FP_L1 + 3] > 0))
-            return 1;
-    return 0;
-}
-
-static uint32_t trk_nvoice(const track_t *t);
-/* POLY: the voice for a key (chooseNote): free over key-up over the same note, the oldest key first */
-static uint32_t fm6_alloc(track_t *t, uint32_t note)
-{
-    fm6_part_t *P = FM6P(t);
-    uint32_t np=trk_nvoice(t),k=P->pt.rr%np,best=k,i;
-    int32_t bs = -1;
-    for (i = 0; i < np; i++) {
-        int32_t sc = (fm6_playing(t, k) ? 0 : 4) + (t->v[k].gate ? 0 : 2) + (P->v[k].played && t->v[k].note == note);
-        if (sc > bs || (sc == bs && t->v[k].age < t->v[best].age)) {
-            best = k;
-            bs = sc;
-        }
-        k = (k + 1u) % np;
-    }
-    P->pt.rr = (uint8_t)((best + 1u) % np);
-    P->pt.steal = (uint8_t)fm6_playing(t, best);
-    return best;
-}
-
-static void fm6_sync(track_t *t, const voice_t *self);
-
-/* where portamento starts, as Dexed's initPortamento finds it: the last voice keyed (still going:
- * its pitch now; after a MONO key-up handed the note on, as it was then); 0 = no portamento */
-static int fm6_psrc(const track_t *t, fm6_part_t *P, int32_t *src)
-{
-    uint32_t k, l = P->pt.lav;
-    if (!l || !P->v[l - 1u].played || !P->pt.pon || FM6F(t)[FN_PTIME] <= 0)
-        return 0;
-    for (k = 0; k < 6u; k++)
-        src[k] = P->v[l - 1u].porta[k];
-    return 1;
-}
-
-/* MONO: Dexed's voice c is keyed and its key is down (but for the key going down now, + 1) */
-static int fm6_mkd(const track_t *t, uint32_t c, uint32_t now)
-{
-    const fm6_part_t *P = FM6P(t);
-    uint32_t i;
-    if (!P->ms[c].note || P->ms[c].note == now)
-        return 0;
-    for (i = 0; i < 16u; i++)                            /* the key's latest voice */
-        if (P->ms[i].note == P->ms[c].note && P->ms[i].seq > P->ms[c].seq)
-            return 0;
-    for (i = 0; i < t->nmono; i++)
-        if (t->mono_stack[i] + 1u == P->ms[c].note)
-            return 1;
-    return 0;
-}
-
-/* MONO: the sounding state leaves Dexed's live voice for voice c (+ 1) */
-static void fm6_mhand(track_t *t, uint32_t c)
-{
-    fm6_part_t *P = FM6P(t);
-    uint32_t l = P->pt.mlive, k;
-    fm6_voice_t *s = &P->v[0];
-    if (l) {                                             /* the one left keeps what it had */
-        P->ms[l - 1u].fplay = (uint8_t)(t->v[0].active || s->played ? fm6_playing(t, 0) : 0);
-        for (k = 0; k < 6u; k++)
-            P->ms[l - 1u].porta[k] = s->porta[k];
-        P->ms[l - 1u].fb[0] = s->fb[0];
-        P->ms[l - 1u].fb[1] = s->fb[1];
-        P->ms[l - 1u].pe = s->pe;
-    }
-    P->pt.mlive = (uint8_t)c;
-    P->pt.mnew = (uint8_t)c;
-}
-
-static void fm6_mtake(track_t *t, fm6_voice_t *s)        /* MONO: the voice plays Dexed's voice mnew */
-{
-    fm6_part_t *P = FM6P(t);
-    uint32_t c = P->pt.mnew, k;
-    if (!c)
-        return;
-    for (k = 0; k < 6u; k++)
-        s->porta[k] = P->ms[c - 1u].porta[k];
-    s->fb[0] = P->ms[c - 1u].fb[0];
-    s->fb[1] = P->ms[c - 1u].fb[1];
-    s->pe = P->ms[c - 1u].pe;
-    P->pt.mnew = 0;
-}
-
-/* a key goes down in MONO / LEGATO: Dexed keys a voice for it (chooseNote, init, initPortamento);
- * it takes the sound if it is the only key or above the one sounding (else it waits, keyed) */
-static void fm6_key(track_t *t, uint32_t note)
-{
-    fm6_part_t *P = FM6P(t);
-    uint32_t i, k, c, l, nt;
-    const uint8_t *ed;
-    int32_t bs = -1;
-    fm6_sync(t, 0);
-    ed = fm6_ed(t);
-    k = P->pt.mcur % 16u;
-    c = k;
-    l = P->pt.mlive;
-    for (i = 0; i < 16u; i++) {
-        int32_t sc = ((l == k + 1u ? fm6_playing(t, 0) : P->ms[k].fplay) ? 0 : 4) +
-                     (fm6_mkd(t, k, note + 1u) ? 0 : 2) +
-                     (P->ms[k].note == note + 1u);
-        if (sc > bs || (sc == bs && P->ms[k].seq < P->ms[c].seq)) {
-            c = k;
-            bs = sc;
-        }
-        k = (k + 1u) % 16u;
-    }
-    P->pt.mcur = (uint8_t)((c + 1u) % 16u);
-    nt = (uint32_t)clamp((int32_t)note + ed[FP_TRNSP] - 24, 0, 127);
-    for (k = 0; k < 6u; k++)                             /* init: the note's pitch */
-        P->ms[c].porta[k] = fm6_logfreq(&ed[k * FP_OP], nt);
-    if (P->pt.mlav && P->ms[P->pt.mlav - 1u].note && P->pt.pon && FM6F(t)[FN_PTIME] > 0) {
-        uint32_t a = P->pt.mlav - 1u;                    /* initPortamento: from the last keyed voice */
-        for (k = 0; k < 6u; k++)
-            P->ms[c].porta[k] = l == a + 1u && a != c ? P->v[0].porta[k] : P->ms[a].porta[k];
-    }
-    P->ms[c].note = (uint8_t)(note + 1u);
-    P->ms[c].seq = ++P->pt.mseq;
-    P->ms[c].fplay = 1;                                  /* keyed: its envelopes start (Dexed counts it playing) */
-    fm6_peg_set(&P->ms[c].pe, ed);
-    P->pt.mnew = 0;
-    if (l && l != c + 1u && fm6_mkd(t, l - 1u, 0) && P->ms[l - 1u].note > note + 1u)
-        return;                                          /* a higher key sounds: this one waits */
-    fm6_mhand(t, c + 1u);
-    P->pt.mlav = (uint8_t)(c + 1u);
-}
-
-/* a key goes down (DexedAudioProcessor::keydown, Dx7Note::init) */
-static void fm6_note_on(track_t *t, voice_t *v)
-{
-    fm6_part_t *P = FM6P(t);
-    uint32_t k, i, vi = (uint32_t)(v - t->v), note, vel;
-    fm6_voice_t *s = fm6_state(t, v);
-    const uint8_t *ed;
-    int mono = t->p[P_VOICE] != V_POLY, steal = P->pt.steal || (mono && s->played), ps;
-    int32_t src[6];
-    P->pt.steal = 0;
-    P->pt.shared_valid=0;
-    fm6_sync(t, v);
-    ed = fm6_ed(t);
-    ps = fm6_psrc(t, P, src);                               /* before this voice takes the note */
-    for (i = 0; i < NVOICE; i++)                         /* the first key down: the LFO restarts */
-        if (i != vi && t->v[i].gate)
-            break;
-    if (i == NVOICE) {
-        if (ed[FP_LKS])
-            P->lfo.ph = (1u << 31) - 1u;
-        P->lfo.dly = 0;
-        P->pt.trig = 1;
-    }
-    vel = v->mvel ? v->mvel : v->vel;                    /* (the note's: UNISON lowers v->vel) */
-    s->vel = (uint8_t)(FM6F(t)[FN_VNORM] ? vel * 7874015u / 10000000u : vel);
-    s->note = v->note;
-    note = fm6_note(t, v);
-    fm6_keyed(s, ed, note);
-    for (k = 0; k < 6u; k++) {
-        s->eg[k].level = 0;
-        fm6_eg_go(&s->eg[k], &ed[k * FP_OP], s->ol[k], s->rs[k], 0);
-        s->porta[k] = s->base[k];
-    }
-    fm6_peg_set(&s->pe, ed);
-    s->down = 1;
-    if (ed[FP_OKS] && !steal)                            /* KEY SYNC (not on a stolen voice: no click) */
-        for (k = 0; k < 6u; k++)
-            s->ph[k] = 0, s->gout[k] = 0;
-    if (ps && !mono)                                     /* portamento from the last voice's pitch */
-        for (k = 0; k < 6u; k++)
-            s->porta[k] = src[k];
-    if (mono)
-        fm6_mtake(t, s);
-    if (!mono && !ed[FP_OKS])                            /* the same note sounding: its phases */
-        for (i = 0; i < NVOICE; i++)
-            if (i != vi && fm6_playing(t, i) && P->v[i].played && t->v[i].note == v->note) {
-                for (k = 0; k < 6u; k++)
-                    s->ph[k] = P->v[i].ph[k];
-                break;
-            }
-    P->pt.lav = (uint8_t)(vi + 1u);
-    s->played = 1;
-    s->sub = 0;
-    s->quiet = 0;
-    s->frozen = 0;
-    s->still = 0;
-}
-
-/* MONO / LEGATO without a new attack: the note changes, the envelopes go on (Dexed's mono: the
- * voice keyed for the note takes over the sounding one's state, transferState), with that voice's
- * portamento pitch and feedback memory: a new key (fm6_key), or the highest key still down after
- * a key-up */
-static void fm6_legato(track_t *t, voice_t *v)
-{
-    fm6_part_t *P = FM6P(t);
-    uint32_t k, c;
-    fm6_voice_t *s = fm6_state(t, v), keep = *s;
-    const uint8_t *ed;
-    fm6_sync(t, v);
-    ed = fm6_ed(t);
-    if (!P->pt.mnew) {                                   /* a key-up: the voice keyed for this key */
-        for (c = 0; c < 16u && !(P->ms[c].note == v->note + 1u && fm6_mkd(t, c, 0)); c++)
-            ;
-        if (c < 16u)
-            fm6_mhand(t, c + 1u);
-    }
-    s->note = v->note;
-    fm6_keyed(s, ed, fm6_note(t, v));
-    for (k = 0; k < 6u; k++) {                           /* the old note's levels and rates stay */
-        s->ol[k] = keep.ol[k];
-        s->rs[k] = keep.rs[k];
-        s->porta[k] = s->base[k];
-    }
-    fm6_peg_set(&s->pe, ed);
-    fm6_mtake(t, s);
-}
+#include "fm6_voice_policy.h"
 
 /* the voice is over: released, and every output operator's envelope (and the feedback operator's) gone under
  * what any engine renders, for good (voice.c engine_t.done). Dexed keeps computing such a voice; FM6 keeps
@@ -847,7 +605,7 @@ static void fm6_ghost_state(track_t *t, voice_t *v, fm6_voice_t *s, const fm6_pa
     void (*volatile control)(track_t *,voice_t *,fm6_voice_t *,const vmod_t *,const fm6_part_t *,int32_t)=fm6_control_ram;
     control(t,v,s,&m0,P,brightness);
     for (k = 0; k < 6u; k++)
-        if ((s->plan[k] & FM6_P_RUN) || (k && k < s->loop && (s->plan[0] & FM6_P_RUN)))
+        if (s->plan[k] & FM6_P_RUN)
             s->ph[k] += (uint32_t)s->fq[k] << FM6_LG_N;
     s->sub = 0;
     s->still = 0;
@@ -856,7 +614,7 @@ static void fm6_ghost_state(track_t *t, voice_t *v, fm6_voice_t *s, const fm6_pa
         for (k = 0; k < 6u && s->eg[k].ix >= 4u && s->porta[k] == s->base[k]; k++)
             ;
         if (k == 6u)
-            s->still = (uint8_t)(ed[FP_OKS] && poly && !fm6_playing(t, (uint32_t)(v - t->v)) ? 2 : 1);
+            s->still = (uint8_t)(ed[FP_OKS] && poly && s->quiet >= 2u ? 2 : 1);
     }
 }
 
@@ -1198,12 +956,10 @@ static const engine_t ENG_FM6 = {
     .note_on = fm6_note_on,
     .render = fm6_render,
     .knob = {P_E2, P_E3, P_E4, P_E6},
-    .poly = NVOICE,                                      /* Dexed's 16: a voice takes one budget unit */
+    .poly = NVOICE,                                      /* bounded by the common instrument's voice budget */
     .block = fm6_block,
     .ownenv = 1,
     .done = fm6_done,
-    .alloc = fm6_alloc,
     .legato = fm6_legato,
-    .mono_key = fm6_key,
     .post = fm6_post,
 };

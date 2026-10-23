@@ -4,7 +4,7 @@
  * a Prophet's, an FM6 operator's or voice's, a CZ-1 tone's; the device's settings; the library and SAVE, ui_lib.c). It
  * is read, stepped and written the way the web editor does it (editor.c SET, its native pages, its preferences), so a
  * change from the panel and one from the editor are the same change, and the editor sees it. */
-enum { FK_NONE, FK_TRACK, FK_GLOBAL, FK_P5, FK_FM6OP, FK_FM6V, FK_FM6FN, FK_CZ, FK_DEV, FK_LIB };
+enum { FK_NONE, FK_TRACK, FK_GLOBAL, FK_P5, FK_FM6OP, FK_FM6V, FK_FM6FN, FK_CZ, FK_DEV, FK_LIB, FK_BLE };
 typedef struct { uint8_t kind, id; const char *label; uint8_t sub; } ui_field_t;   /* label: 0 = the descriptor's own;
                                                                                      * sub: FM6's operator 0..5 (OP1..) */
 /* the device's settings (kept with the settings, not the sound): screen sleep, the LEDs' level, the voice budget */
@@ -43,6 +43,15 @@ static const param_desc_t *field_desc(const ui_field_t *f)
     case FK_CZ: if (e == ENGI_CZ && f->id < LCZ_NP && CZ_PD[f->id].label) d = &CZ_PD[f->id]; break;
     case FK_DEV: d = f->id < DEV_N ? &DEV_D[f->id] : 0; break;
     case FK_LIB: d = lib_desc(f->id); break;
+#ifdef SAADET_FM1_BASE
+    case FK_BLE: {
+        static const char *const names[] = {"OFF", "ON"};
+        static const param_desc_t radio = {"RADIO", F_ENUM, 0, 1, 1, names, 0};
+        static const param_desc_t retry = {"RETRY", F_INT, 0, 1, 0, 0, 0};
+        if (sd_ble_available()) d = f->id ? &retry : &radio;
+        break;
+    }
+#endif
     }
     return d && d->label && d->label[0] && !str_eq(d->label, "-") ? d : 0;   /* (an engine's unused slot: "-") */
 }
@@ -67,6 +76,9 @@ static int32_t field_get(const ui_field_t *f)
     }
     case FK_DEV: return f->id == DEV_SLEEP ? (int32_t)scr_get() : f->id == DEV_LIGHTS ? settings_lights : settings_budget;
     case FK_LIB: return lib_get(f->id);
+#ifdef SAADET_FM1_BASE
+    case FK_BLE: return f->id ? 0 : sd_ble_enabled();
+#endif
     }
     return 0;
 }
@@ -93,6 +105,14 @@ static int field_step(const ui_field_t *f, int32_t steps)
         lib_step(f->id, steps);
         return 1;
     }
+#ifdef SAADET_FM1_BASE
+    if (f->kind == FK_BLE) {
+        if (!sd_ble_available() || !steps) return 0;
+        if (f->id) { if (steps > 0) sd_ble_reconnect(); }
+        else sd_ble_enable(steps > 0);
+        return 1;
+    }
+#endif
     if (!d || d->max <= d->min || !steps)
         return 0;
     if (d->fmt == F_ENUM || d->max - d->min < 24)
@@ -158,6 +178,11 @@ static int field_step(const ui_field_t *f, int32_t steps)
 static void field_text(const ui_field_t *f, const param_desc_t *d, char *val, char *unit)
 {
     const char *u = "";
+#ifdef SAADET_FM1_BASE
+    if (f->kind == FK_BLE && f->id) {
+        str_cpy(val, "+", 16); unit[0] = 0; return;
+    }
+#endif
     if (f->kind == FK_LIB) {
         lib_text(f->id, val, unit);
         return;

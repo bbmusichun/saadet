@@ -118,7 +118,7 @@ static void render_case(int parallel, uint32_t alg, uint32_t eng, uint32_t voice
         if (pos == CTL * 32u) midi_bend_target[0] = 256;
         if (pos == CTL * 64u) for (uint32_t i = 0; i < voices; i++) trk_note_off(&trk[i % NTRK], 48u + i);
         if (pos == CTL * 96u) for (uint32_t i = 0; i < voices; i++) trk_note_on(&trk[i % NTRK], 60u + i, 110u);
-        if (pos == CTL * 160u) { trk[0].eng_req = 3; trk[0].p[P_E0] = 1; }
+        if (pos == CTL * 160u) { trk[0].eng_req = ENGI_CZ; trk[0].p[P_E0] = 1; }
         mix_block(out, CTL);
         assert(!fm6_pending);
         assert(AW_LOAD(&audio_worker.request) == AW_LOAD(&audio_worker.complete));

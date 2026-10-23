@@ -1,0 +1,49 @@
+# Computer/phone connection lifecycle through the actual platform bridge.
+wait 1200
+expect ble_state 2
+expect ble_enabled 1
+tap GLO
+turn SELECT 4 80
+shot ble-advertising.png
+ble link
+wait 30
+expect ble_linked 1
+expect ble 0
+shot ble-link-only.png
+turn K4 -1
+expect ble_linked 1
+turn K4 1
+wait 1200
+expect ble_state 2
+expect ble_linked 0
+expect ble 0
+ble connect
+wait 30
+expect ble_linked 1
+expect ble 1
+midi BLE 90 3c 64
+wait 50
+expect held 1
+shot ble-connected.png
+turn K1 -1
+wait 50
+expect ble_enabled 0
+expect ble_state 0
+expect ble 0
+expect held 0
+shot ble-off.png
+turn K1 1
+wait 1200
+expect ble_enabled 1
+expect ble_state 2
+ble connect
+wait 30
+expect ble 1
+# Retry drops active notes and permits a fresh MIDI subscription.
+turn K4 1
+wait 1200
+expect ble 0
+expect ble_linked 0
+ble connect
+wait 30
+expect ble 1

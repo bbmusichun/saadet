@@ -25,6 +25,8 @@ static void ui_say(const char *a, const char *b);
 #include "ui_lib.c"
 #include "ui_chord.c"
 
+static int persist_erase_all(void);                /* persist.c */
+
 #define POP_MS 1200u             /* HOME: a macro's value over the screen, after the knob rests */
 #define TOAST_MS 1500u           /* a message in the header */
 #define LOAD_MS 300u             /* PRESETS / ALGORITHM at rest: the sound loads */
@@ -40,6 +42,7 @@ static struct {
     uint8_t eng;                 /* the engine the pages were of (another: EDIT, ENV, LFO from their first) */
     char toast[28];
     uint32_t toast_t;
+    uint8_t erasing;             /* armed GLOBAL > ERASE: a fresh, uninterrupted GLO hold */
 } uix = {.held = PL_N, .hot = 4u, .eng = 255u};
 
 static void fmt3(char *b, int32_t v)             /* "041" */
@@ -67,6 +70,8 @@ static uint32_t ui_stop(uint32_t p)
 }
 static void ui_open(uint32_t p)
 {
+    lib_delete_cancel();
+    lib.erase = uix.erasing = 0;
     if (uix.place == PL_SAVE && p != PL_SAVE && sx_staged()) {   /* away from an import: it is dropped */
         sx_drop();
         ui_message("IMPORT CANCELLED");
@@ -82,6 +87,8 @@ static void ui_open(uint32_t p)
 }
 static void ui_turn_page(uint32_t p, int32_t d)  /* the place's next (d > 0) or previous stop, round */
 {
+    lib_delete_cancel();
+    lib.erase = uix.erasing = 0;
     ui_place_t pl = place_of(p);
     if (pl.n)
         uix.stop[p] = (uint8_t)(((int32_t)ui_stop(p) + d % pl.n + pl.n) % pl.n);
@@ -103,6 +110,8 @@ static const ui_field_t *ui_knob_field(uint32_t k)
 static void browse_load(void) { lib_poll(fm1_ms, 0u); }   /* (the chosen sound now) */
 static void browse_turn(int engine, int32_t s)  /* PRESETS: the engine's list; ALGORITHM: the next engine's */
 {
+    lib_delete_cancel();
+    lib.erase = uix.erasing = 0;
     if (!uix.br.on) {
         uix.br.on = 1;
         uix.br.src = (uint8_t)(LIB_P5 + eng_tint(eng_ok(TSEL->eng_req) ? TSEL->eng_req : ENGI_PROPHET));
@@ -122,6 +131,10 @@ static void browse_turn(int engine, int32_t s)  /* PRESETS: the engine's list; A
 
 /* ------------------------------------------------------------ input --- */
 static uint32_t ui_btn_bit(uint32_t b) { return 1u << panel.btn[b]; }
+static int ui_erase_page(void)
+{
+    return uix.place == PL_GLO && place_of(PL_GLO).stop[ui_stop(PL_GLO)].pic == PIC_ERASE;
+}
 static void ui_octave(uint32_t b)
 {
     char m[16] = "OCTAVE ";
@@ -139,6 +152,24 @@ static void ui_octave(uint32_t b)
 static void ui_button_down(uint32_t b)
 {
     uint32_t p = place_of_button(b), browsing = uix.br.on;
+    lib_delete_poll();
+    if (lib.deleting) {
+        if (b == B_FX && uix.place == PL_LIB && fm1_in.buttons == ui_btn_bit(B_FX)) {
+            lib_delete();
+            return;                              /* confirmation is consumed, including its release */
+        }
+        lib_delete_cancel();
+    }
+    if (lib.erase) {
+        if (b == B_GLO && ui_erase_page() && fm1_in.buttons == ui_btn_bit(B_GLO)) {
+            uix.held = PL_GLO;
+            uix.held_t = fm1_ms;
+            uix.jumped = uix.erasing = 1;
+            uix.reveal = 0;
+            return;
+        }
+        lib.erase = uix.erasing = 0;
+    }
     if (uix.br.on) {                                   /* a button closes the browsing (its sound loads now) */
         browse_load();
         uix.br.on = 0;
@@ -166,6 +197,10 @@ static void ui_button_up(uint32_t b)
     uint32_t p = place_of_button(b);
     if (p >= PL_N || p != uix.held)
         return;
+    if (uix.erasing) {
+        lib.erase = uix.erasing = 0;
+        uix.jumped = 1;
+    }
     if (!uix.held_new && !uix.jumped && !uix.reveal) { /* a tap on the open place: its next page; SAVE: it stores */
         if (p == PL_SAVE) {
             if (sx_staged()) import_store(); else save_store();
@@ -197,7 +232,7 @@ static void ui_keys(uint32_t notes)                    /* a key while a place's 
 {
     uint8_t s[27];
     uint32_t k, n, cur;
-    if (uix.held >= PL_N || !notes)
+    if (uix.held >= PL_N || !notes || uix.erasing)
         return;
     n = held_entries(uix.held, s, &cur);
     for (k = 0; k < 27u && !((notes >> k) & 1u); k++)
@@ -222,6 +257,11 @@ static void ui_knob(uint32_t k, int32_t s)
     const param_desc_t *d = field_desc(f);
     uint32_t dt = fm1_ms - uix.knob_t[k];
     int32_t range;
+    if (uix.place == PL_LIB && k != 3u) lib_delete_cancel();
+    if (uix.erasing) {                           /* changing a knob cancels an in-progress hold */
+        lib.erase = uix.erasing = 0;
+        uix.jumped = 1;
+    }
     if (!d)
         return;
     range = d->max - d->min;
@@ -229,6 +269,10 @@ static void ui_knob(uint32_t k, int32_t s)
     if (dt < 60u && range >= 40)                       /* turned fast: bigger steps */
         s *= range >= 120 ? 4 : 2;
     field_step(f, s);
+    if (f->kind == FK_LIB && f->id == LF_ERASE && lib.erase && uix.held == PL_GLO) {
+        lib.erase = 0;                          /* arming never counts a button that was already held */
+        uix.jumped = 1;
+    }
     uix.hot = (uint8_t)k;
     uix.hot_t = fm1_ms;
     uix.pop = uix.place == PL_HOME;
@@ -236,12 +280,24 @@ static void ui_knob(uint32_t k, int32_t s)
 static void ui_timers(void)
 {
     uint32_t now = fm1_ms;
+    lib_delete_poll();
+    if (uix.erasing && (!lib.erase || !ui_erase_page() || fm1_in.buttons != ui_btn_bit(B_GLO))) {
+        lib.erase = uix.erasing = 0;
+        uix.jumped = 1;
+    }
+    if (uix.erasing && now - uix.held_t >= 3000u) {
+        lib.erase = uix.erasing = 0;
+        uix.held = PL_N;
+        uix.jumped = 1;
+        if (persist_erase_all()) ui_message("ERASE ERROR");
+        return;
+    }
     if (uix.pop && now - uix.hot_t >= POP_MS)
         uix.pop = 0;
     lib_poll(now, LOAD_MS);
     if (uix.br.on && !lib.pending && now - uix.br.t >= BROWSE_MS)
         uix.br.on = 0;
-    if (uix.held < PL_N && !uix.reveal && now - uix.held_t >= HOLD_MS[settings_hold % 4u]) {
+    if (uix.held < PL_N && !uix.erasing && !uix.jumped && !uix.reveal && now - uix.held_t >= HOLD_MS[settings_hold % 4u]) {
         ui_place_t pl = place_of(uix.held);
         uix.reveal = uix.held == PL_HOME ? lib_count(LIB_FAV) > 0u : pl.n > 1u;
     }
@@ -353,7 +409,7 @@ static void vm_state(char *b, uint32_t n)        /* what changes the notes now: 
 /* the list's five sounds around the one chosen (an empty list: its word in name); the count */
 static uint32_t vm_list_of(ui_vm_t *v, uint32_t src)
 {
-    static const char *const EMPTY[LIB_N] = {"NO FAVOURITES YET", "NO USER SOUNDS YET", "", "", "", ""};
+    static const char *const EMPTY[LIB_N] = {"NO FAVOURITES YET", "NO USER SOUNDS YET", "", "", ""};
     lib_item_t w[5];
     uint32_t n = lib_count(src), i, at = n ? lib.at[src] % n : 0u;
     lib_scan(src, (int32_t)at - 2, w, 5u);
@@ -464,6 +520,14 @@ static void vm_build(ui_vm_t *v)
     v->eng = (uint8_t)e;
     v->hot = uix.hot;
     str_cpy(v->toast, uix.toast, sizeof v->toast);
+    if (uix.erasing) {
+        uint32_t dt = fm1_ms - uix.held_t;
+        v->mode = VM_COUNTDOWN;
+        str_cpy(v->warn, "ERASING EVERYTHING IN", sizeof v->warn);
+        fmt_int(v->name, (int32_t)(3u - (dt < 3000u ? dt / 1000u : 2u)));
+        v->sweep = (uint16_t)(dt < 3000u ? dt * 360u / 3000u : 360u);
+        return;
+    }
     if (uix.br.on) {                                   /* browsing: the sounds around the one chosen */
         uint32_t n = vm_list_of(v, uix.br.src);
         v->mode = VM_BROWSE;
@@ -545,7 +609,18 @@ static void vm_build(ui_vm_t *v)
         for (i = 0; i < 4u; i++)
             vm_col_of(&v->col[i], &pl.stop[s].f[i]);
         if (uix.place == PL_SAVE) vm_save(v);
-        else if (pl.stop[s].pic == PIC_LIB) { v->pic = PIC_LIB; vm_list_of(v, ui_stop(PL_LIB)); }
+        else if (pl.stop[s].pic == PIC_LIB) {
+            v->pic = PIC_LIB;
+            vm_list_of(v, ui_stop(PL_LIB));
+            if (lib.deleting) {
+                str_cpy(v->warn, "DELETE ", sizeof v->warn);
+                up_slot_label(v->warn + 7, lib.delete_slot);
+                str_cpy(v->warn + str_len(v->warn), "? PRESS FX", sizeof v->warn - str_len(v->warn));
+            }
+        } else if (pl.stop[s].pic == PIC_ERASE) {
+            v->mode = VM_ERASE;
+            if (lib.erase) str_cpy(v->warn, "HOLD GLO 3 S TO ERASE ALL", sizeof v->warn);
+        }
         else pic_build(v, &pl.stop[s]);
     }
 }
@@ -634,6 +709,10 @@ static void ui_leds(void)
     led_put(nl, panel.btn[B_OCTDN], song.octave < 0);
     led_put(nl, panel.btn[B_OCTUP], song.octave > 0);
     led_put(nw, panel.btn[B_SAVE], sx_staged());             /* a dump waits in SAVE */
+    if (lib.deleting) {
+        led_put(nw, panel.btn[B_FX], 1);
+        nl[led_pos[panel.btn[B_FX]] >> 3] &= (uint8_t)~(1u << (led_pos[panel.btn[B_FX]] & 7u));
+    }
     if (uix.held < PL_N && uix.reveal) {                     /* the held button's entries, the current one bright */
         uint8_t s[27];
         uint32_t cur, n = held_entries(uix.held, s, &cur);

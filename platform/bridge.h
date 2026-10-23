@@ -1,0 +1,57 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
+#pragma once
+#include <stdint.h>
+uint32_t sd_ms(void);
+uint32_t sd_ticks(void);
+uint32_t sd_lock(void);
+void sd_unlock(uint32_t token);
+void sd_watchdog(void);
+void sd_delay(uint32_t ms);
+void sd_reboot(void);
+void sd_input(uint32_t *buttons,uint32_t *keys,int32_t *enc);
+void sd_lights(const uint8_t *bright,const uint8_t *dim,const uint8_t *masks);
+void sd_fill(uint32_t x,uint32_t y,uint32_t w,uint32_t h,uint16_t color);
+void sd_blit(uint32_t x,uint32_t y,uint32_t w,uint32_t h,const uint16_t *pixels);
+void sd_sync(void);
+void sd_lcd_power(uint32_t state);
+uint32_t sd_master(void);
+int sd_midi_in(uint32_t *packet,int *port);
+void sd_midi_out(uint32_t packet);
+int sd_sysex_send(const uint8_t *frame,uint32_t n);
+int sd_read(uint32_t off,void *dst,uint32_t n);
+int sd_erase(uint32_t off);
+int sd_write(uint32_t off,const void *src,uint32_t n);
+const uint8_t *sd_flash(uint32_t off);
+int sd_flash_ok(void);
+uint32_t sd_battery(void);
+void saadet_init(void);
+void saadet_render(int32_t *lr,uint32_t n,uint32_t gain);
+void saadet_frame(void);
+void saadet_input_only(void);
+void saadet_panic(void);
+void saadet_say(const char *a,const char *b);
+int saadet_sysex(const uint8_t *p,uint32_t n);
+int saadet_expect(const char *what,int *value);
+
+void saadet_sysex_byte(uint8_t byte);
+
+int sd_fault_frame(const uint32_t *frame);
+void sd_worker_stop(void);
+void sd_worker_crash(void);
+int sd_worker_allowed(void);
+
+int sd_ble_connected(void);
+int sd_ble_state(void);
+int sd_ble_linked(void);
+int sd_ble_available(void);
+int sd_ble_enabled(void);
+void sd_ble_enable(int on);
+void sd_ble_reconnect(void);
+
+void sd_panel_set(const uint8_t *buttons,const uint8_t *enc,const int8_t *direction);
+void saadet_panel_calibrated(const uint8_t *buttons,const uint8_t *enc,const int8_t *direction);
+
+void sd_usb_state(uint32_t *values);
+
+void saadet_deadline(uint32_t us,uint32_t budget);

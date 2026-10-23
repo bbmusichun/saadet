@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* HOME's key and chord (from Melodee's Stage band): the chord the notes played make, its notes, the keys sounding.
  * The notes are the selected part's as played (seq.c live_last / live_held: the keys, the chord keys and MIDI, after
- * the scale), so the name holds while an arp or the SID's C64 arpeggio plays them. Held: bright; let go: the last
+ * the scale), so the name holds while an arp plays them. Held: bright; let go: the last
  * voicing stays, faded; nothing played yet: the key. A tuning has no chord names: its notes alone. */
 
 /* a note's name: "C#4"; in a tuning its degree from middle C and its period ("D3", "D3+1") */

@@ -313,7 +313,7 @@ static void algorithm_feedback(void)
     static double reference[4096];
     static const int rates[4] = {99, 99, 99, 99}, levels[4] = {99, 99, 99, 0};
     uint32_t eng, pair, fb, member, k;
-    for (eng = FM6_MODERN; eng <= FM6_OPL; eng++)
+    for (eng = FM6_MODERN; eng <= FM6_MODERN; eng++)
         for (pair = 0; pair < 2u; pair++)
             for (fb = 0; fb <= 7u; fb += 7u) {
                 double diff = 0, energy = 0;
@@ -887,7 +887,7 @@ static void cost(void)
     heavy[FP_ALG] = 31;
     heavy[FP_FB] = 7;
     printf("fm6: cost, host instructions per sample and voice (6 voices held):\n");
-    for (eng = 0; eng < 3u; eng++) {
+    for (eng = 0; eng < 1u; eng++) {
         idle = mix_cost(heavy, 0, eng);
         for (pi = 0; pi <= FM6_NFAC; pi++) {
             uint8_t v[FP_SIZE + 1u];
@@ -896,7 +896,7 @@ static void cost(void)
                 fm6_unpack(pk, v);
             }
             c = (mix_cost(pi < FM6_NFAC ? v : heavy, 6, eng) - idle) / 6;
-            if (pi == FM6_NFAC || eng == FM6_MARK1)
+            if (pi == FM6_NFAC || eng == FM6_MODERN)
                 printf("fm6:   %-7s %-12s %5.0f\n", ENG[eng], pi < FM6_NFAC ? ENG_FM6.presets[pi].name : "(6 carriers)", c);
             worst = c > worst ? c : worst;
         }

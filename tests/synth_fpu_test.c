@@ -31,7 +31,7 @@ static void fm6_numerics(void)
         assert(fm6_freq(lf)==want);
     }
     int32_t levels[6];for(uint32_t k=0;k<6;k++)levels[k]=15*16777216;
-    fm6_plan(&voice,levels,31,FM6_MARK1,1);
+    voice.eng=FM6_MARK1; /* a persisted legacy renderer must reset gain units */
     fm6_plan(&voice,levels,31,FM6_MODERN,1);
     for(uint32_t k=0;k<6;k++)assert(voice.g[k]==0.0f&&voice.gout[k]>1.9f&&voice.gout[k]<2.1f);
     printf("fp32 FM6: modulated operator error %.3g; exact Q24 pitch steps\n",error);

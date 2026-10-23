@@ -26,12 +26,26 @@ Reserved identities do not expose additional engines or parts.
 | 72 | Audio diagnostics |
 | 78 | Legacy native-slot compatibility |
 | 80 | Shared 384-slot library |
+| 81 | Raw battery ADC and full-charge reference |
 | 75–77 | Native CZ transfers and legacy bank metadata where applicable |
 | 95 | Native Prophet transfers |
 
 Step, pattern, song, motion and project commands are rejected without a reply.
 Sample uploading is unavailable. Clients must use the advertised capabilities.
 The editor exposes only Sound, FM6, Library and Settings.
+
+## Battery reference
+
+Command 81 without arguments reads a fresh battery ADC sample. Arguments
+`1, full_low7, full_high7` save a measured full-charge value (1–1023) in device
+settings. Replies are `1, result, raw_low7, raw_high7, full_low7, full_high7`;
+the leading 1 is the schema, and a zero stored full value means uncalibrated.
+Result 0 confirms the request, 1 rejects arguments, 2 means no valid reading or
+a write blocked by transport/old settings, 3 means applied in RAM but not saved,
+and 4 means the settings write is queued. These values have no 8192 offset.
+The full reference alone does not establish a battery percentage or an empty
+reference. `tools/battery_calibrate.py --capture-full` samples the current
+battery and saves the median, so use it only when the battery is fully charged.
 
 ## Shared sounds
 

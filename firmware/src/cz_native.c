@@ -55,7 +55,11 @@ static void cz_native_note_on(track_t *t,voice_t *v)
     cz_voice_t *c=cz_voice(t,v);
     float dc[2]={c->native_dc[0],c->native_dc[1]};
     cz_native_freq_t freq=c->native_freq;
-    phase_note_on(t,v); /* common phase/noise reset; zero has the same float representation */
+    memset(c,0,sizeof *c);
+    memset(v->ph,0,sizeof v->ph);
+    v->s[0]=v->s[1]=v->s[4]=0;
+    if(!voice_was)v->s[2]=v->s[3]=0;
+    c->noise=0x6D2B79F5u^(uint32_t)(v-t->v)*0x9E3779B9u;
     c->native_freq=freq; /* exact input keys also validate a retrigger */
     if(voice_was){c->native_dc[0]=dc[0];c->native_dc[1]=dc[1];}
     for(uint32_t l=0;l<2u;l++)for(uint32_t e=0;e<3u;e++)c->native_eg[l][e].gate=1;

@@ -134,65 +134,10 @@ def main(path):
     tanh_q15[0] = tanh_q15[0].replace(" =", ' __attribute__((section(".dsp_tables"))) =')
     L += tanh_q15
     L += fm6_tables()
-    L += sid_tables()
     Path(path).write_text("\n".join(L) + "\n")
     print(f"tables: {path}")
 
 
-SID_CLOCK = 985248                                  # PAL C64: 17.734475 MHz / 18
-SID_WAVES = Path(__file__).resolve().parent.parent / "assets/resid"   # reSID's combined waveforms (its README)
-SID_RATE = [9, 32, 63, 95, 149, 220, 267, 313, 392, 977, 1954, 3126, 3907, 11720, 19532, 31251]
-
-
-def sid_dac_bits(bits, r2r, term):
-    """reSID 1.0 dac.cc build_dac_table: the voltage each bit of an R-2R ladder gives on its own, 2R / R = r2r,
-    term: terminated (8580) or not (6581); any code is the sum of its bits (superposition)"""
-    vbit = []
-    for set_bit in range(bits):
-        vn, r, r2 = 1.0, 1.0, r2r
-        rn = r2 if term else math.inf
-        for _ in range(set_bit):                    # the "tail" below the bit, by parallel substitution
-            rn = r + r2 if rn == math.inf else r + r2 * rn / (r2 + rn)
-        if rn == math.inf:                          # source transformation for the bit's voltage
-            rn = r2
-        else:
-            rn = r2 * rn / (r2 + rn)
-            vn = vn * rn / r2
-        for _ in range(set_bit + 1, bits):          # up to the output, by repeated source transformation
-            rn += r
-            i = vn / rn
-            rn = r2 * rn / (r2 + rn)
-            vn = rn * i
-        vbit.append(vn * ((1 << bits) - 1))
-    return vbit
-
-
-def sid_spline(points):
-    """reSID 0.16 spline.h interpolate(): piecewise cubic through (x, y), repeated end points; y at x = 0..2047"""
-    y = [0.0] * 2048
-    for j in range(len(points) - 3):
-        (x0, y0), (x1, y1), (x2, y2), (x3, y3) = points[j:j + 4]
-        if x1 == x2:
-            continue
-        if x0 == x1 and x2 == x3:
-            k1 = k2 = (y2 - y1) / (x2 - x1)
-        elif x0 == x1:
-            k2 = (y3 - y1) / (x3 - x1)
-            k1 = (3 * (y2 - y1) / (x2 - x1) - k2) / 2
-        elif x2 == x3:
-            k1 = (y2 - y0) / (x2 - x0)
-            k2 = (3 * (y2 - y1) / (x2 - x1) - k1) / 2
-        else:
-            k1 = (y2 - y0) / (x2 - x0)
-            k2 = (y3 - y1) / (x3 - x1)
-        dx, dy = x2 - x1, y2 - y1                   # cubic with f(x1) = y1, f(x2) = y2, f'(x1) = k1, f'(x2) = k2
-        a = ((k1 + k2) - 2 * dy / dx) / dx ** 2
-        b = ((k2 - k1) / dx - 3 * (x1 + x2) * a) / 2
-        c = k1 - (3 * x1 * a + 2 * b) * x1
-        d = y1 - ((x1 * a + b) * x1 + c) * x1
-        for x in range(x1, x2 + 1):
-            y[x] = ((a * x + b) * x + c) * x + d
-    return y
 
 
 def lz_pack(t, start=0):
@@ -243,92 +188,15 @@ def lz_unpack(b, n, dictionary=b""):
     return bytes(o[len(dictionary):])
 
 
-def sid_tables():
-    """SID (eng_sid.c): the MOS 6581 / 8580 as reSID models them (Dag Lem, reSID 0.16 and 1.0, GPL-2.0-or-later)"""
-    L = []
-    # waveform DAC (12 bits) and envelope DAC (8 bits): the 6581's ladders are 2R / R = 2.20 without termination
-    # (bit 0 weighs 2.07, bit 11 1983 of 4095: uneven steps, 0x7FF above 0x800), the 8580's exact. Waveform: code ->
-    # DAC x 4 (0..16380) as LO[code & 63] + HI[code >> 6]; envelope: Q15 (full = 32767) as LO[e & 15] + HI[e >> 4]
-    for name, bits, half, scale in (("SID_WDAC", 12, 6, 4.0), ("SID_EDAC", 8, 4, None)):
-        rows = []
-        for r2r, term in ((2.20, False), (2.00, True)):
-            vb = sid_dac_bits(bits, r2r, term)
-            s = scale if scale else 32767 / sum(vb)
-            for part in (vb[:half], vb[half:]):
-                rows.append([int(round(s * sum(w for j, w in enumerate(part) if code >> j & 1)))
-                             for code in range(1 << half)])
-        L += [f"static const int16_t {name}[2][2][{1 << half}] = {{   /* [6581, 8580][low, high bits] */"]
-        for m in range(2):
-            L += ["    {" + ", ".join("{" + ", ".join(str(v) for v in rows[2 * m + h]) + "}" for h in range(2)) + "},"]
-        L += ["};"]
-    # filter cutoff: reSID 0.16's measured curves, FC (11 bits) -> Hz, spline-interpolated; the 6581's has its jump
-    # at FC 0x400. As g = tan(pi f / FS) (Q12) at FC = 16 i (i = 128: FC 2047), linear between
-    f6581 = [(0, 220), (0, 220), (128, 230), (256, 250), (384, 300), (512, 420), (640, 780), (768, 1600), (832, 2300),
-             (896, 3200), (960, 4300), (992, 5000), (1008, 5400), (1016, 5700), (1023, 6000), (1023, 6000),
-             (1024, 4600), (1024, 4600), (1032, 4800), (1056, 5300), (1088, 6000), (1120, 6600), (1152, 7200),
-             (1280, 9500), (1408, 12000), (1536, 14500), (1664, 16000), (1792, 17100), (1920, 17700), (2047, 18000),
-             (2047, 18000)]
-    f8580 = [(0, 0), (0, 0), (128, 800), (256, 1600), (384, 2500), (512, 3300), (640, 4100), (768, 4800), (896, 5600),
-             (1024, 6500), (1152, 7500), (1280, 8400), (1408, 9200), (1536, 9800), (1664, 10500), (1792, 11000),
-             (1920, 11700), (2047, 12500), (2047, 12500)]
-    L += ["static const uint16_t SID_FC_G[2][129] = {   /* [6581, 8580] */"]
-    for pts in (f6581, f8580):
-        hz = sid_spline(pts)
-        g = [int(round(4096 * math.tan(math.pi * min(max(hz[min(16 * i, 2047)], 0.0), 0.45 * FS) / FS)))
-             for i in range(129)]
-        L += ["    {" + ", ".join(str(v) for v in g) + "},"]
-    L += ["};"]
-    # resonance (4 bits) -> SVF damping 1/Q, Q12. 6581 (reSID 1.0 filter.h): its ladder gives 1/Q = ~res / 8 (Q 0.53
-    # .. 8, unbounded at 15), which its low-gain op-amps never reach: a loss of 1/4 keeps Q <= 4. 8580: 1/Q =
-    # 2^((4 - res) / 8): Q 0.71 .. 2.6
-    k6581 = [int(round(4096 * ((15 - r) / 8 + 0.25))) for r in range(16)]
-    k8580 = [int(round(4096 * 2 ** ((4 - r) / 8))) for r in range(16)]
-    L += ["static const uint16_t SID_RES_K[2][16] = {{" + ", ".join(map(str, k6581)) + "}, {" +
-          ", ".join(map(str, k8580)) + "}};"]
-    # the track's ADSR (0..127: 1 ms .. 10 s) -> the nearest of SID's 16 rates (log time): attack 255 steps,
-    # decay / release 756 rate periods (the exponential counter's 1 2 4 8 16 30). Low nibble attack, high decay
-    def exp_period(c):
-        return 1 if c > 0x5d else 2 if c > 0x36 else 4 if c > 0x1a else 8 if c > 0x0e else 16 if c > 0x06 else 30
-    steps_dr = sum(exp_period(c) for c in range(255, 0, -1))
-    att = [math.log(r * 255 / SID_CLOCK) for r in SID_RATE]
-    dr = [math.log(r * steps_dr / SID_CLOCK) for r in SID_RATE]
-    near = lambda tab, x: min(range(16), key=lambda r: abs(tab[r] - x))
-    L += arr("SID_ADSR_RATE", "uint8_t",
-             [near(att, math.log(10 ** (4 * v / 127) / 1000)) | near(dr, math.log(10 ** (4 * v / 127) / 1000)) << 4
-              for v in range(128)], 16)
-    # combined waveforms: reSID's samples of a real 6581 and 8580 (assets/resid/README.md), the top 8 of 12 output
-    # bits by accumulator >> 12 for TRI+SAW, TRI+PULSE, SAW+PULSE, all three; packed (lz_pack, checked here)
-    packed, at = bytearray(), []
-    for m in ("6581", "8580"):
-        for w in ("_ST", "P_T", "PS_", "PST"):
-            t = (SID_WAVES / f"wave{m}_{w}.dat").read_bytes()
-            e = lz_pack(t)
-            assert len(t) == 4096 and lz_unpack(e, 4096) == t
-            at.append(len(packed))
-            packed += e
-    L += arr("SID_WAVE_LZ", "uint8_t", list(packed), 24)
-    L += ["static const uint16_t SID_WAVE_AT[2][4] = {{" + ", ".join(map(str, at[:4])) + "}, {" +
-          ", ".join(map(str, at[4:])) + "}};   /* [6581, 8580][TRI+SAW, TRI+PULSE, SAW+PULSE, all] */"]
-    # clocks: SID cycles per control tick (Q16), 32-bit phase step per frequency register unit (Q16), its inverse
-    # (Q32); the C64's output stage: 16 kHz RC low pass (Q15), 16 Hz coupling capacitor (Q16) (reSID extfilt)
-    L += [f"#define SID_CYC_Q16 {round(SID_CLOCK * CTL * 65536 / FS)}u",
-          f"#define SID_FREQ_K16 {round(SID_CLOCK * 256 * 65536 / FS)}u",
-          f"#define SID_FREQ_R32 {round(2 ** 32 * FS / (SID_CLOCK * 256))}u",
-          f"#define SID_XLP_A {round(32768 * (1 - math.exp(-100000 / FS)))}",
-          f"#define SID_XHP_A {round(65536 * (1 - math.exp(-100 / FS)))}"]
-    return L
-
-
 def fm6_tables():
-    """FM6 (eng_fm6.c): Dexed's lookup tables, computed as Dexed computes them at 44.1 kHz with its
-    64-sample blocks (MSFA sin.cc, exp2.cc, freqlut.cc, lfo.cc, pitchenv.cc, porta.cpp, dx7note.cc,
-    EngineMkI.cpp; Apache License 2.0 / GPL-3.0-or-later, see LICENSING.md), so FM6 renders the same
-    samples. Logs in Q24 (1 << 24 = one octave)."""
+    """MSFA sine/frequency/LFO/portamento data (Apache-2.0).
+
+    Sources and pinned revisions: docs/BLE_MIGRATION.md. No MARK I/OPL ROMs.
+    """
     N = 64
     L = [f"#define FM6_N {N}", "#define FM6_LG_N 6"]
     # sine, Q24 out of a Q24 phase: 1024 points by rotation (sin.cc), the next point for interpolation
-    # The RAM tables (FM6_SIN, the MARK I and OPL logs and exponents) are filled at boot by dsp_tables_init (below)
-    # from the rotation's two constants, half of each log and the exponents' steps: 8.6 KB less flash, bit for bit
+    # The normalized sine is filled at boot from two rotation constants.
     c = math.floor(math.cos(2 * math.pi / 1024) * (1 << 30) + 0.5)
     s = math.floor(math.sin(2 * math.pi / 1024) * (1 << 30) + 0.5)
     u, v, sin_t = 1 << 30, 0, [0] * 1025
@@ -345,59 +213,11 @@ def fm6_tables():
         fl.append(math.floor(y + 0.5))
         y *= inc
     L += arr("FM6_FREQ", "int32_t", fl, 8)
-    # MARK I (EngineMkI.cpp): log sine (1/1024 octave) and exponent tables, made in float
-    lg = [int(round(f32(-1024 * f32(math.log2(f32(math.sin(((0.5 + i) / 1024.0) * math.pi / 2.0)))))))
-          for i in range(1024)]
-    ex = [int(round(f32((math.pow(2, f32(i / 1024.0)) - 1) * 4096))) for i in range(1024)]
-    L += arr("FM6_MKI_LOG_H", "uint16_t", lg, 16)           # FM6_MKI_LOG: lg + reversed: half a cycle (the sign: the phase)
-    L += ["static uint16_t FM6_MKI_LOG[2048];"]
-    L += arr("FM6_MKI_EXP_D", "uint8_t", nibbles([ex[i] - ex[i - 1] - 2 for i in range(1, 1024)], ex[0]), 16)
-    L += ["static uint16_t FM6_MKI_EXP[1024];             /* 4096 + exp, reversed */"]
-    # OPL (EngineOpl.cpp): the OPL's quarter-wave log sine and exponent ROMs
-    opl_log = [
-        2137, 1731, 1543, 1419, 1326, 1252, 1190, 1137, 1091, 1050, 1013, 979, 949, 920, 894, 869,
-        846, 825, 804, 785, 767, 749, 732, 717, 701, 687, 672, 659, 646, 633, 621, 609,
-        598, 587, 576, 566, 556, 546, 536, 527, 518, 509, 501, 492, 484, 476, 468, 461,
-        453, 446, 439, 432, 425, 418, 411, 405, 399, 392, 386, 380, 375, 369, 363, 358,
-        352, 347, 341, 336, 331, 326, 321, 316, 311, 307, 302, 297, 293, 289, 284, 280,
-        276, 271, 267, 263, 259, 255, 251, 248, 244, 240, 236, 233, 229, 226, 222, 219,
-        215, 212, 209, 205, 202, 199, 196, 193, 190, 187, 184, 181, 178, 175, 172, 169,
-        167, 164, 161, 159, 156, 153, 151, 148, 146, 143, 141, 138, 136, 134, 131, 129,
-        127, 125, 122, 120, 118, 116, 114, 112, 110, 108, 106, 104, 102, 100, 98, 96,
-        94, 92, 91, 89, 87, 85, 83, 82, 80, 78, 77, 75, 74, 72, 70, 69,
-        67, 66, 64, 63, 62, 60, 59, 57, 56, 55, 53, 52, 51, 49, 48, 47,
-        46, 45, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30,
-        29, 28, 27, 26, 25, 24, 23, 23, 22, 21, 20, 20, 19, 18, 17, 17,
-        16, 15, 15, 14, 13, 13, 12, 12, 11, 10, 10, 9, 9, 8, 8, 7,
-        7, 7, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2,
-        2, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
-    L += arr("FM6_OPL_LOG_H", "uint16_t", opl_log, 16)      # FM6_OPL_LOG: half a cycle
-    L += ["static uint16_t FM6_OPL_LOG[512];"]
-    opl_exp = [
-        0, 3, 6, 8, 11, 14, 17, 20, 22, 25, 28, 31, 34, 37, 40, 42,
-        45, 48, 51, 54, 57, 60, 63, 66, 69, 72, 75, 78, 81, 84, 87, 90,
-        93, 96, 99, 102, 105, 108, 111, 114, 117, 120, 123, 126, 130, 133, 136, 139,
-        142, 145, 148, 152, 155, 158, 161, 164, 168, 171, 174, 177, 181, 184, 187, 190,
-        194, 197, 200, 204, 207, 210, 214, 217, 220, 224, 227, 231, 234, 237, 241, 244,
-        248, 251, 255, 258, 262, 265, 268, 272, 276, 279, 283, 286, 290, 293, 297, 300,
-        304, 308, 311, 315, 318, 322, 326, 329, 333, 337, 340, 344, 348, 352, 355, 359,
-        363, 367, 370, 374, 378, 382, 385, 389, 393, 397, 401, 405, 409, 412, 416, 420,
-        424, 428, 432, 436, 440, 444, 448, 452, 456, 460, 464, 468, 472, 476, 480, 484,
-        488, 492, 496, 501, 505, 509, 513, 517, 521, 526, 530, 534, 538, 542, 547, 551,
-        555, 560, 564, 568, 572, 577, 581, 585, 590, 594, 599, 603, 607, 612, 616, 621,
-        625, 630, 634, 639, 643, 648, 652, 657, 661, 666, 670, 675, 680, 684, 689, 693,
-        698, 703, 708, 712, 717, 722, 726, 731, 736, 741, 745, 750, 755, 760, 765, 770,
-        774, 779, 784, 789, 794, 799, 804, 809, 814, 819, 824, 829, 834, 839, 844, 849,
-        854, 859, 864, 869, 874, 880, 885, 890, 895, 900, 906, 911, 916, 921, 927, 932,
-        937, 942, 948, 953, 959, 964, 969, 975, 980, 986, 991, 996, 1002, 1007, 1013, 1018]
-    L += arr("FM6_OPL_EXP_D", "uint8_t", nibbles([opl_exp[i] - opl_exp[i - 1] - 2 for i in range(1, 256)], opl_exp[0]), 16)
-    L += ["static uint16_t FM6_OPL_EXP[256];              /* (0x400 + exp) << 1, reversed */"]
-    L += ["/* the RAM tables above, bit for bit as this script made them before (checked by tests/fm6_parity.sh and the",
-          " * goldens); fm1_main calls it before anything renders, host builds before main */",
+    L += ["/* Fill the sine before any render; host builds also initialize it before main. */",
           "static void dsp_tables_init(void)",
           "{",
           "    int32_t u = 1 << 30, v = 0, x;",
-          "    uint32_t i, e;",
+          "    uint32_t i;",
           "    for (i = 0; i < 512u; i++) {",
           "        x = (v + 32) >> 6;",
           "        FM6_SIN[i] = (float)x * (1.0f / 16777216.0f);",
@@ -407,16 +227,6 @@ def fm6_tables():
           "        u = x;",
           "    }",
           "    FM6_SIN[1024] = 0.0f;",
-          "    for (i = 0; i < 1024u; i++) FM6_MKI_LOG[i] = FM6_MKI_LOG[2047u - i] = FM6_MKI_LOG_H[i];",
-          "    for (i = 0; i < 256u; i++) FM6_OPL_LOG[i] = FM6_OPL_LOG[511u - i] = FM6_OPL_LOG_H[i];",
-          f"    for (i = 0, e = {ex[0]}u; i < 1024u; i++) {{",
-          "        if (i) e += 2u + ((FM6_MKI_EXP_D[(i - 1u) >> 1] >> (((i - 1u) & 1u) * 4u)) & 15u);",
-          "        FM6_MKI_EXP[i ^ 1023u] = (uint16_t)(4096u + e);",
-          "    }",
-          f"    for (i = 0, e = {opl_exp[0]}u; i < 256u; i++) {{",
-          "        if (i) e += 2u + ((FM6_OPL_EXP_D[(i - 1u) >> 1] >> (((i - 1u) & 1u) * 4u)) & 15u);",
-          "        FM6_OPL_EXP[i ^ 255u] = (uint16_t)((0x400u + e) << 1);",
-          "    }",
           "}",
           "#if defined(__APPLE__)",
           "__attribute__((constructor)) static void dsp_tables_ctor(void) { dsp_tables_init(); }",

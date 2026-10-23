@@ -88,8 +88,8 @@ define void @copy_boot(i8* %d, i8* %s, i8 %fill) {
     def test_indirect_engine_callbacks(self):
         src=Path(__file__).resolve().parents[1]/'firmware/src'
         roots=engine_roots(src)
-        self.assertIn('fm6_key',roots)
-        self.assertIn('sid_render',roots)
+        self.assertIn('fm6_note_on',roots)
+        self.assertNotIn('sid_render',roots)
         self.assertIn('cz_native_render',roots)
         self.assertIn('p5_render',roots)
         self.assertNotIn('drum_keys',roots)

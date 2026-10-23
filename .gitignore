@@ -10,3 +10,5 @@ fm1-recovery-backups/
 !/AGENTS.md
 
 web/node_modules/
+
+/platform/web/words/

@@ -1,6 +1,6 @@
 # The Saadet panel
 
-Saadet is one instrument with four engines: P5 (Prophet-5), FM6 (DX7), CZ-1 and SID. The screen takes on the colour of
+Saadet is one instrument with three engines: P5 (Prophet-5), FM6 (DX7), and CZ-1. The screen takes on the colour of
 the engine that is playing. Every button opens a place, and each place stays where you left it.
 
 ## Controls
@@ -22,17 +22,31 @@ keys, and pressing a key jumps to that entry. While a button is held, the keys d
 | Button | Place | Inside |
 | --- | --- | --- |
 | HOME | HOME | The sound's name, engine and slot. Under the name, the chord you're playing and its notes (a slash chord when the lowest note isn't the root); after you let go it stays, faded, until you play again. Before you play anything it shows the key. A keyboard from C2 to B5 marks the scale, with the sounding notes lit. The status line shows the arp, chord keys and latch. Turn K1–K4 to change the macros. Hold HOME to list your favourites on the keys; pressing a key plays that favourite. |
-| FX | LIBRARY | Lists: FAVOURITES, USER, P5, FM6, CZ-1, SID. K1 picks a sound (it loads at rest), K2 stars it as a favourite. |
+| FX | LIBRARY | Lists: FAVOURITES, USER, P5, FM6, CZ-1. K1 picks a sound (it loads at rest), K2 stars it as a favourite. User sounds also have K4 DELETE. |
 | SEL | SCALE | Scale, root, key mode, shift; the MPC degree. |
-| ENV | ENV | The engine's own envelopes (P5 filter and amp; FM6 pitch EG; the CZ-1's six 8-stage envelopes), then the common MOD ENV. On SID, the common envelope is the amp. |
+| ENV | ENV | The engine's own envelopes (P5 filter and amp; FM6 pitch EG; the CZ-1's six 8-stage envelopes), then the common MOD ENV. |
 | LFO | LFO | The engine's own LFO (P5 LFO, FM LFO, CZ-1 vibrato), the common LFO, and the four-route matrix. |
-| EDIT | EDIT | The engine's own panel. P5: oscillators, mixer, filter, poly mod, wheel mod, play. FM6: voice and algorithm, OP1–OP6, macros, function settings. CZ-1: tone, detune, line 1 and line 2. SID: oscillator and filter. A value that has no effect on the sound as it stands is shown dim, but you can still edit it. |
-| GLO | GLOBAL | Tempo, output, tuning, MIDI channels, voice budget, display. |
+| EDIT | EDIT | The engine's own panel. P5: oscillators, mixer, filter, poly mod, wheel mod, play. FM6: voice and algorithm, OP1–OP6, macros, function settings. CZ-1: tone, detune, line 1 and line 2. A value that has no effect on the sound as it stands is shown dim, but you can still edit it. |
+| GLO | GLOBAL | Tempo, output, tuning, MIDI channels, voice budget, display, erase everything. |
 | SAVE | SAVE | Choose a slot, set the name letter by letter (CURSOR, LETTER), and star it if you like. Press SAVE again to store. |
 | ARP | ARP | Pattern and feel. Its LED flashes with the arp's notes. |
 | SEQ | CHORD | Chord, voicing, strum. |
 | PLAY | PLAY | Voice mode, glide, priority, unison. |
 | REC | (latch) | Holds the notes you let go of until you play the next chord, or until you press REC again. With the arp on, it holds the arp's notes instead. |
+
+## Bluetooth (experimental platform build)
+
+Open GLOBAL > BLE with SELECT. The page shows Saadet's radio state and whether
+a computer/phone has enabled MIDI. K1 RADIO turns Bluetooth off/on for this
+session. Turn K4 RETRY clockwise to release a stalled connection and advertise
+again; BLE-held notes are released when their MIDI connection ends.
+
+On Mac, connect to Saadet in Audio MIDI Setup > Window > Show MIDI Studio >
+Bluetooth. On iPhone/iPad, use a music app's Bluetooth MIDI settings. WAITING
+FOR MIDI means the Bluetooth link is up but MIDI has not subscribed: on Mac,
+quit and reopen Audio MIDI Setup, turn RETRY, then Connect again. MIDI
+CONNECTED means the host has enabled notifications. No PIN is required by
+Saadet; it accepts a host's optional Just Works pairing request.
 
 ## Importing SysEx
 
@@ -44,3 +58,40 @@ the import. Nothing is written until you press SAVE.
 ## Removed
 
 The insert effects are gone. Sounds that were saved with effect settings still load, but those settings are ignored.
+
+## Deleting a sound
+
+In any LIBRARY list, select a user sound and turn K4 DELETE up. A white header asks to delete its slot, and the FX
+button breathes. Tap FX to delete. Turn K4 back, move SOUND, change page, press another button, or wait three seconds
+to cancel. Factory sounds have no DELETE control.
+
+Deleting clears the saved slot and its favourite. The sound playing keeps playing with its current edits, without
+a saved slot; the next sound in the list does not load automatically. A failed write shows DELETE ERROR and keeps
+the record. There is no undo.
+
+## Erasing everything
+
+Go to the last GLOBAL page, ERASE. Turn K1 ERASE ALL up, then hold GLO for three seconds. The countdown replaces
+the page list. Letting go cancels without turning the page; turn K1 back or leave the page to cancel the armed
+state. A GLO press that began before arming never counts toward confirmation.
+
+The device shows progress while erasing all user sounds, favourites, stored engine banks, settings, panel
+calibration and the sound restored at power-on. Keep power connected until it finishes. It then restarts with
+defaults. Built-in factory sounds and the firmware stay. If this FM-1 required hardware calibration, calibrate
+it again by holding OCT- and OCT+ at power-on. Erasing has no undo.
+
+## Battery reference
+
+`tools/battery_calibrate.py --capture-full` reads 31 battery ADC samples over USB-MIDI and saves their median as
+this device's full-charge reference. Run it with the battery fully charged. The reference is stored with device
+settings and included in backups; erase everything clears it. It does not produce a percentage until the empty
+reference has also been measured. The command requires firmware with battery calibration support.
+
+
+## Experimental base target
+
+On the separate fm1-base target, GLOBAL > TEMPO's CLOCK choices are INT, USB,
+TRS and BLE. BLE is a MIDI peripheral advertised as **Saadet** and starts
+through the base's boot/crash guard. Physical keyboard notes are also sent to
+connected USB/BLE hosts. The native editor and DX7/CZ bank imports use USB.
+See `BLE_MIGRATION.md` for current limitations and unmeasured hardware checks.

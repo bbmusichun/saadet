@@ -38,6 +38,14 @@ static int32_t fm1_enc_take(uint32_t e)
     return s;
 }
 static void fm1_wdt_feed(void) {}
+static uint32_t host_reboots;
+static void fm1_reboot(void)
+{
+    host_reboots++;
+#ifdef HOST_REBOOT_HOOK
+    HOST_REBOOT_HOOK();
+#endif
+}
 static void fm1_irq_off(void) {}
 static void fm1_irq_on(void) {}
 static uint16_t host_screen[240 * 240];

@@ -1,23 +1,28 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio)
  * Portions Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+/* Portions derived from the Apache-2.0 MSFA component:
+ * Copyright 2012-2013 Google Inc.
+ * Copyright 2016-2025 Pascal Gauthier.
+ * Copyright 2019 Jean Pierre Cimalando (portamento).
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use these portions except in compliance with the License.
+ * You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License. Source revisions: docs/BLE_MIGRATION.md. */
+
 #include "performance_options.h"
-/* FM6 core: six-operator FM that renders DX7 voices with native fp32 signal arithmetic.
- *
- * The synthesis is Dexed's (Pascal Gauthier; on MSFA by Raph Levien, Google), restated in C: ENGINE (the FM6
- * function settings, fm6_fn) picks MODERN (MSFA, native fp32), MARK I (the DX7's log-sine and exponent
- * tables, its 2- and 3-operator feedback loops in algorithms 6 and 4) or OPL resolution. Envelopes in the log
- * domain with the DX7 attack curve and static times, output, level and rate key scaling, velocity, the 32
- * algorithms, the LFO, pitch envelope, pitch bend, portamento and the controllers (wheel, foot, breath,
- * aftertouch to pitch, amplitude and EG bias) follow Dexed's code and its DX7 measurements, at 44.1 kHz in
- * Dexed's 64-sample blocks (two of Melodee's 32-sample control ticks). tests/fm6_parity.sh renders scores
- * through both and reports sample differences; fractional fp32 feedback is not bit-exact. Tables: tools/gen_tables.py ("DX7 data": Apache License 2.0 /
- * GPL-3.0-or-later, see LICENSING.md). The voice handling (which of Dexed's 16 voices a key takes, MONO's
- * hand-over, the voices that run on after their notes) is eng_fm6.c's.
- *
- * Units: logs in Q24 (1 << 24 = one octave or 6 dB); an operator's output is float with 1.0 = a unit sine,
- * added to the next operator's phase as 1.0 = one cycle (OUTPUT 99 at the top of its envelope: 2.0, a 4 pi
- * index). The patch is the 155-byte single-voice layout (FP_* below), operator 0 = the sixth operator. */
+/* FM6 core: DX7-compatible synthesis with native fp32 operator signals.
+ * Scaling, envelopes, LFO and the 32 algorithms follow the Apache-2.0 MSFA
+ * component (Google / Pascal Gauthier / Jean Pierre Cimalando); the native
+ * operator implementation is fm6_msfa_ops.h. MARK I and OPL are retired.
+ * See docs/BLE_MIGRATION.md for exact upstream revisions and audit status.
+ * Pitches use Q24 log2 Hz, one cycle of phase is 2^24; float operator output
+ * is measured in cycles of modulation. The patch is a 155-byte DX7 voice. */
 
 #include "x0x/fastmath.h"
 
@@ -37,9 +42,9 @@ enum {
  * amplitude, 2 EG bias), Dexed's velocity scaling to the DX7's range, and ENGINE */
 enum { FN_PBUP, FN_PBDN, FN_PBSTEP, FN_PMODE, FN_PTIME, FN_GLISS, FN_MWR, FN_MWA, FN_FCR, FN_FCA, FN_BCR, FN_BCA,
        FN_ATR, FN_ATA, FN_VNORM, FN_ENGINE, FM6_NFN };
-enum { FM6_MODERN, FM6_MARK1, FM6_OPL };
+enum { FM6_MODERN, FM6_MARK1, FM6_OPL }; /* 1/2 are historical import IDs only */
 static const uint8_t FM6_FNMAX[FM6_NFN] = {12, 12, 12, 1, 127, 1, 99, 7, 99, 7, 99, 7, 99, 7, 1, 2};
-static const uint8_t FM6_FNDEF[FM6_NFN] = {3, 3, 0, 0, 0, 0, 99, 1, 0, 0, 0, 0, 0, 0, 0, FM6_MARK1};   /* Dexed's */
+static const uint8_t FM6_FNDEF[FM6_NFN] = {3, 3, 0, 0, 0, 0, 99, 1, 0, 0, 0, 0, 0, 0, 0, FM6_MODERN};   /* MSFA renderer */
 static uint8_t fm6_fn[NTRK][FM6_NFN];                    /* per track (fm6_fn_reset at power-on, a new project) */
 static void fm6_fn_reset(void)
 {
@@ -50,7 +55,7 @@ static void fm6_fn_reset(void)
 static void fm6_fn_set(uint32_t tr, uint32_t k, int32_t v)
 {
     if (tr < NTRK && k < FM6_NFN)
-        fm6_fn[tr][k] = (uint8_t)clamp(v, 0, FM6_FNMAX[k]);
+        fm6_fn[tr][k] = k == FN_ENGINE ? FM6_MODERN : (uint8_t)clamp(v, 0, FM6_FNMAX[k]);
 }
 static int fm6_fn_ok(const uint8_t *f)                    /* a stored set: every value in its range */
 {
@@ -65,7 +70,7 @@ static int fm6_fn_ok(const uint8_t *f)                    /* a stored set: every
 /* DX7 data, measured for MSFA (Copyright 2012 Google Inc.) and Dexed (Copyright 2013-2017 Pascal Gauthier),
  * Apache License 2.0: output levels below 20; the static times of the envelope (samples at 44.1 kHz, rates
  * 0..76); the velocity curve; the exponential key-scaling curve; pitch-modulation sensitivity; the pitch
- * envelope's rates and steps (1/32 octave). The sine, 2^x, frequency, MARK I / OPL, detune, LFO and
+ * envelope's rates and steps (1/32 octave). The sine, frequency, detune, LFO and
  * portamento tables are in melodee_tables.h (tools/gen_tables.py) */
 static const uint8_t FM6_LEVELLUT[20] = {0, 5, 9, 13, 17, 20, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 42, 43, 45, 46};
 static const int32_t FM6_STATICS[77] = {
@@ -350,7 +355,7 @@ typedef struct fm6_voice {                               /* a voice; operators i
     uint8_t plan[6];                                     /* this block's routing (FM6_P_*) */
     float fb[2];                                       /* the feedback operator's last two outputs */
     fm6_peg_t pe;                                        /* the pitch envelope */
-    uint8_t down, sub, note, vel, eng, loop, fbs, quiet, played;
+    uint8_t down, sub, note, vel, eng, fbs, quiet, played;
     uint8_t frozen;                                      /* stopped as by Dexed's panic: not kept running */
     uint8_t still;                                       /* over and at rest: 1 only time goes on, 2 nothing matters */
     int32_t spb;                                         /* the bend and tune it was at rest with */
@@ -358,203 +363,7 @@ typedef struct fm6_voice {                               /* a voice; operators i
 #define FM6_SILENT 1638400                               /* an envelope level no engine renders (MARK I: -96 dB) */
 enum { FM6_P_ADD = 4, FM6_P_FB = 0x40, FM6_P_RUN = 0x80 };   /* plan: bits 0-1 out bus, 4-5 in bus */
 
-/* ------------------------------------------------------ the operators --- */
-static float fm6_bus[2][CTL], fm6_sum[CTL];
-
-/* MARK I: a sine from the log-sine and exponent tables (mkiSin); env: attenuation, 1024 an octave.
- * As in Dexed the sum is 16 bits, the sign its top bit (a gain ramp that overshoots wraps it) */
-static inline __attribute__((always_inline)) int32_t fm6_mki(int32_t ph, int32_t env)
-{
-    uint32_t e = ((uint32_t)FM6_MKI_LOG[((uint32_t)ph >> 12) & 2047u] + (((uint32_t)ph >> 8) & 0x8000u) + (uint32_t)env) &
-                 0xFFFFu;
-    int32_t y = (int32_t)(((uint32_t)FM6_MKI_EXP[e & 0x3FFu] >> ((e & 0x7FFFu) >> 10)) << 13);
-    return e & 0x8000u ? -y - 8192 : y;
-}
-
-/* OPL: the OPL's quarter-wave ROMs (oplSin); env: attenuation, 8 a step of 3/8 dB; 16 bits as above */
-static inline __attribute__((always_inline)) int32_t fm6_opl(int32_t ph, int32_t env)
-{
-    uint32_t e = ((uint32_t)FM6_OPL_LOG[((uint32_t)ph >> 14) & 511u] + (((uint32_t)ph >> 8) & 0x8000u) +
-                  ((uint32_t)env << 3)) & 0xFFFFu, sh = (e & 0x7FFFu) >> 8;
-    int32_t y = sh > 31u ? 0 : (int32_t)((uint32_t)FM6_OPL_EXP[e & 0xFFu] >> sh);
-    return (e & 0x8000u ? -y - 1 : y) * (1 << 14);
-}
-
-/* an operator over n samples, modulated by in[] (0: none), added to or into out[] */
-#define FM6_LOOP(Y)                                                                                \
-    do {                                                                                           \
-        if (add)                                                                                   \
-            for (i = 0; i < n; i++) {                                                              \
-                g += dg;                                                                           \
-                out[i] += (Y);                                                                     \
-                ph += fq;                                                                          \
-            }                                                                                      \
-        else                                                                                       \
-            for (i = 0; i < n; i++) {                                                              \
-                g += dg;                                                                           \
-                out[i] = (Y);                                                                      \
-                ph += fq;                                                                          \
-            }                                                                                      \
-    } while (0)
-#define FM6_SIN_G(x) (fm6_sin(x) * g)
-static __attribute__((section(".dsp_text"))) void fm6_op(fm6_voice_t *s, uint32_t k, float *out, const float *in, int add, uint32_t eng, uint32_t n)
-{
-    uint32_t ph = s->ph[k], i, fq = (uint32_t)s->fq[k];
-    float g = s->g[k], dg = s->dg[k];
-    if (eng == FM6_MODERN) {
-        if (in)
-            FM6_LOOP(FM6_SIN_G((int32_t)fm6_phase(ph, in[i])));
-        else
-            FM6_LOOP(FM6_SIN_G((int32_t)(ph & 0xFFFFFFu)));
-    } else if (eng == FM6_MARK1) {
-        if (in)
-            FM6_LOOP((1.0f / 16777216.0f) * fm6_mki((int32_t)fm6_phase(ph, in[i]), (int32_t)g));
-        else
-            FM6_LOOP((1.0f / 16777216.0f) * fm6_mki((int32_t)(ph & 0xFFFFFFu), (int32_t)g));
-    } else {
-        if (in)
-            FM6_LOOP((1.0f / 16777216.0f) * fm6_opl((int32_t)fm6_phase(ph, in[i]), (int32_t)g));
-        else
-            FM6_LOOP((1.0f / 16777216.0f) * fm6_opl((int32_t)(ph & 0xFFFFFFu), (int32_t)g));
-    }
-    s->ph[k] = ph;
-    s->g[k] = g;
-}
-
-/* the feedback operator: its last two outputs, averaged, modulate it */
-#define FM6_LOOP_FB(Y)                                                                             \
-    do {                                                                                           \
-        if (add)                                                                                   \
-            for (i = 0; i < n; i++) {                                                              \
-                g += dg;                                                                           \
-                m = (y0 + y) * feedback;                                                                \
-                y0 = y;                                                                            \
-                y = (Y);                                                                           \
-                out[i] += y;                                                                       \
-                ph += fq;                                                                          \
-            }                                                                                      \
-        else                                                                                       \
-            for (i = 0; i < n; i++) {                                                              \
-                g += dg;                                                                           \
-                m = (y0 + y) * feedback;                                                                \
-                y0 = y;                                                                            \
-                y = (Y);                                                                           \
-                out[i] = y;                                                                        \
-                ph += fq;                                                                          \
-            }                                                                                      \
-    } while (0)
-static __attribute__((section(".dsp_text"))) void fm6_op_fb(fm6_voice_t *s, uint32_t k, float *out, int add, uint32_t eng, uint32_t n)
-{
-    uint32_t ph = s->ph[k], i, fq = (uint32_t)s->fq[k], sh = s->fbs + 1u;
-    float g = s->g[k], dg = s->dg[k], y0 = s->fb[0], y = s->fb[1], m;
-    float feedback = 1.0f / (float)(1u << sh);
-    if (eng == FM6_MODERN)
-        FM6_LOOP_FB(FM6_SIN_G((int32_t)fm6_phase(ph, m)));
-    else if (eng == FM6_MARK1)
-        FM6_LOOP_FB((1.0f / 16777216.0f) * fm6_mki((int32_t)fm6_phase(ph, m), (int32_t)g));
-    else
-        FM6_LOOP_FB((1.0f / 16777216.0f) * fm6_opl((int32_t)fm6_phase(ph, m), (int32_t)g));
-    s->ph[k] = ph;
-    s->g[k] = g;
-    s->fb[0] = y0;
-    s->fb[1] = y;
-}
-
-/* MARK I, algorithms 4 and 6 with feedback: OP6 -> OP5 (-> OP4) and back to OP6, into the voice */
-static __attribute__((section(".dsp_text"))) void fm6_op_loop(fm6_voice_t *s, float *out, uint32_t n)
-{
-    uint32_t i, j, nl = s->loop, sh = s->fbs + 1u;
-    float y0 = s->fb[0], y = s->fb[1], m;
-    float feedback = 1.0f / (float)(1u << sh);
-    for (i = 0; i < n; i++) {
-        m = (y0 + y) * feedback;
-        s->g[0] += s->dg[0];
-        y0 = y;
-        y = (1.0f / 16777216.0f) * fm6_mki((int32_t)fm6_phase(s->ph[0], m), (int32_t)s->g[0]);
-        s->ph[0] += (uint32_t)s->fq[0];
-        for (j = 1; j < nl; j++) {
-            y = (1.0f / 16777216.0f) * fm6_mki((int32_t)fm6_phase(s->ph[j], y), (int32_t)s->g[j]);
-            s->ph[j] += (uint32_t)s->fq[j];
-        }
-        out[i] = y;
-    }
-    s->fb[0] = y0;
-    s->fb[1] = y;
-}
-
-/* the block's routing (FmCore / EngineMkI / EngineOpl render): which operators sound, into what,
- * from what, their gain ramps; operators below the threshold only keep time */
-static inline __attribute__((always_inline)) void fm6_plan(fm6_voice_t *s, const int32_t *lv, uint32_t alg, uint32_t eng, uint32_t fbshift)
-{
-    uint32_t k, has = 1u, fb_on = fbshift < 16u;
-    /* MODERN gains are linear; MARK I/OPL gains are chip attenuation codes.
-     * A live mode switch must not interpolate across these different units. */
-    if(s->eng!=eng){
-        for(k=0;k<6u;k++)s->gout[k]=0.0f;
-        s->fb[0]=s->fb[1]=0.0f;
-    }
-    s->eng = (uint8_t)eng;
-    s->loop = 0;
-    for (k = 0; k < 6u; k++) {
-        uint32_t f = FM6_ALG[alg][k], out = f & 3u, in = (f >> 4) & 3u, add = f & 4u, run;
-        float g1, g2;
-        if (eng == FM6_MARK1 && !k && fb_on && (alg == 3u || alg == 5u))
-            f = 0xc4u, out = 0, in = 0, add = 4u;        /* MARK I: the loop runs from OP6 */
-        if (eng == FM6_MODERN) {
-            g1 = s->gout[k];
-#if MELODEE_FM6_FAST
-            /* exp2(-14) is exactly 2^-14 in the existing polynomial. Keep
-             * the original routing, phase advancement and gain ramp below. */
-            g2 = lv[k] == 0 ? 1.0f / 16384.0f : fm_exp2f((float)lv[k] * (1.0f / 16777216.0f) - 14.0f);
-#else
-            g2 = fm_exp2f((float)lv[k] * (1.0f / 16777216.0f) - 14.0f);
-#endif
-            run = g1 >= 1120.0f / 16777216.0f || g2 >= 1120.0f / 16777216.0f;
-        } else if (eng == FM6_MARK1) {
-            g1 = s->gout[k] ? s->gout[k] : 16383;
-            g2 = 16384 - (lv[k] >> 14);
-            run = g1 <= 16284 || g2 <= 16284;
-        } else {
-            g1 = s->gout[k] ? s->gout[k] : 511;
-            g2 = 512 - (lv[k] >> 19);
-            run = g1 <= 507 || g2 <= 507;
-        }
-        s->gout[k] = g2;
-        s->plan[k] = 0;
-        if (!run) {
-            if (!add)
-                has &= ~(1u << out);
-            s->ph[k] += (uint32_t)s->fq[k] << FM6_LG_N;
-            continue;
-        }
-        if (!((has >> out) & 1u))
-            add = 0;
-        if (in && !((has >> in) & 1u))
-            in = 0;
-        s->g[k] = g1;
-        s->dg[k] = eng == FM6_MODERN ? (g2 - g1) * (1.0f / FM6_N)
-                     : (float)(((int32_t)(g2 - g1) + (FM6_N >> 1)) >> FM6_LG_N);
-        s->plan[k] = (uint8_t)(FM6_P_RUN | out | add | in << 4);
-        if (!in && (f & 0xc0u) == 0xc0u && fb_on) {
-            s->plan[k] |= FM6_P_FB;
-            s->fbs = (uint8_t)fbshift;
-            if (eng == FM6_MARK1 && (alg == 3u || alg == 5u || alg == 31u))
-                s->fbs = (uint8_t)(fbshift + 2u < 16u ? fbshift + 2u : 16u);
-            if (eng == FM6_MARK1 && (alg == 3u || alg == 5u)) {   /* the loop's other operators: a fixed gain */
-                uint32_t j;
-                s->loop = (uint8_t)(alg == 3u ? 3 : 2);
-                for (j = 1; j < s->loop; j++) {
-                    s->gout[j] = 16384 - (lv[j] >> 14);
-                    s->g[j] = s->gout[j] ? s->gout[j] : 16383;
-                    s->dg[j] = 0;
-                    s->plan[j] = 0;
-                }
-                k += s->loop - 1u;
-            }
-        }
-        has |= 1u << out;
-    }
-}
+#include "fm6_msfa_ops.h"
 
 /* Scratch belongs to the caller: paired voices must never share operator buses.
  * Keep the operator kernel separate: surrounding engine additions otherwise
@@ -576,9 +385,7 @@ static __attribute__((noinline, section(".dsp_text"))) void fm6_run(fm6_voice_t 
         float *out = o ? bus[o - 1u] : sum;
         if (!(pl & FM6_P_RUN))
             continue;
-        if (!k && s->loop)
-            fm6_op_loop(s, out, n);
-        else if (pl & FM6_P_FB)
+        if (pl & FM6_P_FB)
             fm6_op_fb(s, k, out, pl & FM6_P_ADD, eng, n);
         else
             fm6_op(s, k, out, in ? bus[in - 1u] : 0, pl & FM6_P_ADD, eng, n);

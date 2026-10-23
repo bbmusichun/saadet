@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* CZ-1 is a separate engine: native Casio tone data, never PHASE knob conversion.
- * Envelope state and note reset utilities are shared with the phase family. */
+ * Its state and reset are independent of the retired PHASE engine. */
+#include "cz_state.h"
 #include "cz_native.c"
 #include "melodee_cz1.h"            /* Casio's 64 CZ-1 preset tones (tools/gen_cz1_factory.py) */
 /* Casio's tone k (0..CZ_FACTORY_N-1) into raw (CZ_BYTES), unpacked against CZ_DICT (tools/gen_cz1_factory.py) */

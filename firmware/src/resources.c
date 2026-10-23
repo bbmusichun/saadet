@@ -1,14 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
-/* Bounded working-memory arena. Audio owns mutations; a main-loop history
- * or USB mode change may also mutate it with audio interrupts guarded.
- * Fixed handles, no heap,
- * general compaction, or searches proportional to voices/samples. Explicit
- * history resizes may relocate that one handle while the owner is guarded.
+/* Bounded working-memory arena for engine state. Audio owns mutations;
+ * main-loop changes also guard audio interrupts.
+ * Fixed handles, no heap, general compaction, or searches proportional to
+ * voices/samples.
  * Linker-derived SRAM tails are separate banks: an allocation never spans a
  * code/data/retained-state boundary. Small banks first preserve the large
- * contiguous POOL bank for engine state and note history. */
-enum { RES_ENGINE0, RES_LOAD_UNDO = RES_ENGINE0 + NPART, RES_COUNT };
+ * contiguous POOL bank for large engine state. */
+enum { RES_ENGINE0, RES_COUNT = RES_ENGINE0 + NPART };
 static struct { void *ptr; uint32_t size; } resource[RES_COUNT];
 static uint32_t resource_peak, resource_failures;
 #ifdef FM1_IRQ_TARGET
@@ -52,9 +51,8 @@ static uint32_t resource_host_cache[7168], resource_host_cache_enabled;
 #define _resource_retained_end ((uint8_t *)(resource_host_retained + RESOURCE_HOST_RETAINED_WORDS))
 #define RESOURCE_MAIN_CAPACITY ((uint32_t)sizeof resource_host)
 #endif
-/* UI histories use demand allocations, reclaimable by audio. The entire
- * validated cache bank is shared; guaranteed SRAM remains usable if cache
- * startup fails. No UI partition is held while its history is unused. */
+/* The entire validated cache bank is available to engines; guaranteed SRAM
+ * remains usable if cache startup fails. No UI partition is reserved. */
 #define UI_CACHE_BYTES 0u
 static const struct { uint8_t *start, *end; } resource_banks[] = {
     { _resource_data_start, _resource_data_end },
@@ -77,7 +75,7 @@ static uint32_t resource_used(void)
     return n;
 }
 static void resource_release(uint32_t id) { resource[id].size = 0; }
-static __attribute__((noinline)) void *resource_allocate_impl(uint32_t id, uint32_t bytes, int preserve)
+static __attribute__((noinline)) void *resource_allocate(uint32_t id, uint32_t bytes)
 {
     if (bytes > RESOURCE_CAPACITY) { resource_failures++; return 0; }
     uint32_t size = (bytes + 3u) & ~3u;
@@ -99,16 +97,7 @@ static __attribute__((noinline)) void *resource_allocate_impl(uint32_t id, uint3
             }
             if (next == at) {
                 void *p = (void *)at;
-                uint32_t keep=preserve?resource[id].size:0u;
-                if(keep>size)keep=size;
-                /* Arena blocks are word aligned. Volatile keeps the
-                 * freestanding compiler from replacing overlap-safe loops
-                 * with a libc memmove that the firmware does not provide. */
-                volatile uint32_t *to=p;
-                const volatile uint32_t *from=resource[id].ptr;
-                if((uintptr_t)p<(uintptr_t)from){for(uint32_t j=0;j<keep/4u;j++)to[j]=from[j];}
-                else if((uintptr_t)p>(uintptr_t)from){for(uint32_t j=keep/4u;j--;)to[j]=from[j];}
-                memset((uint8_t *)p+keep,0,size-keep);
+                memset(p,0,size);
                 resource[id].ptr = p; resource[id].size = size;
                 uint32_t used = resource_used();
                 if (used > resource_peak) resource_peak = used;
@@ -120,28 +109,10 @@ static __attribute__((noinline)) void *resource_allocate_impl(uint32_t id, uint3
     resource_failures++;
     return 0;                          /* leave an existing allocation intact */
 }
-static void *resource_allocate(uint32_t id,uint32_t bytes)
-{return resource_allocate_impl(id,bytes,0);}
-/* History alone opts into preserving resize. No other live handle moves;
- * failure preserves the original allocation and all its bytes. */
-static void *resource_resize(uint32_t id,uint32_t bytes)
-{
-    if(bytes>RESOURCE_CAPACITY){resource_failures++;return 0;}
-    uint32_t size=(bytes+3u)&~3u;
-    if(!size){resource_release(id);return 0;}
-    if(size<=resource[id].size){resource[id].size=size;return resource[id].ptr;}
-    return resource_allocate_impl(id,bytes,1);
-}
-
 /* Keep the already allocated path cheap in every engine accessor. */
 static inline void *resource_get(uint32_t id, uint32_t bytes)
 {
     uint32_t size=(bytes+3u)&~3u;
     if(size && size==resource[id].size)return resource[id].ptr;
-    void *p=resource_allocate(id,bytes);
-    if(!p && bytes && id!=RES_LOAD_UNDO && resource[RES_LOAD_UNDO].size){
-        resource_release(RES_LOAD_UNDO);
-        p=resource_allocate(id,bytes);
-    }
-    return p;
+    return resource_allocate(id,bytes);
 }

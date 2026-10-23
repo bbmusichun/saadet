@@ -34,10 +34,16 @@ static int16_t settings_glo[4];                     /* ext.glo: project.c GLO_KE
  * last byte SAFETY OFF. Untagged bytes default to OFF; explicit ON is tagged too. Defaults store zeros. */
 #define VOICE_PREF_ROW 8u
 #define VOICE_PREF_BYTE 8u
-/* Retired DIGITAL row bytes 24..27: FQ, version 1, quality 1..2.
- * Untagged/unknown records keep Classic; no settings/project layout change. */
+/* Retired DIGITAL row bytes 24..27: B, version 1, full-charge ADC little-endian.
+ * Old FQ/untagged records carry no battery reference; the PER5 layout stays fixed. */
 #define FX_PREF_ROW 1u
 #define FX_PREF_BYTE 24u
+static uint16_t battery_full_of(const persist_t *p)
+{
+    const uint8_t *b = p->favorites.factory[FX_PREF_ROW] + FX_PREF_BYTE;
+    uint32_t raw = (uint32_t)b[2] | (uint32_t)b[3] << 8;
+    return b[0] == 'B' && b[1] == 1u && raw > 0u && raw <= 1023u ? (uint16_t)raw : 0u;
+}
 /* Retired DIGITAL row, outside all live preset/settings bits. Kept by older
  * Melodee builds along with the other favorites; no layout or magic change. */
 static const uint8_t SETTINGS_OWNER[4] = {'M', 'D', 'S', 1};
@@ -62,6 +68,7 @@ static int settings_legacy_valid(const persist_t *p)
 static int settings_import(persist_t *p, int n)
 {
     if (n != (int)sizeof *p || p->magic != PERSIST_MAGIC) return 0;
+    settings_batt_full = battery_full_of(p);
     uint32_t work=p->ext.usb_off,points=(work>>8)&255u;
     settings_budget=(int16_t)(((work&0xffff0000u)==WORK_BUDGET_TAG && points>=8u && points<=32u)?points:VOICE_BUDGET_DEFAULT);
     uint32_t mode = work <= 3u || (work & 0xFFFF00FCu) == WORK_BUDGET_TAG ? work & 3u : 0u;
@@ -133,6 +140,10 @@ static void settings_export(persist_t *p)
     {
         uint8_t *q = p->favorites.factory[FX_PREF_ROW] + FX_PREF_BYTE;
         memset(q, 0, 4);
+        if (settings_batt_full > 0u && settings_batt_full <= 1023u) {
+            q[0] = 'B'; q[1] = 1;
+            q[2] = (uint8_t)settings_batt_full; q[3] = (uint8_t)(settings_batt_full >> 8);
+        }
     }
 #if MELODEE_USB_AUDIO
     p->ext.usb_off = ua_off;
