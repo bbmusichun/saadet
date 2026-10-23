@@ -58,7 +58,7 @@ overlay and leaves their original sources unchanged.
 | [Dexed](https://github.com/asb2m10/dexed) | `fea2f0f0f2c397799f59b27eb11c038cd34b22c5` | Only explicitly Apache-2.0 MSFA files provide retained synthesis/data references: `source/msfa/{dx7note.cc,env.cc,lfo.cc,pitchenv.cc,controllers.h,porta.cpp}` and MSFA kernel/table files. `source/engine/EngineMkI.cpp` and `EngineOpl.cpp` are GPL and are not retained implementations. |
 | [fm1-base](https://github.com/charlesvestal/fm1-base) | `93bee3fe9def08127dd5dff638df5bd57cebcc80` | `include/fastmath.h`, MPL-2.0, Charles Vestal. Imported at `firmware/src/x0x/fastmath.h` with Kerem's unsigned exponent-bit adjustment. The original Charles attribution is restored; no Leo authorship is inferred from shared licensing. |
 | fm1-base platform dependency | `6c0b47e4bfc56fd3cd5b34463210d0e7e0ce0431` | MPL-2.0. Updated for optional m-bootloader installation; the earlier fastmath import above retains its original source record. |
-| felucca-bsp nested in that base | `0f08fcaa6610b7cabe8cfdcc5c50d6facdae0e7f` | The BSP linked by the experimental `platform/` target, including bootloader-only OTA staging and the loader progress screen; the legacy build is separate. |
+| felucca-bsp nested in that base | `0f08fcaa6610b7cabe8cfdcc5c50d6facdae0e7f` | The BSP linked by the `platform/` target, including bootloader-only OTA staging and the loader progress screen; the legacy build is retired. |
 | [m-bootloader](https://github.com/jvitkauskas/m-bootloader/releases/tag/v1.2) | v1.2, source `22e2559906f9fc4e077f2d6aee20bf332300439e` | MIT, Julius Vitkauskas. Unmodified FM-1 `.fwsc` and `.boot` from the pinned base; SHA-256 checked against the author's release. Its full MIT notice accompanies the prepared artifacts. |
 | [MAME uPD933](https://github.com/mamedev/mame/blob/master/src/devices/sound/upd933.cpp) | Existing port; see `LICENSING.md` and `docs/CZ1_SYSEX.md` | BSD-3-Clause, Devin Acker. Existing native phase/envelope/amplitude implementation remains, with its notices. No new MAME import was made in this step. |
 
@@ -262,7 +262,7 @@ Audit outcome and remaining release validation:
 2. Measure the move from the legacy CRSTUB/update layout to the base's entry
    at `0x02000120`, including interrupted updates, reboot/recovery and saved
    library/state retention. The old ChoralRoot-derived loader and Andre
-   Rezemini's retained `firmware/src/ota.c` remain only in the legacy build.
+   Rezemini's retained `firmware/src/ota.c` remain only in retired source.
 3. Measure actual FM-1 radio calibration/startup, connection loss, simultaneous
    USB/TRS/BLE traffic, physical keys/LEDs/display, native SysEx/editor/backup,
    USB host-volume and format changes, sustained polyphony and DMA deadlines.

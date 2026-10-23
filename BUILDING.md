@@ -112,7 +112,8 @@ bootloader replacement itself can still require the RP2040 USB_KEY recovery
 route. Use the app updater for subsequent Saadet updates; do not raw-flash the
 package's synthetic flash head over the device's preserved boot area.
 
-The port is experimental and private. BLE is a MIDI peripheral advertised as
+The 0.1.0 package is prepared locally for public release, with final hardware acceptance
+tracked in RELEASE_NOTES.md. BLE is a MIDI peripheral advertised as
 **Saadet** in its GAP name and startup diagnostics, with
 keyboard output and channel-message input. The default also enables BLE central
 mode for one external MIDI device alongside one incoming phone/computer link.

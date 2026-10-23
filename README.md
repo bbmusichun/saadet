@@ -91,7 +91,8 @@ and is the firmware build (`./build.sh`); the original platform is retired.
 BLE, USB-only and host simulator targets are available. The port is still experimental. It builds
 locally and has simulator coverage. After recovery from a failed first boot, the corrected
 firmware now boots on the FM-1, answers USB MIDI/editor requests and reports
-BLE advertising. Pairing and physical audio/control validation remain pending.
+BLE advertising. An earlier build completed iPhone pairing and a MIDI subscription;
+physical audio/control and BLE acceptance of the exact release package remain pending.
 The platform also prepares m-bootloader 1.2 for a separate, checked installation
 to add recovery at power-on; see the installation order in BUILDING.md.
 See [BUILDING.md](BUILDING.md#fm1-base--ble-port-the-default-build) and
