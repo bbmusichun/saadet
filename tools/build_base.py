@@ -53,8 +53,15 @@ if "--host" not in sys.argv and "--web" not in sys.argv:
         stem+="-"+sys.argv[sys.argv.index("--release")+1]
     run([sys.executable,ROOT/"tools/check_base.py",ROOT/"platform/build"/(stem+".fwsc")])
     version = sys.argv[sys.argv.index("--release")+1] if "--release" in sys.argv else None
-    if version and ("SAADET v" + version.upper()).encode() not in (ROOT/"platform/build/saadet.bin").read_bytes():
-        raise SystemExit("The release image does not advertise its requested version in editor INFO.")
+    if version:
+        # The optimizer expands the short editor INFO string into byte stores,
+        # so it need not survive as a contiguous literal in the linked image.
+        editor_ir = (ROOT/"platform/build/o2/instrument.ll").read_text()
+        image = (ROOT/"platform/build/saadet.bin").read_bytes()
+        if ('c"SAADET v' + version.upper() + r'\00"') not in editor_ir:
+            raise SystemExit("The compiled editor INFO does not advertise its requested version.")
+        if ("SAADET " + version.upper()).encode() not in image:
+            raise SystemExit("The release image announcement does not match its requested version.")
     from fm1_install import product_of
     package = ROOT/"platform/build"/(stem+".fwsc")
     record_build(ROOT, package, before, version, product_of(package.read_bytes()), "--no-ble" not in sys.argv,
