@@ -1,0 +1,24 @@
+{
+  "source_repository": "https://github.com/keremimo/saadet",
+  "source_commit": "991b73ba88f34f2e45fd9e16c1d1a8f169129a94",
+  "source_state": "clean",
+  "capture_method": "Native firmware drawing code through tests/ui_harness.c; host-rendered, not physical LCD photographs.",
+  "native_dimensions": [
+    240,
+    240
+  ],
+  "screenshot_scaling": "2x nearest-neighbour, no retouching",
+  "screenshots": [
+    "home_chord",
+    "p5_filter",
+    "arp",
+    "library_clean",
+    "save_clean",
+    "ble_advertising"
+  ],
+  "validation": [
+    "tests/ui_test.c passed",
+    "tests/ui_ble_test.c passed",
+    "clean library/save capture layout lint passed"
+  ]
+}
