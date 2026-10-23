@@ -221,6 +221,7 @@ static int ed_flash_stop(void) { return transport_busy(); }
 #include "editor_native.c"
 #include "editor_library.c"
 #include "editor_prophet.c"
+#include "editor_j106.c"
 
 static int ed_args_ok(uint32_t cmd, const uint8_t *a, uint32_t n)
 {
@@ -261,6 +262,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         return;
     ed_begin(cmd);
     if(ed_prophet_handle(cmd,a,na)){ed_send();return;}
+    if(ed_j106_handle(cmd,a,na)){ed_send();return;}
 
     if (ed_ui_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_library_handle(cmd,a,na)) { ed_send(); return; }
@@ -459,6 +461,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(0x35);ed_b(1);ed_b(ENGI_PROPHET);ed_b(USER_GENERAL);ed_b(USER_NATIVE_FM);ed_b(USER_NATIVE_CZ);ed_b(USER_NATIVE_P5);ed_b(0);ed_b(1); /* Prophet/native stable namespaces */
         ed_b(0x4e); ed_b(1); ed_b(NATIVE_FM_SLOTS); ed_b(0); ed_b(NATIVE_CZ_SLOTS&127u); ed_b(NATIVE_CZ_SLOTS>>7); /* native user pools, command 78 */
         ed_b(0x55);ed_b(1);ed_b(UP_SLOTS&127u);ed_b(UP_SLOTS>>7); /* shared library */
+        ed_b(0x4a);ed_b(1);ed_b(ENGI_J106);ed_b(USER_NATIVE_J106);ed_b(ED_J106);ed_b(J106_FIELDS); /* JUNO-106: command 96 */
         break;
     case ED_GET:
     case ED_SET:
@@ -752,6 +755,7 @@ static void ed_service(void)
     if(!ota_frame_get(&p,&n))return;
     if(general_sysex_frame(p,n)){ota_frame_done();return;}
     if(p5_native_frame(p,n)){ota_frame_done();return;}
+    if(j106_native_frame(p,n)){ota_frame_done();return;}
     if (n < 4u || p[0] != ED_HDR0 || p[1] != ED_HDR1 || p[2] != ED_HDR2)
         return;
     ed_w.last_ms = fm1_ms;                                 /* any request keeps WATCH alive */

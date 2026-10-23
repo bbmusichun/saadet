@@ -166,6 +166,11 @@ static void pic_build(ui_vm_t *v, const ui_stop_t *st)
         break;
     }
     case PIC_P5ENV: {                                     /* the Prophet's filter (arg 0) or amp envelope, 0..127 */
+        if (st->arg == 2u) {                              /* (arg 2: the JUNO-106's one envelope) */
+            const uint8_t *j = j106_patch_of(t)->raw;
+            v->pv[0] = j[J106_ENV_A]; v->pv[1] = j[J106_ENV_D]; v->pv[2] = j[J106_ENV_S]; v->pv[3] = j[J106_ENV_R];
+            break;
+        }
         const uint8_t *p = p5_patch_of(t)->raw;
         uint32_t a = st->arg ? P5_ATTACK_AMP : P5_ATTACK_FILTER;
         v->pv[0] = p[a]; v->pv[1] = p[a + 2u]; v->pv[2] = p[a + 4u];
@@ -173,7 +178,9 @@ static void pic_build(ui_vm_t *v, const ui_stop_t *st)
         break;
     }
     case PIC_FILTER:                                      /* the cut 0..127 and the resonance 0..127 (SID: arg 1) */
-        if (st->arg) {
+        if (st->arg == 2u) {                              /* (JUNO-106) */
+            v->pv[0] = j106_patch_of(t)->raw[J106_VCF_FREQ]; v->pv[1] = j106_patch_of(t)->raw[J106_VCF_RES];
+        } else if (st->arg) {
             v->pv[0] = t->p[P_E4]; v->pv[1] = (int16_t)(t->p[P_E5] * 127 / 15);
         } else {
             v->pv[0] = p5_patch_of(t)->raw[P5_CUTOFF]; v->pv[1] = p5_patch_of(t)->raw[P5_RESONANCE];

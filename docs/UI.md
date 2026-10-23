@@ -1,7 +1,7 @@
 # The Saadet panel
 
-Saadet is one instrument with three engines: P5 (Prophet-5), FM6 (DX7), and CZ-1. The screen takes on the colour of
-the engine that is playing. Every button opens a place, and each place stays where you left it.
+Saadet is one instrument with four engines: P5 (Prophet-5), FM6 (DX7), CZ-1 and J106 (JUNO-106). The screen takes on
+the colour of the engine that is playing. Every button opens a place, and each place stays where you left it.
 
 ## Controls
 
@@ -22,11 +22,11 @@ keys, and pressing a key jumps to that entry. While a button is held, the keys d
 | Button | Place | Inside |
 | --- | --- | --- |
 | HOME | HOME | The sound's name, engine and slot. Under the name, the chord you're playing and its notes (a slash chord when the lowest note isn't the root); after you let go it stays, faded, until you play again. Before you play anything it shows the key. A keyboard from C2 to B5 marks the scale, with the sounding notes lit. The status line shows the arp, chord keys and latch. Turn K1–K4 to change the macros. Hold HOME to list your favourites on the keys; pressing a key plays that favourite. |
-| FX | LIBRARY | Lists: FAVOURITES, USER, P5, FM6, CZ-1. K1 picks a sound (it loads at rest), K2 stars it as a favourite. User sounds also have K4 DELETE. |
+| FX | LIBRARY | Lists: FAVOURITES, USER, P5, FM6, CZ-1, J106. K1 picks a sound (it loads at rest), K2 stars it as a favourite. User sounds also have K4 DELETE. |
 | SEL | SCALE | Scale, root, key mode, shift; the MPC degree. |
-| ENV | ENV | The engine's own envelopes (P5 filter and amp; FM6 pitch EG; the CZ-1's six 8-stage envelopes), then the common MOD ENV. |
-| LFO | LFO | The engine's own LFO (P5 LFO, FM LFO, CZ-1 vibrato), the common LFO, and the four-route matrix. |
-| EDIT | EDIT | The engine's own panel. P5: oscillators, mixer, filter, poly mod, wheel mod, play. FM6: voice and algorithm, OP1–OP6, macros, function settings. CZ-1: tone, detune, line 1 and line 2. A value that has no effect on the sound as it stands is shown dim, but you can still edit it. |
+| ENV | ENV | The engine's own envelopes (P5 filter and amp; FM6 pitch EG; the CZ-1's six 8-stage envelopes; the J106's one ADSR with its VCA mode, VCF amount and polarity), then the common MOD ENV. |
+| LFO | LFO | The engine's own LFO (P5 LFO, FM LFO, CZ-1 vibrato, J106 LFO rate, delay and its DCO and VCF depths), the common LFO, and the four-route matrix. |
+| EDIT | EDIT | The engine's own panel. P5: oscillators, mixer, filter, poly mod, wheel mod, play. FM6: voice and algorithm, OP1–OP6, macros, function settings. CZ-1: tone, detune, line 1 and line 2. J106: DCO waves and modulation, VCF cutoff and modulation (with the HPF), VCA mode, level and chorus. A value that has no effect on the sound as it stands is shown dim, but you can still edit it. |
 | GLO | GLOBAL | Tempo, output, tuning, MIDI channels, voice budget, display, erase everything. |
 | SAVE | SAVE | Choose a slot, set the name letter by letter (CURSOR, LETTER), and star it if you like. Press SAVE again to store. |
 | ARP | ARP | Pattern and feel. Its LED flashes with the arp's notes. |

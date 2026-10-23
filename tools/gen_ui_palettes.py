@@ -19,7 +19,7 @@ tag. Every token is stored (RGB565); only text and edges are blended at run time
   OFF    a page dot not shown, beat ticks
   LINE   a bar's track, rules
   WELL   an unlit key, an empty slot
-  ENG    the engines' colours: PROPHET, FM6, CZ-1, SID
+  ENG    the engines' colours: PROPHET, FM6, CZ-1, JUNO-106 (retired SID's)
 Outside the theme: the crash screen's fixed red.
 GRAY (R = G = B in every token) is compiled into the host tests only (UI_TEST_PALETTE): a screen drawn in it must stay
 gray, which proves the drawing takes every colour from the tokens.

@@ -16,7 +16,9 @@ been cleared for distribution or relicensed.
   dedicated fixtures. Stored engine ID 3 is reserved and retired; it is never
   reassigned. Existing SID library entries remain unsupported. Last-sound and
   backup validation reject SID synth state rather than playing a different engine.
-- The three selectable engines are Prophet (19), FM6 (12) and CZ-1 (15).
+- The selectable engines are Prophet (19), FM6 (12), CZ-1 (15) and, since
+  23 October 2026, JUNO-106 (21; MPL-2.0, see `LICENSING.md`). ID 20 stays
+  reserved: it is the Prophet's user namespace in the editor protocol.
 - PHASE/CrispyZebra is removed. Native CZ-1 has its own runtime state and note
   reset and keeps the BSD-3-Clause uPD933 renderer. Shared sine data and maths
   have their own provenance below. Native 144-byte tones remain unchanged. History checks attribute the extracted
@@ -63,11 +65,11 @@ licensed source with attribution and independently written instrument policy.
 
 ## Implemented platform port
 
-`tools/build_base.py` builds the tracked `platform/` integration against the
-pinned dependency revisions. `--no-ble` produces a USB-only comparison target;
-the default includes BLE MIDI. The old platform remains available through
-`build.sh`; its boot stub, loader and OTA transaction are not linked into the
-new target. Only its asset generator is reused as a build-time tool.
+`tools/build_base.py`, which `./build.sh` runs by default, builds the tracked
+`platform/` integration against the pinned dependency revisions. `--no-ble`
+produces a USB-only comparison target; the default includes BLE MIDI. The old
+platform remains available through `./build.sh --legacy`; its boot stub,
+loader and OTA transaction are not linked into the new target. Only its asset generator is reused as a build-time tool.
 
 The port includes:
 

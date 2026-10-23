@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Kerem Kilic (Ellic Studio)
-# Saadet host tests. Run ./build.sh and npm ci --prefix web first.
+# Saadet host tests. Run ./build.sh --legacy and npm ci --prefix web first.
 set -eu
 cd "$(dirname "$0")/.."
 OUT=build/host
@@ -12,11 +12,12 @@ compile() { "$CC" -O2 -DAUDIO_FRAC_BITS=0 -w -Ibuild/gen -Ifirmware/src "tests/$
 run() { name=$1; shift; echo "Checking $name"; "$@" >"$LOG/$name.log" 2>&1 || { cat "$LOG/$name.log"; exit 1; }; }
 # These inherited fixtures express audio magnitudes in Q15. Exercise their
 # original numeric contracts separately from the shipping Q23 path below.
-for name in synth_test prophet_knob_test prophet_test prophet_fast_test fm6_test fm6_ams_test fm6_prepare_test cz_window_test synth_fpu_test mod_route_test mod_spread_test control_prepare_test dual_core_test midi_uart_test input_test boot_stub_test storage_test power_test audio_boot_test usb_audio_test usb_audio_driver_test theme_test text_ref_test settings_test core1_stop_test core1_fallback_test libc_word_test ui_test ui_erase_test; do
+for name in synth_test prophet_knob_test prophet_test prophet_fast_test j106_test fm6_test fm6_ams_test fm6_prepare_test cz_window_test synth_fpu_test mod_route_test mod_spread_test control_prepare_test dual_core_test midi_uart_test input_test boot_stub_test storage_test power_test audio_boot_test usb_audio_test usb_audio_driver_test theme_test text_ref_test settings_test core1_stop_test core1_fallback_test libc_word_test ui_test ui_erase_test; do
  compile "$name"
  if [ "$name" = fm6_test ]; then run "$name" "$OUT/$name" build/fm6_demo; else run "$name" "$OUT/$name"; fi
 done
 compile ota_test
+[ -f build/saadet.fwsc ] || { echo "run_tests.sh: the legacy package build/saadet.fwsc is missing (./build.sh --legacy)"; exit 1; }
 run ota "$OUT/ota_test" build/saadet.fwsc
 run usb-descriptors python3 tests/usb_audio_desc_test.py
 run audio-ram python3 tests/audio_ram_test.py
@@ -30,7 +31,7 @@ run editor-dom node web/test_dom.mjs
 run synth-address "$OUT/synth_asan"
 # Shipping precision: complete synth/persistence integration, numerical
 # contracts, concurrent worker parity, low-level audio and RAM layout.
-for name in synth_test synth_fpu_test dual_core_test audio_precision_test; do
+for name in synth_test synth_fpu_test dual_core_test audio_precision_test j106_test; do
  "$CC" -O2 -w -Ibuild/gen -Ifirmware/src "tests/$name.c" -lm -pthread -o "$OUT/native-$name"
  run "native-$name" "$OUT/native-$name"
 done
@@ -38,4 +39,6 @@ done
 # upstream phase code uses signed shifts. Keep bounds and overflow checking on.
 "$CC" -O1 -g -w -fsanitize=address,undefined -fno-sanitize=shift,alignment -fno-sanitize-recover=undefined -fno-omit-frame-pointer -Ibuild/gen -Ifirmware/src tests/audio_precision_test.c -lm -pthread -o "$OUT/precision_asan"
 run precision-address-overflow "$OUT/precision_asan"
+"$CC" -O1 -g -w -DAUDIO_FRAC_BITS=0 -fsanitize=address,undefined -fno-sanitize=shift,alignment -fno-sanitize-recover=undefined -fno-omit-frame-pointer -Ibuild/gen -Ifirmware/src tests/j106_test.c -lm -pthread -o "$OUT/j106_asan"
+run j106-address-overflow "$OUT/j106_asan"
 printf '%s\n' 'ALL HOST TESTS PASSED'

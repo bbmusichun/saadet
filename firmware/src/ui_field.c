@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Kerem Kilic (Ellic Studio) */
 /* A field: one value a knob edits, wherever it lives (the selected part's parameters, the song's, an engine's own panel:
- * a Prophet's, an FM6 operator's or voice's, a CZ-1 tone's; the device's settings; the library and SAVE, ui_lib.c). It
+ * a Prophet's, an FM6 operator's or voice's, a CZ-1 tone's, a JUNO-106 tone's; the device's settings; the library and
+ * SAVE, ui_lib.c). It
  * is read, stepped and written the way the web editor does it (editor.c SET, its native pages, its preferences), so a
  * change from the panel and one from the editor are the same change, and the editor sees it. */
-enum { FK_NONE, FK_TRACK, FK_GLOBAL, FK_P5, FK_FM6OP, FK_FM6V, FK_FM6FN, FK_CZ, FK_DEV, FK_LIB, FK_BLE };
+enum { FK_NONE, FK_TRACK, FK_GLOBAL, FK_P5, FK_FM6OP, FK_FM6V, FK_FM6FN, FK_CZ, FK_DEV, FK_LIB, FK_BLE, FK_J106 };
 typedef struct { uint8_t kind, id; const char *label; uint8_t sub; } ui_field_t;   /* label: 0 = the descriptor's own;
                                                                                      * sub: FM6's operator 0..5 (OP1..) */
 /* the device's settings (kept with the settings, not the sound): screen sleep, the LEDs' level, the voice budget */
@@ -42,6 +43,7 @@ static const param_desc_t *field_desc(const ui_field_t *f)
     case FK_FM6V: if (e == ENGI_FM6 && f->id >= FP_PR1 && f->id < FP_NAME) d = &FM6_GD[f->id - FP_PR1]; break;
     case FK_FM6FN: if (e == ENGI_FM6 && f->id < FM6_NFN) d = &FM6_FD[f->id]; break;
     case FK_CZ: if (e == ENGI_CZ && f->id < LCZ_NP && CZ_PD[f->id].label) d = &CZ_PD[f->id]; break;
+    case FK_J106: if (e == ENGI_J106 && f->id < J106_FIELDS) d = &J106_PANEL[f->id]; break;
     case FK_DEV: d = f->id < DEV_N ? &DEV_D[f->id] : 0; break;
     case FK_LIB: d = lib_desc(f->id); break;
 #ifdef SAADET_FM1_BASE
@@ -76,6 +78,7 @@ static int32_t field_get(const ui_field_t *f)
         ui_cz_panel(p);
         return p[f->id % LCZ_NP];
     }
+    case FK_J106: return j106_get(TSEL, f->id);
     case FK_DEV: return f->id == DEV_SLEEP ? (int32_t)scr_get() : f->id == DEV_LIGHTS ? settings_lights : settings_budget;
     case FK_LIB: return lib_get(f->id);
 #ifdef SAADET_FM1_BASE
@@ -92,6 +95,7 @@ static int field_active(const ui_field_t *f)
     switch (f->kind) {
     case FK_P5: return p5_ed_active(TSEL, f->id);
     case FK_CZ: return cz_ed_active(cz_patch[ui_tr()].raw, f->id);
+    case FK_J106: return j106_ed_active(TSEL, f->id);
     case FK_FM6OP: return f->id == FP_OP || ((fm6_on[ui_tr()] >> (5u - f->sub % 6u)) & 1u);
     }
     return 1;
@@ -147,6 +151,9 @@ static int field_step(const ui_field_t *f, int32_t steps)
         break;
     case FK_P5:
         p5_edit_value(TSEL, f->id, p5_panel_raw(TSEL, f->id, v));
+        break;
+    case FK_J106:                                     /* (an edit, not a load: the notes sounding follow it) */
+        j106_edit_value(TSEL, f->id, v);
         break;
     case FK_FM6OP:                                    /* (an edit, not a load: the notes sounding follow it) */
         if (f->id == FP_OP) {

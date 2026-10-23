@@ -128,7 +128,7 @@ static struct {
 #define T_LINE ux.line           /* a bar's track, rules */
 #define T_WELL ux.well           /* an unlit key, an empty slot */
 #define T_THEME ux.theme         /* the sound's engine: the value being turned, curves, the engine's tag */
-#define T_ENG(k) UI_PALETTES[ux.pal].eng[(k) & 3u]   /* engine k's colour: 0 PROPHET, 1 FM6, 2 CZ-1, 3 SID */
+#define T_ENG(k) UI_PALETTES[ux.pal].eng[(k) & 3u]   /* engine k's colour: 0 PROPHET, 1 FM6, 2 CZ-1, 3 JUNO-106 (SID's) */
 #define NPALETTES UI_NPALETTES
 #ifdef UI_TEST_PALETTE
 #define UI_PAL_ENTRIES (UI_NPALETTES + 1u)   /* + GRAY (host tests: every screen must stay gray in it) */

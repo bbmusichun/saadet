@@ -106,8 +106,9 @@ static uint32_t ed_bk_commit_inner(void)
 #if MELODEE_FLASH
     if(!flash_ok)return 4;
     if(ed_bk_id==32u){
-        if(ed_bk_len!=sizeof(synth_state_t) || !state_valid((const synth_state_t *)raw))return 2;
-        if(st_save(OBJ_SYNTH,raw,ed_bk_len))return 4;
+        /* (a backup from before JUNO-106 restores with the INIT tone) */
+        if(!state_upgrade((synth_state_t *)raw,ed_bk_len) || !state_valid((const synth_state_t *)raw))return 2;
+        if(st_save(OBJ_SYNTH,raw,sizeof(synth_state_t)))return 4;
         syn_saved=0;syn_retry=0;state_boot();return 0;
     }
     if(ed_bk_id==1u){
@@ -147,7 +148,7 @@ static uint32_t ed_bk_write(const uint8_t *a, uint32_t n)
     if (a[0] == 0u) {
         if (n != 12u || a[6] > 15u || a[11] > 15u) return 1;
         uint32_t len = ed_bk_r32(a + 2);
-        if(len>ED_BK_MAX || (a[1]==32u && len!=sizeof(synth_state_t)) ||
+        if(len>ED_BK_MAX || (a[1]==32u && len!=sizeof(synth_state_t) && len!=SYN_SIZE_V1) ||
             (a[1]==1u && (len<sizeof(persist_t) || len>sizeof set_rec)) ||
             (ed_bk_preset_bank(a[1])<UP_BANKS && len && len!=sizeof(up_disk_bank_t)))return 1;
         ed_bk_valid = 0; ed_bk_put = 1; ed_bk_id = a[1]; ed_bk_len = len; ed_bk_gen = ++transfer_gen;

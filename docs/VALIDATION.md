@@ -1,5 +1,54 @@
 # Saadet validation — 23 October 2026
 
+## JUNO-106 engine and the BLE default build
+
+Source: `ui-reset` with the uncommitted JUNO-106 engine (MPL-2.0, see
+`LICENSING.md`) and `./build.sh` now building the fm1-base BLE package. No
+device was flashed and no repository commit or publication was made.
+
+Host checks (`tests/j106_test.c`, in the Q15 fixtures, the shipping Q23 build
+and under address/undefined-behaviour sanitizers):
+
+- Patch messages: 500 random frames round-trip every byte; short, foreign,
+  out-of-channel and 8-bit frames are refused atomically; `41 30 .. pp` is named
+  by its A11–B88 label and `41 31` MANUAL. The switch bits follow the published
+  layout (SW1 82 = chorus I, saw, no pulse, 8'; inverted HPF bits), and every
+  switch field edits only its own bits.
+- Voice: A4 at 8' measures 440.0 Hz, 16' 220.0 Hz, 4' 880.0 Hz, the sub alone
+  220.0 Hz. Attack 0 completes in 2.2 ms and 127 in 3.01 s; release to 1 %
+  takes 2.2 ms at 0 and 12.05 s at 127. GATE closes within a few blocks. Full
+  resonance self-oscillates with the mixer shut; resonance 80 stays silent.
+  Every starter tone sounds, stays bounded and ends.
+- Part: chorus I and II produce a decorrelated stereo pair through the mixer;
+  off is mono. For a low note the HPF orders 0 > 1 > 2 > 3.
+- Library, state and editor: store/load/import in shared slots, 8-bit records
+  refused, favourites in the tagged row, the last state with the tone, and a
+  pre-JUNO-106 state and backup upgrading with the INIT tone. Command 96 GET,
+  PUT, field, range refusal and name; INFO tag `4A 01`; favourites namespaces.
+  The sanitizer run found and led to the fix of a one-byte over-read in the GET
+  reply's name.
+- Existing suites with JUNO-106 included where they iterate every engine
+  (`synth_test`, `ui_test` layout lint of every page, `audio_precision_test`);
+  `web/test_synth.mjs` covers the web tone format, INFO and library kind 4.
+- The base simulator steps PROPHET, FM6, CZ-1 and JUNO-106 with ALGORITHM;
+  JUNO-106 peaks at -13.4 dBFS (the others -11.4 to -15.0).
+
+`tests/run_tests.sh` (with the new sanitizer step) ended **ALL HOST TESTS
+PASSED**; `tests/run_base_tests.sh` ended **ALL BASE PORT TESTS PASSED**. Every
+target build passed its layout checks; the audio RAM graph includes the
+JUNO-106 voice, block, post and stereo stages.
+
+| Build | Package | App image | Low RAM | Resident audio | Engine arena | SHA-256 |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `./build.sh` (BLE) | `platform/build/saadet.fwsc` | 550,580 B | 93,452 B | 84,144 B | 120,896 B | `21fe1a3f…629b` |
+| `./build.sh --no-ble` | `platform/build/saadet-usb.fwsc` | 414,392 B | 45,720 B | 83,664 B | 145,952 B | `31fb963c…71f6` |
+| `./build.sh --legacy` | `build/saadet.fwsc` | 284,140 B | 37,272 B | — | — | `4ab985b1…0bb3` |
+
+Unmeasured: the engine's sound against a Juno-106, its CPU cost on the FM-1
+(the 2-unit voice charge and the batch cost reuse estimates), chorus/HPF
+calibration, and SysEx from a real instrument. TRS MIDI input drops SysEx, so
+patch and control messages reach Saadet over USB only.
+
 ## Direct BLE MIDI devices and forgetting
 
 The default BLE target now enables the base's simultaneous central/peripheral

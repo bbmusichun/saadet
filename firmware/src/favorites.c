@@ -15,6 +15,8 @@
  *          GLO_SELECT), 24 bit 5 UNUSED TRACKS HIDE (ui.c TRACKS_HIDE); free: 24 bits 6..7
  *   row 0 bytes 2..27 hold all 201 Prophet factory stars, tagged in bytes 28..31;
  *         bytes 0..1 held retired ANALOG's stars.
+ *   row 3 (SID, retired) bytes 0..27 hold the JUNO-106 starter tones' stars, tagged in bytes 28..31; an untagged
+ *         row (SID's old stars) is cleared at the first star.
  *   row 1 bytes 24..27 hold tagged FX RATE (FQ + version 1 + quality); 28..31 mark validated Melodee settings (MDS + version 1).
  * Rows 1 (DIGITAL, retired), 4 (SAMPLE) and 13 (SLICE, built with MELODEE_SLICE) may hold Felucca 1.0's stars; 6, 7, 9 are LEGACY_EXTRAS' engines. Native FM6 slots: row 12 bits 24..87. */
 typedef struct {
@@ -51,10 +53,30 @@ static int scale_favorite_set(uint32_t scale, int on)
 }
 static int p5_favorite_has(uint32_t slot,int factory);
 static int p5_favorite_set(uint32_t slot,int on,int factory);
+#define J106_STAR_CAP 224u                       /* row 3 bytes 0..27: room for the JUNO-106 starter tones */
+static int j106_favorite_valid(void)
+{
+    const uint8_t *row = favorites.factory[3];
+    return row[28] == 'J' && row[29] == '6' && row[30] == 'F' && row[31] == 1u;
+}
+static int j106_favorite_has(uint32_t k)
+{
+    return k < J106_STAR_CAP && j106_favorite_valid() && (favorites.factory[3][k / 8u] >> (k % 8u) & 1u);
+}
+static int j106_favorite_set(uint32_t k, int on)
+{
+    uint8_t *row = favorites.factory[3];
+    if (k >= J106_STAR_CAP || j106_favorite_has(k) == !!on) return 0;
+    if (!j106_favorite_valid()) { memset(row, 0, 28u); row[28] = 'J'; row[29] = '6'; row[30] = 'F'; row[31] = 1u; }
+    if (on) row[k / 8u] |= (uint8_t)(1u << (k % 8u));
+    else row[k / 8u] &= (uint8_t)~(1u << (k % 8u));
+    return 1;
+}
 static int favorite_has(uint32_t engine, uint32_t preset)
 {
     if(engine==ENGI_PROPHET)return p5_favorite_has(preset,1);
-    if(engine==USER_NATIVE_P5 || engine==USER_NATIVE_FM || engine==USER_NATIVE_CZ)engine=USER_GENERAL;
+    if(engine==ENGI_J106)return j106_favorite_has(preset);
+    if(engine==USER_NATIVE_P5 || engine==USER_NATIVE_FM || engine==USER_NATIVE_CZ || engine==USER_NATIVE_J106)engine=USER_GENERAL;
     if (engine == USER_GENERAL)
         return up_favorite(preset);
     return engine < NENGINES && engine < 16u && preset < 256u &&
@@ -63,7 +85,8 @@ static int favorite_has(uint32_t engine, uint32_t preset)
 static int favorite_set(uint32_t engine, uint32_t preset, int on)
 {
     if(engine==ENGI_PROPHET)return p5_favorite_set(preset,on,1);
-    if(engine==USER_NATIVE_P5 || engine==USER_NATIVE_FM || engine==USER_NATIVE_CZ)engine=USER_GENERAL;
+    if(engine==ENGI_J106)return j106_favorite_set(preset,on);
+    if(engine==USER_NATIVE_P5 || engine==USER_NATIVE_FM || engine==USER_NATIVE_CZ || engine==USER_NATIVE_J106)engine=USER_GENERAL;
     if (engine >= NENGINES || (engine == USER_GENERAL ? preset >= UP_SLOTS : engine >= 16u || preset >= 256u))
         return 0;
     if (favorite_has(engine, preset) == !!on) return 0;

@@ -14,7 +14,9 @@ enum {
     AP_MIX, AP_FX, AP_OUTPUT,                  /* AP_FX: the retired inserts' span, never timed (the tools' order) */
     AP_INPUT_BLANK, AP_INPUT_ROWS, AP_INPUT_SHIFT, AP_INPUT_LED,
     AP_INPUT_KEYS, AP_INPUT_ENCODERS, AP_INPUT_DIAGNOSTICS,
-    AP_BATCH_PREPARE, AP_BATCH_MERGE, AP_BATCH_CPU0, AP_BATCH_CPU1, AP_COUNT
+    AP_BATCH_PREPARE, AP_BATCH_MERGE, AP_BATCH_CPU0, AP_BATCH_CPU1,
+    AP_J106,                                   /* appended: the tools read the spans above by position */
+    AP_COUNT
 };
 #if MELODEE_AUDIO_PROFILE
 #ifndef AUDIO_PROFILE_TICKS

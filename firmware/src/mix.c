@@ -96,10 +96,11 @@ static __attribute__((noinline)) void mix_cache_update(const track_t *t, mix_cac
     mc->lvl=LEVEL_Q12[mc->level & 127];
     mc->gl=4096-(mc->pan>0?mc->pan*64:0);mc->gr=4096+(mc->pan<0?mc->pan*64:0);
 }
-static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_t n)
+/* b: the part, spread_buf its left side; s: half the width, 64 = hard left and right of PAN */
+static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_t n, int32_t s)
 {
     int32_t *d=spread_buf;
-    int32_t lvl=LEVEL_Q12[t->p[P_LEVEL] & 127],pan=t->p[P_PAN],s=(t->p[P_SPRD]+1)>>1;
+    int32_t lvl=LEVEL_Q12[t->p[P_LEVEL] & 127],pan=t->p[P_PAN];
     int32_t pa=clamp(pan-s,-64,63),pb=clamp(pan+s,-64,63);
     int32_t gla=4096-(pa>0?pa*64:0),gra=4096+(pa<0?pa*64:0);
     int32_t glb=4096-(pb>0?pb*64:0),grb=4096+(pb<0?pb*64:0);
@@ -213,10 +214,13 @@ static __attribute__((noinline)) void mix_part(track_t *t,uint32_t n)
         spread_on=t->p[P_SPRD]>0 && (trk_vmode(t)==V_POLY || trk_vmode(t)==V_UNISON);
         rendered=(int)track_render_audio(t,part_buf,n,0);
     }
+    /* the engine's own stereo stage (JUNO-106's chorus) replaces SPREAD: its input is the whole mono part */
+    int32_t width=(t->p[P_SPRD]+1)>>1;
+    if(rendered && ENGINES[t->engine]->stereo && ENGINES[t->engine]->stereo(t,part_buf,spread_buf,n)){spread_on=1;width=64;}
     AP_START(mix_start);
     if(rendered){
         mix_solo(t,part_buf,n);
-        if(spread_on)mix_spread(t,part_buf,n);
+        if(spread_on)mix_spread(t,part_buf,n,width);
         else{
             mix_cache_t *mc=&mix_cache[(uint32_t)(t-trk)];
             if(!mc->valid || mc->level!=t->p[P_LEVEL] || mc->pan!=t->p[P_PAN])mix_cache_update(t,mc);

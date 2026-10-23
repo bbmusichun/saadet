@@ -56,8 +56,11 @@ typedef struct {
     uint8_t fm6[FM6_PACKED], fm6_fn[FM6_NFN];
     cz_patch_t cz;
     p5_patch_t p5;
+    j106_patch_t j106;                            /* appended with JUNO-106: an older state ends before it */
     uint32_t sum;
 } synth_state_t;
+/* the size of a state from before JUNO-106, its sum straight after the Prophet program */
+#define SYN_SIZE_V1 ((((uint32_t)__builtin_offsetof(synth_state_t, j106) + 3u) & ~3u) + 4u)
 static synth_state_t syn_scratch __attribute__((section(".pool")));
 static uint32_t syn_saved;                        /* hash of the state as flash holds it (0: unknown) */
 static uint8_t syn_retry;
@@ -91,7 +94,22 @@ static void state_capture(synth_state_t *s)
     memcpy(s->fm6_fn, fm6_fn[0], FM6_NFN);
     s->cz = cz_patch[0];
     s->p5 = *p5_patch_of(t);
+    s->j106 = *j106_patch_of(t);
     s->sum = syn_hash(s, sizeof *s - 4u);
+}
+/* len bytes of a stored state -> today's (an older one gains the INIT tone, as a fresh JUNO-106 part); 0: neither */
+static int state_upgrade(synth_state_t *s, uint32_t len)
+{
+    uint32_t sum, at = (uint32_t)__builtin_offsetof(synth_state_t, j106);
+    if (len == sizeof *s) return 1;
+    if (len != SYN_SIZE_V1 || s->magic != SYN_MAGIC || s->size != SYN_SIZE_V1) return 0;
+    memcpy(&sum, (const uint8_t *)s + SYN_SIZE_V1 - 4u, 4);
+    if (sum != syn_hash(s, SYN_SIZE_V1 - 4u)) return 0;
+    memset((uint8_t *)s + at, 0, sizeof *s - at);
+    j106_patch_init(&s->j106);
+    s->size = sizeof *s;
+    s->sum = syn_hash(s, sizeof *s - 4u);
+    return 1;
 }
 
 _Static_assert(sizeof(synth_state_t) <= ST_PAYLOAD_MAX, "last state fits its flash object");
@@ -99,7 +117,8 @@ static int state_valid(const synth_state_t *s)
 {
     if (s->magic != SYN_MAGIC || s->size != sizeof *s || s->sum != syn_hash(s, sizeof *s - 4u) ||
         (s->user>UP_SLOTS || s->user_native>1u || s->rsv || s->octave < -3 || s->octave>3 || s->mpc_octave < -3 || s->mpc_octave>3) ||
-        !eng_ok(s->engine) || !cz_patch_valid(s->cz.raw) || !p5_patch_valid(&s->p5) || !fm6_fn_ok(s->fm6_fn)) return 0;
+        !eng_ok(s->engine) || !cz_patch_valid(s->cz.raw) || !p5_patch_valid(&s->p5) || !j106_patch_valid(&s->j106) ||
+        !fm6_fn_ok(s->fm6_fn)) return 0;
     for (uint32_t i = 0; i < FM6_PACKED; i++) if (s->fm6[i] > 127u) return 0;
     return 1;
 }
@@ -112,7 +131,8 @@ static void state_boot(void)
     synth_state_t *s = &syn_scratch;
     track_t *t = &trk[0];
     uint32_t i, e;
-    if (!flash_ok || st_load(OBJ_SYNTH, s, sizeof *s) != (int)sizeof *s || !state_valid(s))
+    int n;
+    if (!flash_ok || (n = st_load(OBJ_SYNTH, s, sizeof *s)) < 0 || !state_upgrade(s, (uint32_t)n) || !state_valid(s))
         return;
     if (bootguard.failed) {
         ui_message("LAST SOUND SKIPPED");
@@ -135,6 +155,7 @@ static void state_boot(void)
     t->user_native = s->user_native;
     cz_patch[0] = s->cz;
     p5_patch[0] = s->p5; p5_ready[0] = 1;
+    j106_patch[0] = s->j106; j106_ready[0] = 1;
     memcpy(fm6_fn[0], s->fm6_fn, FM6_NFN);
     fm6_fn[0][FN_ENGINE] = FM6_MODERN; /* old renderer IDs load through MSFA */
     cz_track_accept(t);

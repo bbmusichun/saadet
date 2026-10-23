@@ -11,8 +11,11 @@ offset by 8192. Replies echo the command. WATCH enables parameter/reload pushes.
 
 INFO identifies `SAADET`, one part, zero steps, synth marker `53 01` (hex), native
 engine capabilities, and shared-library marker `55 01` with a two-byte total of
-384 slots. Engine identities remain Prophet 19, FM6 12, CZ-1 15 and SID 3.
-Reserved identities do not expose additional engines or parts.
+384 slots. Engine identities remain Prophet 19, FM6 12, CZ-1 15 and SID 3;
+JUNO-106 is 21. After the shared-library marker, `4A 01 15 16 60 1A` announces
+JUNO-106: engine 21, favourites namespace 22, command 96 and 26 fields. Engine 20
+is reserved (the Prophet's user namespace). Reserved identities do not expose
+additional engines or parts.
 
 | Commands | Purpose |
 |---|---|
@@ -29,6 +32,7 @@ Reserved identities do not expose additional engines or parts.
 | 81 | Raw battery ADC and full-charge reference |
 | 75–77 | Native CZ transfers and legacy bank metadata where applicable |
 | 95 | Native Prophet transfers |
+| 96 | Native JUNO-106 transfers |
 
 Step, pattern, song, motion and project commands are rejected without a reply.
 Sample uploading is unavailable. Clients must use the advertised capabilities.
@@ -55,10 +59,33 @@ are 0–383; displayed slots are 1–384.
 
 Operations are list (0, at most 16 entries), get (1), put (2), store current sound
 (3), load (4), erase (5) and rename (6). Store/load accept only part zero.
-Native payload kinds are FM6 (1, 128 bytes), CZ-1 (2, 144 bytes), and Prophet
-(3, 138 bytes). Native data is grouped in seven-byte chunks preceded by the
+Native payload kinds are FM6 (1, 128 bytes), CZ-1 (2, 144 bytes), Prophet
+(3, 138 bytes) and JUNO-106 (4, 31 bytes). Native data is grouped in seven-byte chunks preceded by the
 chunk's high-bit mask. Legacy phrase fields in the numeric wire layout remain
 reserved; no phrase is applied or recorded.
+
+## JUNO-106 tones
+
+A tone is 31 bytes: the instrument's sixteen sliders, SW1 and SW2 in patch-message
+order, its patch number (0–127, A11–B88) and a 12-character space-padded name
+(`firmware/src/j106_patch.h`). Command 96 takes operation, part, payload and
+replies operation (GET and PUT reply 1), result, part:
+
+- 0 GET: the tone as a patch message without F0/F7 (`41 30 0n pp`, 18 bytes;
+  n is GLOBAL > MIDI OUT CH), then its name, zero-terminated.
+- 1 PUT: a patch or manual-mode message without F0/F7; the part plays the tone
+  (named `PATCH A11`… or `MANUAL`; use 3 to name it).
+- 2 field edit: field, value. Fields 0–17 are the bytes; 18–25 are range,
+  pulse, saw, chorus (off/I/II), PWM source, VCF envelope polarity, VCA mode
+  and HPF (0–3). A switch edit changes only its own bits.
+- 3 name: 1–12 printable characters.
+- 4 send: the device sends the patch message.
+
+Roland frames outside the editor header are accepted too: a patch (`41 30`) or
+manual-mode (`41 31`) message waits in SAVE for its slots, as other native
+dumps do, and a single-control message (`41 32 0n cc vv`, cc 0–17) edits the
+playing JUNO-106 tone. Only USB delivers SysEx; TRS MIDI input drops it.
+Favourites use namespace 21 for the starter tones and 22 for user slots.
 
 ## Backups
 
@@ -76,6 +103,8 @@ settings next, and current state last. Restore is atomic per object, rather than
 across the whole archive. A USB reset, reused transfer scratch or timeout cancels
 staged data. See `web/fm1backup.js` for the client-side framing and validation.
 
-Saadet state uses `SDS1` and an internal size/FNV checksum. Its flash pair is
+Saadet state uses `SDS1` and an internal size/FNV checksum. It gained the
+JUNO-106 tone at its end; a shorter state from before it still loads and
+restores, with the INIT tone. Its flash pair is
 `0xA0000/0xA1000`, formerly part of Melodee project A; saving Saadet can replace
 that project's data. Melodee backups and project files are not Saadet archives.

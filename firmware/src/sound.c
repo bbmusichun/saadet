@@ -70,6 +70,7 @@ static void apply_preset_to(track_t *t, uint32_t pi)
     t->p[P_ED_FLT] = pr->fenv;
     t->p[P_VOICE] = pr->mono ? V_LEGATO : V_POLY;   /* mono presets keep the legato feel */
     if(t->eng_req==ENGI_PROPHET)p5_preset_loaded(t,pi);
+    if(t->eng_req==ENGI_J106)j106_preset_loaded(t,pi);
     cz_factory_loaded(t);
     cz_track_accept(t);
     fm6_track_loaded(t);                              /* FM6: the preset's patch */
@@ -88,8 +89,12 @@ static void engine_load_of(track_t *t, uint32_t ei, uint32_t pi)
     apply_preset_to(t, pi);
     fm1_irq_on();
 }
-/* the engine's defaults and its first preset (PROPHET: Sequential's first factory program, not INIT) */
-static void set_engine_of(track_t *t, uint32_t ei) { engine_load_of(t, ei, ei % NENGINES == ENGI_PROPHET ? 1u : 0u); }
+/* the engine's defaults and its first preset (PROPHET: Sequential's first factory program, JUNO-106: the first
+ * starter tone, not INIT) */
+static void set_engine_of(track_t *t, uint32_t ei)
+{
+    engine_load_of(t, ei, ei % NENGINES == ENGI_PROPHET || ei % NENGINES == ENGI_J106 ? 1u : 0u);
+}
 
 static void apply_preset(uint32_t pi) { apply_preset_to(TSEL, pi); }
 static void set_engine(uint32_t ei) { set_engine_of(TSEL, ei); }

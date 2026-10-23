@@ -742,10 +742,10 @@ static void engine_batch_kernel(const void *data,int32_t *pcm)
 static inline void engine_join(void) {}
 static void engine_render(track_t *t,voice_t *v,const engine_t *e,int32_t *out,uint32_t n,const vmod_t *m)
 {
-    if(audio_batch_active && e==&ENG_CZ){
+    if(audio_batch_active && (e==&ENG_CZ || e==&ENG_J106)){
         engine_batch_t j;j.track=t;j.voice=v;j.engine=e;j.modulation=*m;j.n=n;
         for(uint32_t k=0;k<8u;k++)j.engine_params[k]=t->p[P_E0+k];
-        audio_batch_push(engine_batch_kernel,&j,sizeof j,out,n,AP_CZ);return;
+        audio_batch_push(engine_batch_kernel,&j,sizeof j,out,n,e==&ENG_CZ?AP_CZ:AP_J106);return;
     }
     e->render(t,v,out,n,m);
 }
@@ -849,6 +849,7 @@ static __attribute__((noinline)) uint32_t track_render_audio(track_t *t, int32_t
         if (e == &ENG_CZ)                                /* cached native DCA, Q15 */
             m.envq15 = v->s[4];
         if(e==&ENG_P5_TEST)m.envq15=p5_env_source(t,v);
+        if(e==&ENG_J106)m.envq15=j106_env_source(t,v);
         if (mod.on){
             AP_START(mod_start);mod_voice(t,v,&m,m.fine);AP_END(AP_MODULATION,mod_start);
         }

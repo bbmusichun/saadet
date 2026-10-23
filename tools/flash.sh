@@ -2,26 +2,29 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Kerem Kilic (Ellic Studio)
 # Build Saadet and flash it to the connected FM-1 in one step (the dev identity FM-1_900; others are asked first).
-#   tools/flash.sh                    build, then flash build/saadet.fwsc
-#   tools/flash.sh --no-build         flash build/saadet.fwsc as it is
-#   tools/flash.sh PACKAGE.fwsc       flash that package (no build)
+#   tools/flash.sh                    build, then flash platform/build/saadet.fwsc (fm1-base, Bluetooth MIDI)
+#   tools/flash.sh --no-build         flash platform/build/saadet.fwsc as it is
+#   tools/flash.sh PACKAGE.fwsc       flash that fm1-base package (no build)
+#   tools/flash.sh --legacy [...]     the original platform instead: build/saadet.fwsc and tools/fm1_install.py
 #   tools/flash.sh --info             the connected FM-1's identity
-#   --port NAME                       MIDI port (part of its name), passed to tools/fm1_install.py
+#   --port NAME                       MIDI port (part of its name), passed to the installer
 #   MELODEE_VENV                      Python with Pillow, mido, python-rtmidi, fontTools (default: ~/.cache/melodee-venv,
 #                                     made with uv when missing)
 set -e
 cd "$(dirname "$0")/.."
 VENV="${MELODEE_VENV:-$HOME/.cache/melodee-venv}"
 PY="$VENV/bin/python"
-PKG=build/saadet.fwsc
-BUILD=1 INFO=0 PORT=
+PKG=platform/build/saadet.fwsc
+INSTALL=build/fm1-base-platform/tools/fm1_install.py   # (fm1-base packages need the base's own installer)
+BUILD=1 INFO=0 PORT= LEGACY=
 
 while [ $# -gt 0 ]; do
     case "$1" in
         -n|--no-build) BUILD=0 ;;
         --info) INFO=1 BUILD=0 ;;
         --port) [ $# -ge 2 ] || { echo "flash.sh: --port needs a name"; exit 2; }; PORT="$2"; shift ;;
-        -h|--help) sed -n '4,11s/^# \{0,1\}//p' "$0"; exit 0 ;;
+        --legacy) LEGACY=--legacy; [ "$PKG" = platform/build/saadet.fwsc ] && PKG=build/saadet.fwsc; INSTALL=tools/fm1_install.py ;;
+        -h|--help) sed -n '4,12s/^# \{0,1\}//p' "$0"; exit 0 ;;
         -*) echo "flash.sh: unknown option $1 (--help)"; exit 2 ;;
         *) PKG="$1" BUILD=0 ;;
     esac
@@ -46,17 +49,19 @@ fi
 
 if [ $BUILD = 1 ]; then
     echo "== build"
-    PYTHON="$PY" ./build.sh
+    PYTHON="$PY" ./build.sh $LEGACY
 fi
 [ -f "$PKG" ] || { echo "flash.sh: no package $PKG (build first)"; exit 2; }
+[ -f "$INSTALL" ] || { echo "flash.sh: no installer $INSTALL (build first)"; exit 2; }
 
 # what goes on the device: the package's identity, the commit it was built from
 IDENT=$("$PY" -c 'import sys; sys.path.insert(0, "tools"); import fm1_install as f
 print(f.product_of(open(sys.argv[1], "rb").read()))' "$PKG")
 REV="$(git rev-parse --abbrev-ref HEAD) $(git rev-parse --short HEAD)"
-git diff --quiet HEAD -- firmware || REV="$REV + uncommitted firmware changes"
-if [ $BUILD = 0 ] && [ "$PKG" = build/saadet.fwsc ] && [ -n "$(find firmware -type f -newer "$PKG" | head -1)" ]; then
-    echo "flash.sh: note: firmware/ changed since $PKG was built (flash without --no-build to rebuild)"
+git diff --quiet HEAD -- firmware platform || REV="$REV + uncommitted firmware changes"
+if [ $BUILD = 0 ] && { [ "$PKG" = build/saadet.fwsc ] || [ "$PKG" = platform/build/saadet.fwsc ]; } &&
+   [ -n "$(find firmware platform -path platform/build -prune -o -type f -newer "$PKG" -print | head -1)" ]; then
+    echo "flash.sh: note: firmware/ or platform/ changed since $PKG was built (flash without --no-build to rebuild)"
 fi
 echo "== flash $PKG: identity $IDENT, $REV"
 if [ "$IDENT" != FM-1_900 ]; then
@@ -65,4 +70,4 @@ if [ "$IDENT" != FM-1_900 ]; then
     read -r a
     case "$a" in y|Y|yes) ;; *) echo "flash.sh: cancelled"; exit 1 ;; esac
 fi
-exec "$PY" tools/fm1_install.py "$PKG" --yes ${PORT:+--port "$PORT"}
+exec "$PY" "$INSTALL" "$PKG" --yes ${PORT:+--port "$PORT"}

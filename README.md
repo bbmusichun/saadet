@@ -7,7 +7,7 @@ Saadet starts at Melodee `nightly` commit
 checkout and its uncommitted work are separate. `upstream` is read-only locally;
 this repository has no publishing remote.
 
-- One polyphonic synth part: Prophet, FM6 or CZ-1.
+- One polyphonic synth part: Prophet, FM6, CZ-1 or JUNO-106.
 - Arpeggiator, HOLD, chords, strum, scales, microtonal tuning, modulation and MIDI performance.
 - Native sound editing, factory libraries, SysEx import/export and 384 shared user sound slots.
 - Stereo USB playback and stereo synth-master capture at 44.1 kHz, with 16/24-bit USB formats.
@@ -54,6 +54,16 @@ sustained buffer deadlines on an FM-1. No hardware installation is part of this 
 
 New Saadet/Melodee work is by Kerem Kilic (Ellic Studio). Retained Felucca work
 is by Leo Kuroshita (@kurogedelic), Hügelton Instruments, with its notices kept.
+JUNO-106 (engine 21) is a new MPL-2.0 engine written for Saadet from the
+Juno-106's published architecture and MIDI implementation, without code or data
+from other Juno emulations: one DCO per voice with saw, pulse/PWM, sub-octave
+square and noise, a resonant four-pole low-pass, one ADSR, the delayed triangle
+LFO, then the instrument-wide high-pass and stereo chorus I/II. Tones keep the
+instrument's 18-byte patch layout; its patch messages import over USB and its
+single-control messages edit the playing tone. The starter tones are Saadet's
+own, not Roland's factory bank. Times and ranges are engineering estimates;
+neither the sound nor its CPU cost has been measured against an instrument or
+on an FM-1. See [LICENSING.md](LICENSING.md#juno-106-engine-mpl-20).
 SID is retired with its stored engine ID reserved. FM6 uses the MSFA renderer;
 legacy MARK I/OPL settings load through it and can sound different. CZ-1 is
 independent of the removed PHASE/CrispyZebra engine. BLE/platform migration
@@ -64,13 +74,14 @@ updated against this nightly's native engines, FX, shared library and drawing co
 See [LICENSING.md](LICENSING.md), [LICENSE](LICENSE), and [LICENSES](LICENSES/)
 for applicable upstream and third-party terms.
 
-An experimental `platform/` target now ports Saadet to **fm1-base + felucca-bsp**
-with BLE MIDI, alongside the existing platform. It builds locally and has
-simulator coverage. After recovery from a failed first boot, the corrected
+The `platform/` target ports Saadet to **fm1-base + felucca-bsp** with BLE MIDI
+and is the default build (`./build.sh`); the original platform remains
+available with `./build.sh --legacy`. The port is still experimental. It builds
+locally and has simulator coverage. After recovery from a failed first boot, the corrected
 firmware now boots on the FM-1, answers USB MIDI/editor requests and reports
 BLE advertising. Pairing and physical audio/control validation remain pending.
 The platform also prepares m-bootloader 1.2 for a separate, checked installation
 to add recovery at power-on; see the installation order in BUILDING.md.
-See [BUILDING.md](BUILDING.md#experimental-fm1-base--ble-port) and
+See [BUILDING.md](BUILDING.md#fm1-base--ble-port-the-default-build) and
 [the migration record](docs/BLE_MIGRATION.md) for the licensing and validation
 boundaries.

@@ -31,13 +31,48 @@ Three source files are ports and keep the licence of their originals: `firmware/
 (DaisySP, MIT), `firmware/src/phys_symp.c` (Rings, MIT), and `firmware/src/cz_native.c`
 (MAME uPD933, BSD-3-Clause). `firmware/src/fm6_core.c` and
 `firmware/src/eng_fm6.c` retain MSFA (Apache-2.0) synthesis and data in C with native fp32 signal arithmetic (below).
-The new operator and voice-policy files and the imported fm1-base maths keep their per-file MPL/Apache notices.
+The new operator and voice-policy files, the JUNO-106 engine files (below) and the imported fm1-base maths keep their per-file MPL/Apache notices.
 This preparation does not relicense the enclosing application; the full provenance and platform migration are still in progress (see `docs/BLE_MIGRATION.md`).
 The firmware built with them is GPL-3.0-only as a whole.
 
 You may use, study, change and share Melodee under the GPL. If you distribute Melodee, or
 firmware derived from it, you must also give your recipients its complete corresponding
 source under the same licence. That includes devices that ship with modified Melodee inside.
+
+## JUNO-106 engine (MPL-2.0)
+
+The JUNO-106 engine is new work by Kerem Kilic (Ellic Studio), licensed under the
+Mozilla Public License 2.0 (`LICENSES/MPL-2.0.txt`) file by file:
+
+| File | What |
+| --- | --- |
+| `firmware/src/j106_patch.h` | The native tone: the instrument's patch-message layout, switch bits, decoding and encoding |
+| `firmware/src/eng_j106.c` | The voice, the part's LFO, high-pass and chorus, and Saadet's own starter tones |
+| `firmware/src/j106_edit.h` | Panel field descriptors and edits |
+| `firmware/src/editor_j106.c` | Editor command 96 and the instrument's SysEx messages |
+| `tests/j106_test.c` | Host tests |
+
+It was written from the Juno-106's published architecture and from its MIDI
+implementation as publicly documented (the owner's-manual layout reproduced in
+ST-Log issue 33, Peter Cassidy's 1994 analogue-list summary in the Hyperreal
+archive, and the hinzen.de Juno-106 SysEx page). Those were read for facts only:
+message layouts and parameter meanings. No code, tables or data from KR-106,
+fm-106, TAL-U-NO, the Felucca forks' Juno engines or any other emulation were read
+or used; those are GPL-licensed and incompatible with this file-level licence.
+The DSP is generic (polynomial band-limited steps, a trapezoidal four-pole
+low-pass, one-pole filters, a modulated delay line) and uses the MPL-2.0 fm1-base
+maths already in the tree (`firmware/src/x0x/fastmath.h`, Charles Vestal). Its
+times, ranges, curves and chorus rates are engineering estimates, not measurements
+of an instrument.
+
+No Roland factory patches are included: the starter tones are Saadet's own.
+Patches a user imports remain the user's material. The hooks that connect the
+engine to the existing instrument (engine table, library, state, mixer, panel,
+editor and web editor) are edits to GPL-3.0-only files and stay GPL-3.0-only; the
+legacy firmware built with them is GPL-3.0-only as a whole. MPL-2.0 permits this
+combination (its section 3.3); the JUNO-106 files themselves remain available
+under MPL-2.0, and anyone distributing them must keep that licence and offer
+their source as MPL-2.0 requires.
 
 ## Retained Hügelton Instruments material
 
@@ -123,7 +158,9 @@ Contributions are welcome under GPL-3.0-only.
 
 "Felucca" and "Hügelton Instruments" are names of Hügelton Instruments.
 
-"M-VAVE" and "FM-1" are trademarks of their respective owners. Melodee is independent
+"M-VAVE" and "FM-1" are trademarks of their respective owners. "Juno-106" and
+"Roland" are trademarks of Roland Corporation; JUNO-106 names the instrument this
+engine's tones are compatible with, and Saadet is not affiliated with Roland. Melodee is independent
 firmware that runs on FM-1 hardware. It is not affiliated with, endorsed by or supported
 by those owners, nor by Hügelton Instruments.
 

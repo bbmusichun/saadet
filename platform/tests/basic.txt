@@ -1,5 +1,5 @@
 wait 100
-expect engines 3
+expect engines 4
 expect engine 19
 master 4096
 peakreset
@@ -23,4 +23,12 @@ key 4 down
 wait 250
 expect peak_db_min -60
 key 4 up
-shot three-engines.png
+spin ALGO 1
+wait 800
+expect engine 21
+peakreset
+midi USB 90 30 64
+wait 250
+expect peak_db_min -60
+midi USB 80 30 00
+shot four-engines.png

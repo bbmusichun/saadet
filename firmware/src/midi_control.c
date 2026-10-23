@@ -239,14 +239,16 @@ static __attribute__((noinline)) void midi_parameter(track_t *t,uint32_t cc,uint
     switch(cc){case 5:id=P_GLIDE;break;case 7:id=P_LEVEL;break;case 10:id=P_PAN;break;
     case 72:id=P_REL;break;case 73:id=P_ATK;break;case 75:id=P_DEC;break;
     case 74:case 71:{
-        static const uint8_t map[NENGINES]={0,0,0x30,0x56,0,0x07,0,0,0,0,0x30,0x34,0x30,0,0,0,0,0,0,0x12};
+        static const uint8_t map[NENGINES]={0,0,0x30,0x56,0,0x07,0,0,0,0,0x30,0x34,0x30,0,0,0,0,0,0,0x12,0,0x12};
         uint32_t macro=(map[t->eng_req%NENGINES]>>(cc==74?4:0))&15u;
         if(macro)id=P_E0+macro-1u;else if(cc==74 && t->eng_req==ENGI_CZ)id=P_ED_FLT;
         break; }default:return;}
-    if((cc==72 || cc==73 || cc==75) && (t->eng_req==ENGI_PROPHET || t->eng_req==ENGI_FM6 || t->eng_req==ENGI_CZ)){   /* (the engine's own envelope: its motion too) */
+    if((cc==72 || cc==73 || cc==75) && (t->eng_req==ENGI_PROPHET || t->eng_req==ENGI_FM6 || t->eng_req==ENGI_CZ || t->eng_req==ENGI_J106)){   /* (the engine's own envelope: its motion too) */
 
         if(t->eng_req==ENGI_PROPHET){
             p5_edit_value(t,cc==72?P5_RELEASE_AMP:cc==73?P5_ATTACK_AMP:P5_DECAY_AMP,value);
+        }else if(t->eng_req==ENGI_J106){
+            j106_edit_value(t,cc==72?J106_ENV_R:cc==73?J106_ENV_A:J106_ENV_D,(int32_t)value);
         }else if(t->eng_req==ENGI_FM6){
             uint8_t raw[FP_SIZE+1u];memcpy(raw,fm6_patch[trk_index(t)],sizeof raw);
             for(uint32_t op=0;op<6;op++)raw[op*FP_OP+(cc==72?3:cc==73?0:1)]=(uint8_t)(99u-value*99u/127u);

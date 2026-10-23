@@ -42,15 +42,17 @@
 #define MELODEE_PROPHET 1
 #define ENGI_FM6 12u
 #define ENGI_PROPHET 19u /* 16..18 reserved: historical preset namespaces */
+#define ENGI_J106 21u    /* JUNO-106; 20 is reserved: the Prophet's user namespace */
 #define USER_GENERAL 16u
 #define USER_NATIVE_P5 20u
-#define NENGINES 20               /* 13 SLICE and 14 OBXF reserved; 15 native CZ-1 */
+#define USER_NATIVE_J106 22u
+#define NENGINES 22               /* 13 SLICE and 14 OBXF reserved; 15 native CZ-1; 20 reserved */
 #define USER_NATIVE_FM 17u
 #define USER_NATIVE_CZ 18u
 #define USER_NONE 65535u
 #define ENGI_ANALOG 0u           /* retired in 1.2: never selectable (eng_ok), its stored sounds play silent */
 #define ENGI_DIGITAL 1u          /* retired: never selectable (eng_ok), its stored sounds play silent */
-#define NENG_SHOWN (NENGINES - 11u - !MELODEE_SLICE - 5u * !MELODEE_LEGACY_EXTRAS)   /* the engines one can pick: PRESETS, the EDIT
+#define NENG_SHOWN (NENGINES - 12u - !MELODEE_SLICE - 5u * !MELODEE_LEGACY_EXTRAS)   /* the engines one can pick: PRESETS, the EDIT
                                                 * layer, the editor, in the display order of engines.c ENGINE_ORDER */
 #define ENGI_SLICE 13u           /* reserved without MELODEE_SLICE: never selectable (eng_ok) */
 #ifdef SMP_USER_SLOTS
@@ -271,6 +273,9 @@ typedef struct {                 /* an engine (engines.c ENGINES[]; the eng_*.c 
     uint32_t (*units)(const struct track *t);
     /* with presets 0: preset k (< npresets) made on demand, its name into name (21 bytes); engines.c eng_preset */
     void (*preset_make)(uint32_t k, preset_t *p, char *name);
+    /* optional: after post, the part's own stereo stage (JUNO-106: its chorus). 1: out now holds L + R and left L,
+     * mixed at full width around PAN (mix.c); 0: out stays the mono part */
+    uint32_t (*stereo)(struct track *t, int32_t *out, int32_t *left, uint32_t n);
 } engine_t;
 /* voice_start: what the voice it starts did just before (0 free, 1 released, 2 its key down: a steal or a move);
  * engine_t.note_on may read it  */

@@ -8,19 +8,27 @@ Python requires Pillow with Raqm; the build also needs Node.js for editor tests.
 python3 -m venv build/venv
 build/venv/bin/pip install Pillow
 PYTHON="$PWD/build/venv/bin/python" ./build.sh
+PYTHON="$PWD/build/venv/bin/python" ./build.sh --legacy
 npm ci --prefix web
 PATH="$PWD/build/venv/bin:$PATH" tests/run_tests.sh
 ```
 
-The normal package is `build/saadet.fwsc`, development identity `FM-1_900`.
-Internal compiler artifacts retain the inherited `build/melodee.*` names.
-`./build.sh --nightly` produces `build/saadet-nightly.fwsc` and includes the
-source revision in the version. The defaults retain USB audio, TRS MIDI,
-dual-core rendering and the upstream worker-failure fallback.
+`./build.sh` builds the fm1-base port with Bluetooth MIDI (below):
+`platform/build/saadet.fwsc`, development identity `FM-1_900`. `--no-ble`
+builds the USB-only `platform/build/saadet-usb.fwsc` instead, `--host` the
+simulator, and `--release X.Y[.Z]` a release identity.
 
-The build checks generated tables, MMIO access, audio RAM placement, resource
-capacity, boot/update layout and package structure. Host test logs are under
-`build/host/log`.
+`./build.sh --legacy` builds the original platform: `build/saadet.fwsc`, also
+`FM-1_900`. Its internal compiler artifacts retain the inherited
+`build/melodee.*` names. `./build.sh --legacy --nightly` produces
+`build/saadet-nightly.fwsc` and includes the source revision in the version.
+The legacy defaults retain USB audio, TRS MIDI, dual-core rendering and the
+upstream worker-failure fallback. The host suite checks this package's update
+layout, so build it before `tests/run_tests.sh`.
+
+The legacy build checks generated tables, MMIO access, audio RAM placement,
+resource capacity, boot/update layout and package structure. Host test logs
+are under `build/host/log`.
 
 Serve the editor without publishing:
 
@@ -32,9 +40,11 @@ Open `http://127.0.0.1:8846/web/editor.html`. Web MIDI requires a browser that
 supports it and user-granted SysEx permission. The local editor contains no
 multi-track simulator or Melodee release installer.
 
-Installation is a separate, explicit operation. The retained command-line
-installer is `tools/fm1_install.py`; recovery is `tools/fm1_recover.py`.
-Use the actual Saadet package and detected FM-1 port. Read the storage note in
+Installation is a separate, explicit operation. `tools/flash.sh` builds the
+default package and installs it with the base's installer; `--legacy` builds
+and installs the original platform's package with the retained
+`tools/fm1_install.py`. Recovery is `tools/fm1_recover.py`. Use the actual
+Saadet package and detected FM-1 port. Read the storage note in
 README before switching between Saadet and Melodee. Host and target checks are
 not physical audio/control/deadline validation.
 
@@ -42,25 +52,26 @@ The shipping audio path is Q23 (24-bit signed samples in 32-bit buffers).
 The inherited DSP fixtures run with `AUDIO_FRAC_BITS=0` to preserve their Q15
 numeric contracts. The suite also runs native Q23 integration, numerical,
 concurrent-worker and precision/overflow checks. `tests/audio_precision_test.c`
-checks signed PCM24, low-level synthesis, dithered PCM16 export, and all three
+checks signed PCM24, low-level synthesis, dithered PCM16 export, and all four
 engines in a single 16 KiB resource bank without cache or auxiliary SRAM tails.
 The linker enforces that engine-state budget, with matching compile-time size
 checks. These checks do not measure physical noise floor or on-device render
 deadlines. See `docs/BLE_MIGRATION.md` for the migration's current limits.
 
-## Experimental fm1-base / BLE port
+## fm1-base / BLE port (the default build)
 
-The separate `platform/` target uses the pinned fm1-base and felucca-bsp
+The `platform/` target uses the pinned fm1-base and felucca-bsp
 revisions in `tools/build_base.py` (fm1-base `6c0b47e4bfc5`, BSP `0f08fcaa6610`).
-The wrapper fetches those revisions if
-absent, verifies a clean dependency checkout, regenerates Saadet's assets and
-applies the checked overlay to a disposable build copy. It leaves the original
-GPL platform and its package in `build/` available for comparison.
+`./build.sh` runs that wrapper; it can also run directly. The wrapper fetches
+those revisions if absent, verifies a clean dependency checkout, regenerates
+Saadet's assets and applies the checked overlay to a disposable build copy. It
+leaves the original GPL platform and its package in `build/` available for
+comparison (`./build.sh --legacy`).
 
 ```sh
-build/venv/bin/python tools/build_base.py --no-ble
-build/venv/bin/python tools/build_base.py
-build/venv/bin/python tools/build_base.py --host
+PYTHON="$PWD/build/venv/bin/python" ./build.sh --no-ble
+PYTHON="$PWD/build/venv/bin/python" ./build.sh
+PYTHON="$PWD/build/venv/bin/python" ./build.sh --host
 tests/run_base_tests.sh
 ```
 
