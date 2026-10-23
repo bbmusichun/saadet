@@ -8,7 +8,9 @@ static int32_t *part_buf=part_storage;
 static volatile uint32_t kb_mask, kb_layer;
 static volatile uint8_t kb_lock;
 #define LIM_T AUDIO_Q15(18000)
+#define LIM_HOLD 2048u                   /* 46 ms: longer than a chord's repeat (30.6 ms for C major) */
 static int32_t lim_env = LIM_T;
+static uint32_t lim_hold;
 static audio_dc_t dc_l, dc_r, dce_l, dce_r;
 
 /* DC blocker (~2 Hz), always on: a leaky integrator of the input (Q6 state) subtracted from it.
@@ -33,8 +35,15 @@ static __attribute__((noinline,section(".dsp_text"))) void master_out(int32_t *l
     al = *l < 0 ? -*l : *l;
     ar = *r < 0 ? -*r : *r;
     a = al > ar ? al : ar;
+    /* A peak within 1/16 (0.56 dB) of the envelope holds it: the gain stays
+     * put while a sustained chord repeats, rather than rising between its
+     * peaks and ducking at each one, which growls at the chord's period. */
+    if (a > LIM_T && a >= lim_env - (lim_env >> 4))
+        lim_hold = LIM_HOLD;
     if (a > lim_env)
         lim_env += (a - lim_env) >> 2;
+    else if (lim_hold)
+        lim_hold--;
     else if (lim_env > LIM_T) {
         /* Release in whole Q15 steps: the envelope keeps the nightly limiter's timing exactly
          * (its 1/4096 decay and one-unit linear tail) while the gain applies at native precision. */

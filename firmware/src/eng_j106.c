@@ -19,7 +19,7 @@ _Static_assert(FS == 44100 && CTL == 32, "Juno-106 rates assume 44.1 kHz and 32-
 typedef struct {
     uint32_t phase;                      /* the DCO's ramp */
     int32_t noise;
-    float z[4];                          /* filter stages */
+    float z[4], coupling;                /* filter stages and output coupling's low-pass state */
     float env, env0;                     /* ADSR at the block's end and start, 0..1 */
     float gate, gate0;                   /* GATE-mode VCA, 0..1 */
     float g;                             /* filter coefficient at the end of the last block */
@@ -34,7 +34,7 @@ typedef struct {
     float saw, pulse, sub, noise;        /* mixer gains */
     float pwm, pwm_lfo;                  /* PWM depth 0..1; 1: by the LFO */
     float cut, env_oct, lfo_oct, key;    /* cutoff in octaves above 8 Hz; envelope, LFO amounts; keyboard follow */
-    float k, drive, level;
+    float k, level;
     float atk, dec, sus, rel;            /* envelope coefficients per block */
     uint32_t range;                      /* 0 16', 1 8', 2 4' */
     int32_t tune;                        /* the track's TUNE offset, semitones */
@@ -89,7 +89,7 @@ static inline __attribute__((always_inline)) float j106_ramp(uint32_t ph, uint32
 {
     return (float)ph * (1.0f / 2147483648.0f) - 1.0f - j106_blep(ph, inc);
 }
-/* The filter's input stage: a cubic that reaches its limit, 1, at 1.5 */
+/* The resonance limit: a cubic that reaches its limit, 1, at 1.5 */
 static inline __attribute__((always_inline)) float j106_sat(float x)
 {
     x = fm_clampf(x, -1.5f, 1.5f);
@@ -153,13 +153,13 @@ static __attribute__((noinline)) int32_t j106_env_source(track_t *t, voice_t *v)
 
 typedef struct {
     float vib0, dvib, w0, dw, g0, dg, a0, da, m0, dm;
-    float saw, pulse, sub, noise, k, drive, scale;
+    float saw, pulse, sub, noise, k, scale;
     float inc;
 } j106_kernel_t;
 static __attribute__((section(".dsp_text"))) void j106_samples(j106_voice_t *restrict s, int32_t *restrict out, uint32_t n,
                                                                const j106_kernel_t *restrict c)
 {
-    float z0 = s->z[0], z1 = s->z[1], z2 = s->z[2], z3 = s->z[3];
+    float z0 = s->z[0], z1 = s->z[1], z2 = s->z[2], z3 = s->z[3], dc = s->coupling;
     uint32_t phase = s->phase, sub = s->sub;
     int32_t last = 0;
     for (uint32_t i = 0; i < n; i++) {
@@ -179,17 +179,30 @@ static __attribute__((section(".dsp_text"))) void j106_samples(j106_voice_t *res
         phase = next;
         float G = c->g0 + c->dg * time, G2 = G * G, G3 = G2 * G, G4 = G2 * G2;
         float sigma = (1.0f - G) * (G3 * z0 + G2 * z1 + G * z2 + z3);
-        float u = j106_sat((x * c->drive - c->k * sigma) / (1.0f + c->k * G4));
+        /* The linear solution predicts this sample's output; only the
+         * feedback taken from it is limited, so the mixer reaches the stages
+         * unclipped. Limiting the whole input would clip a sub that sits on a
+         * resonant peak, and PWM's narrow pulses would make it pump. A quarter
+         * of the cubic's range sets how loud full resonance whistles. */
+        float u = (x - c->k * sigma) / (1.0f + c->k * G4);
+        u = x - c->k * 0.25f * j106_sat(4.0f * (G4 * u + sigma));
         float v;
         v = (u - z0) * G; u = v + z0; z0 = u + v;
         v = (u - z1) * G; u = v + z1; z1 = u + v;
         v = (u - z2) * G; u = v + z2; z2 = u + v;
         v = (u - z3) * G; u = v + z3; z3 = u + v;
+        /* The resonance limit rectifies the asymmetric narrow pulse into an
+         * offset that follows PWM. Shared modulation makes these offsets add
+         * coherently in chords. Couple at 10 Hz before the VCA so its envelope
+         * fades the coupling state too, without leaving a step when a released
+         * voice ends. */
+        dc += (u - dc) * 0.0014237444f;   /* 1 - exp(-2 pi 10 / FS) */
         float amp = (c->a0 + c->da * time) * (c->m0 + c->dm * time);
-        last = (int32_t)(u * amp * c->scale);
+        last = (int32_t)((u - dc) * amp * c->scale);
         out[i] += last;
     }
     s->z[0] = fm_flush(z0); s->z[1] = fm_flush(z1); s->z[2] = fm_flush(z2); s->z[3] = fm_flush(z3);
+    s->coupling = fm_flush(dc);
     s->phase = phase; s->sub = (uint8_t)sub; s->last_pcm = last;
 }
 
@@ -229,7 +242,7 @@ static void j106_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     float m0 = (float)m->amp0 * (1.0f / 32768.0f), m1 = (float)m->amp1 * (1.0f / 32768.0f);
     const j106_kernel_t c = {
         r->vib0, r->vib1 - r->vib0, 0.5f - 0.46f * pw0, 0.46f * (pw0 - pw1), s->g, g1 - s->g, a0, a1 - a0, m0, m1 - m0,
-        r->saw, r->pulse, r->sub, r->noise, r->k, r->drive, 2.0f * VOICE_FS * AUDIO_ONE, inc
+        r->saw, r->pulse, r->sub, r->noise, r->k, 2.0f * VOICE_FS * AUDIO_ONE, inc
     };
     s->g = g1;
     void (*volatile run)(j106_voice_t *, int32_t *, uint32_t, const j106_kernel_t *) = j106_samples;
@@ -283,8 +296,7 @@ static void j106_block(track_t *t)
     float depth = dco * dco * 0.5f + (float)t->mw * (0.1f / 127.0f);
     r->vib0 = fm_exp2f(r->lfo0 * depth);
     r->vib1 = fm_exp2f(r->lfo1 * depth);
-    /* one waveform alone peaks near 0.45; all of them drive the filter's
-     * input stage into its curve, as a full mixer does */
+    /* one waveform alone peaks near 0.45 */
     r->saw = j106_switch(p, J106_SAW) ? 0.45f : 0.0f;
     r->pulse = j106_switch(p, J106_PULSE) ? 0.45f : 0.0f;
     r->sub = (float)j106_value(t, J106_SUB, 6) * (0.45f / 127.0f);
@@ -297,7 +309,6 @@ static void j106_block(track_t *t)
     r->key = (float)(p[J106_VCF_KYBD] & 127u) * (1.0f / 127.0f);
     float res = (float)j106_value(t, J106_VCF_RES, 1) * (1.0f / 127.0f);
     r->k = 4.2f * res * fm_sqrtf(res);         /* self-oscillation from about 0.95 */
-    r->drive = 1.0f + 0.4f * r->k;              /* keeps some of the passband loss at high resonance */
     /* the panel's -5..+5 trim, not a mute (five factory patches play at 0): about -6 dB at 0, unity at 64, about
      * +6 dB at 127; the span is an estimate */
     r->level = fm_exp2f(((float)(p[J106_VCA_LEVEL] & 127u) - 64.0f) * (1.0f / 63.5f));

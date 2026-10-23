@@ -237,6 +237,57 @@ static void factory(void)
     }
 }
 
+/* Hann-windowed power at one frequency. The audio checks below measure the
+ * unwanted modulation relative to the musical signal, independently of gain
+ * and of the Q15/Q23 container used by this fixture. */
+static double tone_power(const int32_t *pcm, uint32_t n, double hz)
+{
+    double re = 0, im = 0, weight = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        double w = 0.5 - 0.5 * cos(2.0 * FM_PI * i / (n - 1u));
+        double phase = 2.0 * FM_PI * hz * i / FS;
+        double x = pcm[i] * w;
+        re += x * cos(phase); im += x * sin(phase); weight += w;
+    }
+    return 2.0 * (re * re + im * im) / (weight * weight);
+}
+
+static void ethereal(void)
+{
+    static const uint8_t notes[] = {48, 55, 60, 64, 67, 72};
+    const uint32_t n = 8u * FS;
+    int32_t *pcm = malloc(n * sizeof *pcm), out[CTL];
+    assert(pcm);
+    for (uint32_t chord = 0; chord < 2u; chord++) {
+        juno(102);                         /* B56 ETHEREAL, unchanged factory bytes */
+        assert(str_eq(eng_preset(&ENG_J106, 102)->name, "ETHEREAL"));
+        if (chord) for (uint32_t k = 0; k < NELEM(notes); k++) trk_note_on(TSEL, notes[k], 100);
+        else trk_note_on(TSEL, 60, 100);
+        for (uint32_t b = 0; b < 2u * FS / CTL; b++) block(out);  /* past the slow attack */
+        double total = 0;
+        for (uint32_t pos = 0; pos < n; pos += CTL) {
+            block(pcm + pos);
+            for (uint32_t i = 0; i < CTL; i++) total += (double)pcm[pos + i] * pcm[pos + i];
+        }
+        total /= n;
+        double lfo = 0.1 * pow(2.0, 69.0 * 8.23 / 127.0), rumble = 0;
+        for (uint32_t h = 1; h <= 6u; h++) rumble += tone_power(pcm, n, lfo * h);
+        printf("  ETHEREAL %s: PWM rumble %.1f dBr\n", chord ? "six-note chord" : "C4", 10.0 * log10(rumble / total));
+        ok(chord ? "ETHEREAL chords do not add a subsonic pulse" : "ETHEREAL single-note rumble stays inaudible",
+           total > 1.0 && rumble < total * (chord ? 1e-4 : 3e-5));
+        /* Only the sub square plays at the lowest note's sub-octave, and PWM
+         * changes the pulse, not the sub (DCO LFO is zero): sidebands there
+         * are the filter's limit pumping a sub that sits on its resonant peak. */
+        double sub = (double)tuned_pitch_inc((chord ? notes[0] : 60u) * 16u) * FS / 8589934592.0;
+        double body = tone_power(pcm, n, sub);
+        double side = tone_power(pcm, n, sub - lfo) + tone_power(pcm, n, sub + lfo);
+        printf("  ETHEREAL %s sub-octave PWM sidebands %.1f dBr\n", chord ? "chord's lowest" : "C4", 10.0 * log10(side / body));
+        ok(chord ? "ETHEREAL chords keep a steady sub" : "ETHEREAL keeps a steady sub", body > total * (chord ? 0.02 : 0.5) && side < body * 1e-4);
+        trk_all_off(TSEL);
+    }
+    free(pcm);
+}
+
 static void part(void)
 {
     /* the chorus: a stereo pair from the mono part; off, the part stays mono */
@@ -386,6 +437,7 @@ int main(void)
     format();
     factory();
     voice();
+    ethereal();
     part();
     library();
     state();
