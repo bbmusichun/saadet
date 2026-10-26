@@ -1,0 +1,21 @@
+name: Build FM1 Firmware
+
+on:
+  workflow_dispatch: # Ezzel lehet manuálisan indítani (a Netlify ezt fogja hívni)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Kód letöltése
+      uses: actions/checkout@v3
+
+    - name: Firmware fordítása (Helyettesítő lépés)
+      run: echo "Itt fog lefutni a C kód fordítása később"
+
+    - name: Kész fájl feltöltése
+      uses: actions/upload-artifact@v3
+      with:
+        name: fm1-firmware
+        path: . # Később átírjuk a kész fájl pontos helyére
