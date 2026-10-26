@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FM1 Firmware Factory</title>
+    <style>
+        body {
+            background-color: #12121f;
+            color: #ffffff;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #1a1a30;
+            padding: 40px;
+            border-radius: 12px;
+            border: 1px solid #2b2b4a;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            max-width: 400px;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #8585ff;
+        }
+        p {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+        .btn {
+            background-color: #4a3ee0;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            width: 100%;
+        }
+        .btn:hover { background-color: #5f54f0; }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled { background-color: #333; cursor: not-allowed; }
+        #status {
+            margin-top: 20px;
+            font-size: 14px;
+            min-height: 20px;
+            font-weight: bold;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FM1 Firmware Factory</h1>
+        <p>Itt tudod egyetlen kattintással elindítani a legfrissebb C kód lefordítását a GitHub szerverein.</p>
+        
+        <button id="buildBtn" class="btn" onclick="triggerBuild()">
+            🚀 Firmware Legyártása
+        </button>
+        
+        <div id="status"></div>
+    </div>
+
+    <script>
+        async function triggerBuild() {
+            const btn = document.getElementById('buildBtn');
+            const status = document.getElementById('status');
+            
+            btn.disabled = true;
+            btn.innerText = "Küldés a GitHubnak...";
+            status.innerText = "";
+            status.className = "";
+
+            try {
+                // Meghívjuk a Netlify Function-t
+                const response = await fetch('/.netlify/functions/trigger-build', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+
+                if (response.ok) {
+                    status.innerText = "✅ " + data.message;
+                    status.className = "success";
+                    btn.innerText = "Fut a fordítás...";
+                    
+                    // 5 másodperc múlva visszaállítjuk a gombot
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.innerText = "🚀 Firmware Legyártása";
+                        status.innerText = "Nézd meg a GitHub Actions fülön az eredményt!";
+                    }, 5000);
+                } else {
+                    status.innerText = "❌ Hiba: " + (data.message || data.error);
+                    status.className = "error";
+                    btn.disabled = false;
+                    btn.innerText = "🚀 Újrapróbálás";
+                }
+            } catch (err) {
+                status.innerText = "❌ Hálózati hiba történt.";
+                status.className = "error";
+                btn.disabled = false;
+                btn.innerText = "🚀 Újrapróbálás";
+            }
+        }
+    </script>
+</body>
+</html>
